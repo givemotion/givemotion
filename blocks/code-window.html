@@ -58,6 +58,17 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
     html += esc(src.slice(last));
   }
   code.innerHTML = html;
+  // Shrink the font if the longest line would not fit the window.
+  mw.wait(document.fonts.ready.then(() => {
+    const pre = root.querySelector('pre');
+    if (pre.scrollWidth > pre.clientWidth + 1) {
+      const fs = parseFloat(getComputedStyle(pre).fontSize);
+      const inner = pre.clientWidth - parseFloat(getComputedStyle(pre).paddingLeft) * 2;
+      const need = pre.scrollWidth - parseFloat(getComputedStyle(pre).paddingLeft) * 2;
+      pre.style.fontSize = Math.floor(fs * (inner / need) * 0.98) + 'px';
+    }
+    pre.style.minHeight = pre.offsetHeight + 'px'; // keep the window size fixed while typing
+  }));
   const cps = parseFloat(code.dataset.typing);
   if (cps > 0) { code.setAttribute('data-type', String(cps)); code.setAttribute('data-type-delay', code.dataset.delay); code.setAttribute('data-type-caret', ''); }
 })();

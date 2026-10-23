@@ -1,0 +1,9 @@
+{
+  "title": "How we grew this year",
+  "weeks": ["Jan", "Mar", "May", "Jul", "Sep", "Nov"],
+  "users": [1200, 1850, 1700, 2600, 3400, 4720],
+  "growth": "3.9×",
+  "quarters": ["Q1", "Q2", "Q3", "Q4"],
+  "revenue": [180, 240, 310, 455],
+  "nps": 72
+}

@@ -4,11 +4,11 @@ import { platform } from 'node:os';
 import { resolveInput } from './render.js';
 import { startServer } from './server.js';
 
-export async function dev(input, { port, open } = {}) {
+export async function dev(input, { port, open, data } = {}) {
   const { root, rel } = resolveInput(input);
   let srv;
   for (const p of port ? [port] : [4400, 4401, 4402, 4403, 0]) {
-    try { srv = await startServer({ root, studio: true, port: p }); break; } catch (e) { if (port) throw e; }
+    try { srv = await startServer({ root, studio: true, port: p, data: data ?? null }); break; } catch (e) { if (port) throw e; }
   }
   const url = `${srv.origin}/__mw/studio/?file=${encodeURIComponent('/' + rel.split('\\').join('/'))}`;
   console.log(`motionwright studio → ${url}`);

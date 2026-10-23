@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Code explainer: typed code, a callout pointing at a line, and a summary checklist.
+     Render: npx motionwright render examples/code-explainer/index.html -o out/code.mp4 -->
+<html data-width="1920" data-height="1080" data-fps="30">
+<head>
+<meta charset="utf-8">
+<style>
+  body { background: #0a0c12; color: #eef1f7; font-family: Inter, system-ui, sans-serif; }
+  .scene { display: grid; place-items: center; }
+  .front { position: relative; z-index: 1; }
+  .side { position: absolute; left: 120px; top: 120px; z-index: 2; font-size: 30px; letter-spacing: .18em; text-transform: uppercase; color: #8ea2ff; font-weight: 700; }
+</style>
+</head>
+<body>
+<main data-sequence data-transition="fade 0.5">
+  <section class="scene" data-duration="3">
+    <mw-include src="../../blocks/grid-bg.html"></mw-include>
+    <mw-include src="../../blocks/title-card.html" kicker="2-minute tip" title="Retry any API call in 6 lines"></mw-include>
+  </section>
+
+  <section class="scene" data-duration="8">
+    <mw-include src="../../blocks/grid-bg.html" glow="#2563eb"></mw-include>
+    <div class="side" data-enter="fade-right 0.6">retry.ts</div>
+    <div class="front"><mw-include src="../../blocks/code-window.html" title="retry.ts" lang="ts" typing="38" width="1600" size="34">
+export async function retry<T>(fn: () => Promise<T>, tries = 3) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (err) {
+      if (i >= tries - 1) throw err;
+      await sleep(2 ** i * 250); // back off: 250ms, 500ms, 1s
+    }
+  }
+}
+</mw-include></div>
+    <mw-include src="../../blocks/callout.html" x="1260" y="660" label="Exponential back-off" side="bottom" distance="170" data-start="6.2"></mw-include>
+  </section>
+
+  <section class="scene" data-duration="4.5">
+    <mw-include src="../../blocks/grid-bg.html" glow="#16a34a"></mw-include>
+    <div class="front"><mw-include src="../../blocks/checklist.html" title="Why it works" every="0.7"><li>Retries only on failure</li><li>Waits longer each time</li><li>Gives up after N tries</li></mw-include></div>
+  </section>
+</main>
+</body>
+</html>

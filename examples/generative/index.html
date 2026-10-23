@@ -1,0 +1,59 @@
+<!doctype html>
+<!-- Generative art with canvas, drawn as a pure function of time (seekable, parallel-safe).
+     Render: npx motionwright render examples/generative/index.html -o out/generative.mp4 -->
+<html data-width="1920" data-height="1080" data-fps="30" data-duration="10">
+<head>
+<meta charset="utf-8">
+<style>
+  body { background: #05060a; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .title { position: absolute; left: 120px; bottom: 120px; }
+  .title h1 { margin: 0; font-size: 120px; font-weight: 800; letter-spacing: -.045em; line-height: .95; }
+  .title p { margin: 18px 0 0; font-size: 38px; color: #ffffffb0; }
+</style>
+</head>
+<body>
+  <canvas id="c" width="1920" height="1080"></canvas>
+  <div class="title" data-start="1.2" data-exit="fade 0.8">
+    <h1 data-split="chars" data-enter="blur 0.7" data-stagger="0.035">Flow fields</h1>
+    <p data-enter="fade-up 0.8 0.8">Every frame is a function of time.</p>
+  </div>
+<script>
+  const c = document.getElementById('c'), g = c.getContext('2d');
+  const W = c.width, H = c.height, N = 1400, TRAIL = 14;
+  const seeds = Array.from({ length: N }, () => [Math.random(), Math.random(), Math.random()]);
+  // Position of particle i at time t: integrates nothing, so any frame can be drawn directly.
+  function pos(i, t) {
+    const [a, b, s] = seeds[i];
+    const sp = 0.035 + s * 0.05;
+    const u = (a + t * sp) % 1;
+    const x = u * (W + 200) - 100;
+    const y0 = b * H;
+    const y = y0 + Math.sin(u * 6.0 + b * 9 + t * 0.6) * 90 * (0.4 + s) + (mw.noise(u * 4 + i * 0.01, b * 10) - 0.5) * 260;
+    return [x, y, u];
+  }
+  const hue = (b) => 200 + b * 120;
+  mw.onFrame((t) => {
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = '#05060a'; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'lighter';
+    g.lineCap = 'round';
+    const fade = Math.min(1, t / 1.5) * Math.min(1, (mw.duration - t) / 1.0);
+    for (let i = 0; i < N; i++) {
+      g.beginPath();
+      let prev = null;
+      for (let k = TRAIL; k >= 0; k--) {
+        const p = pos(i, t - k * 0.035);
+        if (prev && Math.abs(p[0] - prev[0]) > 300) { prev = null; }
+        if (!prev) g.moveTo(p[0], p[1]); else g.lineTo(p[0], p[1]);
+        prev = p;
+      }
+      const b = seeds[i][1];
+      g.strokeStyle = `hsla(${hue(b)}, 90%, 62%, ${0.16 * fade})`;
+      g.lineWidth = 1.2 + seeds[i][2] * 2.2;
+      g.stroke();
+    }
+  });
+</script>
+</body>
+</html>

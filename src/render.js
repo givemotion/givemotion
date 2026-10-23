@@ -59,7 +59,7 @@ function defaultWorkers(totalFrames) {
 export async function openComposition(input, opts = {}) {
   const { file, root, rel } = resolveInput(input);
   const chrome = await ensureChrome({ chrome: opts.chrome, log: opts.log });
-  const server = await startServer({ root, maxW: 3840, maxH: 2160 });
+  const server = await startServer({ root, maxW: 3840, maxH: 2160, data: opts.data ?? null });
   const config = { mode: opts.mode || 'render', seed: opts.seed ?? 1, data: opts.data ?? null, fps: opts.fps, width: opts.width, height: opts.height };
   const url = server.url(rel);
   // First page discovers size; reopen at the right size if needed.

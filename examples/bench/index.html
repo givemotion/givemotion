@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- Benchmark composition used by `motionwright bench`: 10s of typical explainer content at 1080p30. -->
+<html data-width="1920" data-height="1080" data-fps="30">
+<head><meta charset="utf-8">
+<style>
+  body { background: #0a0c12; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  .scene { display: grid; place-items: center; }
+  .front { position: relative; z-index: 1; }
+</style></head>
+<body>
+<main data-sequence data-transition="fade 0.5">
+  <section class="scene" data-duration="3.5">
+    <mw-include src="../../blocks/gradient-bg.html"></mw-include>
+    <mw-include src="../../blocks/title-card.html" kicker="Benchmark" title="Typical explainer content" subtitle="Text, motion, charts and holds"></mw-include>
+  </section>
+  <section class="scene" data-duration="3.5" style="background:#0a0c12">
+    <div class="front"><mw-include src="../../blocks/bar-chart.html" title="Revenue" values="12,19,31,48" labels="Q1,Q2,Q3,Q4" highlight="3"></mw-include></div>
+  </section>
+  <section class="scene" data-duration="4" style="background:#0a0c12">
+    <div class="front"><mw-include src="../../blocks/checklist.html" title="Done" every="0.4"><li>Write</li><li>Check</li><li>Render</li></mw-include></div>
+  </section>
+</main>
+</body>
+</html>

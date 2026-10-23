@@ -19,11 +19,21 @@ usage: <mw-include src="blocks/word-pop.html" text="Stop|editing|videos|*by hand
     if (i < parts.length - 1) el.setAttribute('data-duration', String(every));
     root.appendChild(el);
   });
+  // Shrink any phrase that would not fit the frame width.
+  mw.wait(document.fonts.ready.then(() => {
+    const avail = mw.width - 2 * 80 * (mw.height / 1080) * Math.min(1, mw.width / mw.height * 1.2);
+    for (const el of root.children) {
+      const was = el.style.display; el.style.display = 'block';
+      const w = el.scrollWidth, fs = parseFloat(getComputedStyle(el).fontSize);
+      if (w > avail) el.style.fontSize = Math.floor(fs * (avail / w) * 0.98) + 'px';
+      el.style.display = was;
+    }
+  }));
 })();
 </script>
 <style>
 .mwb-pop{position:absolute;inset:0;display:grid;place-items:center}
-.mwb-pop__w{grid-area:1/1;font-size:calc(var(--px)*var(--size));font-weight:900;letter-spacing:-.04em;text-transform:uppercase;line-height:1;text-align:center;padding:0 calc(var(--px)*80);
+.mwb-pop__w{grid-area:1/1;font-size:calc(var(--px)*var(--size));font-weight:900;letter-spacing:-.04em;text-transform:uppercase;line-height:1;text-align:center;
   animation:mwb-pop-in .32s var(--ease-out-back) both}
 .mwb-pop__w.is-hl{color:var(--accent)}
 @keyframes mwb-pop-in{from{scale:1.6;opacity:0;filter:blur(calc(var(--px)*10))}}

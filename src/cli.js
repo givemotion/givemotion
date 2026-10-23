@@ -183,7 +183,7 @@ async function cmdInspect(args) {
 
 async function cmdDev(args) {
   const { dev } = await import('./dev.js');
-  await dev(inputOf(args), { port: args.port ? +args.port : undefined, open: args.open });
+  await dev(inputOf(args), { port: args.port ? +args.port : undefined, open: args.open, data: loadData(args) });
 }
 
 async function cmdInit(args) {

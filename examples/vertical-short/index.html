@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- Vertical short (9:16) with kinetic type, word-by-word captions, a progress bar and music.
+     Render: npx motionwright render examples/vertical-short/index.html -o out/short.mp4 -->
+<html data-width="1080" data-height="1920" data-fps="30" data-duration="11">
+<head>
+<meta charset="utf-8">
+<style>
+  body { background: #08080c; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  .scene { display: grid; place-items: center; }
+  .progress { position: absolute; left: 60px; right: 60px; top: 70px; height: 10px; border-radius: 99px; background: #ffffff22; z-index: 30; overflow: hidden; }
+  .progress i { display: block; height: 100%; background: linear-gradient(90deg, #ffd23f, #ff7a59); transform-origin: left; animation: grow 11s linear both; }
+  @keyframes grow { from { scale: 0 1; } }
+  .handle { position: absolute; top: 120px; left: 0; right: 0; text-align: center; font-size: 34px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px #0009; z-index: 30; }
+  .card { position: relative; z-index: 1; width: 860px; padding: 56px; border-radius: 44px; background: #14151d; border: 1px solid #ffffff18; box-shadow: 0 40px 100px #000a; }
+  .card h2 { margin: 0 0 30px; font-size: 64px; letter-spacing: -.03em; }
+  .card code { display: block; font: 40px/1.5 "JetBrains Mono", "DejaVu Sans Mono", monospace; color: #a5d6ff; white-space: pre; }
+  .emoji { font-size: 260px; line-height: 1; position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+  <audio src="assets/music.m4a" data-volume="0.4" data-fade-out="1"></audio>
+  <div class="progress"><i></i></div>
+  <div class="handle" data-enter="fade 0.5">@yourchannel</div>
+
+  <main data-sequence data-transition="zoom 0.4">
+    <section class="scene" data-duration="2.4">
+      <mw-include src="../../blocks/gradient-bg.html" c1="#f97316" c2="#db2777" c3="#7c3aed"></mw-include>
+      <mw-include src="../../blocks/word-pop.html" text="Stop|editing|videos|*by hand*" every="0.5" size="190"></mw-include>
+    </section>
+    <section class="scene" data-duration="4.2">
+      <mw-include src="../../blocks/grid-bg.html" glow="#f97316"></mw-include>
+      <div class="card" data-enter="rise 0.8">
+        <h2>video.html</h2>
+        <code data-type="40" data-type-delay="0.6" data-type-caret>&lt;h1 data-enter="pop"&gt;
+  Hello
+&lt;/h1&gt;</code>
+      </div>
+    </section>
+    <section class="scene" data-duration="4.8">
+      <mw-include src="../../blocks/gradient-bg.html" c1="#0ea5e9" c2="#7c3aed" c3="#22c55e"></mw-include>
+      <div class="emoji" data-enter="pop 0.7">🎬</div>
+    </section>
+  </main>
+
+  <!-- Captions run over the whole video -->
+  <mw-include src="../../blocks/captions.html" file="assets/captions.json" position="bottom" size="64" words="4"></mw-include>
+</body>
+</html>

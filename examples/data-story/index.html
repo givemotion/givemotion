@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- A data story driven by JSON. Edit data.json (or pass --data other.json / --props '{...}') and re-render.
+     {{data.path}} is filled in before the page loads, so it works in any attribute or text.
+     Render: npx motionwright render examples/data-story/index.html --data examples/data-story/data.json -o out/data-story.mp4 -->
+<html data-width="1920" data-height="1080" data-fps="30">
+<head>
+<meta charset="utf-8">
+<style>
+  body { background: #070910; color: #f2f4f8; font-family: Inter, system-ui, sans-serif; }
+  .scene { display: grid; place-items: center; }
+  .front { position: relative; z-index: 1; }
+  .note { position: absolute; left: 160px; bottom: 96px; z-index: 1; font-size: 36px; color: #aab2c5; }
+  .note b { color: #fff; }
+</style>
+<!-- Default data, used when no --data is passed -->
+<script type="application/json" id="mw-data">
+{ "title": "How we grew", "weeks": ["W1","W2","W3","W4"], "users": [10,14,12,20], "growth": "2×",
+  "quarters": ["Q1","Q2"], "revenue": [10,20], "nps": 50 }
+</script>
+</head>
+<body>
+<main data-sequence data-transition="slide-up 0.7 in-out-cubic">
+  <section class="scene" data-duration="3.4">
+    <mw-include src="../../blocks/grid-bg.html" glow="#4f46e5"></mw-include>
+    <mw-include src="../../blocks/title-card.html" kicker="Yearly report" title="{{data.title}}" subtitle="Three numbers that matter"></mw-include>
+  </section>
+
+  <section class="scene" data-duration="5">
+    <mw-include src="../../blocks/grid-bg.html" glow="#0ea5e9"></mw-include>
+    <div class="front"><mw-include src="../../blocks/line-chart.html" title="Weekly active users" values="{{data.users}}" labels="{{data.weeks}}"></mw-include></div>
+    <div class="note" data-enter="fade-up 0.6 2.6">Up <b>{{data.growth}}</b> since January.</div>
+  </section>
+
+  <section class="scene" data-duration="5">
+    <mw-include src="../../blocks/grid-bg.html" glow="#7c3aed" pattern="dots"></mw-include>
+    <div class="front"><mw-include src="../../blocks/bar-chart.html" title="Revenue (k$)" values="{{data.revenue}}" labels="{{data.quarters}}" suffix="k" highlight="3" color="#a78bfa"></mw-include></div>
+  </section>
+
+  <section class="scene" data-duration="3.8">
+    <mw-include src="../../blocks/gradient-bg.html" c1="#1e40af" c2="#0f766e" c3="#6d28d9"></mw-include>
+    <div class="front"><mw-include src="../../blocks/stat.html" value="{{data.nps}}" label="Customer score (NPS)" delta="best ever" accent="#5eead4"></mw-include></div>
+  </section>
+</main>
+</body>
+</html>

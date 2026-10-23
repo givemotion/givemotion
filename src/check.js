@@ -59,6 +59,7 @@ const PAGE_ANALYZE = String.raw`(() => {
     const u = union(rs);
     texts.push({ el, rs, u, op, moving: isMoving(el) });
   }
+  const reportedBox = new Set(); // one report per container per frame
   for (const t of texts) {
     const { el, u } = t;
     const cs = getComputedStyle(el);
@@ -77,6 +78,8 @@ const PAGE_ANALYZE = String.raw`(() => {
       if (/(hidden|clip)/.test(acs.overflowX + acs.overflowY) && !anc.classList.contains('scene') && anc.getAttribute('data-sequence') == null) {
         const r = anc.getBoundingClientRect();
         if (r.width > 0 && r.height > 0 && (u.left < r.left - 2 || u.right > r.right + 2 || u.top < r.top - 2 || u.bottom > r.bottom + 2)) {
+          if (reportedBox.has(anc)) break;
+          reportedBox.add(anc);
           out.push({ severity: 'error', code: 'text-clipped', selector: sel(el), text: snippet(el), message: 'Text is cut off by ' + (anc === el ? 'its own box' : sel(anc)) + ' (overflow: hidden).', fix: 'Make the text smaller, let it wrap, or make the container bigger.' });
           break;
         }
@@ -94,7 +97,8 @@ const PAGE_ANALYZE = String.raw`(() => {
       if (hasBox) {
         const r = anc.getBoundingClientRect();
         const slack = 2, vslack = 0.3 * parseFloat(cs.fontSize);
-        if (u.right > r.right + slack || u.left < r.left - slack || u.bottom > r.bottom + vslack || u.top < r.top - vslack) {
+        if ((u.right > r.right + slack || u.left < r.left - slack || u.bottom > r.bottom + vslack || u.top < r.top - vslack) && !reportedBox.has(anc)) {
+          reportedBox.add(anc);
           out.push({ severity: 'warning', code: 'text-overflows-box', selector: sel(el), text: snippet(el), message: 'Text spills outside its box ' + sel(anc) + '.', fix: 'Add padding/width to the box, shorten the text, or reduce font-size.' });
         }
         break;
@@ -140,7 +144,13 @@ const PAGE_ANALYZE = String.raw`(() => {
     if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) out.push({ severity: 'error', code: 'image-broken', selector: sel(img), message: 'Image did not load: ' + img.getAttribute('src'), fix: 'Check the file path (relative to the HTML file).' });
   }
   // Text boxes for the contrast pass
-  window.__mwTextBoxes = texts.filter((t) => !t.clipText && !t.moving).map((t) => ({ sel: sel(t.el), text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, large: t.fontPx >= 32 * PX || (t.bold && t.fontPx >= 24 * PX) }));
+  // Text that is mostly transparent is usually fading in or out; don't judge its contrast.
+  window.__mwTextBoxes = texts.filter((t) => !t.clipText && !t.moving && t.op >= 0.75).map((t) => {
+    const cs = getComputedStyle(t.el);
+    // A dark/light text-shadow or outline gives text its own backing; be lenient then.
+    const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;
+    return { sel: sel(t.el), text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, backed, large: t.fontPx >= 32 * PX || (t.bold && t.fontPx >= 24 * PX) };
+  });
   return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length };
 })()`;
 
@@ -156,7 +166,9 @@ function contrastScript(dataUrl, scale) {
   const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
   const S = ${scale};
   const lum = (r, g2, b) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(r) + 0.7152 * f(g2) + 0.0722 * f(b); };
-  const parse = (s) => { const m = /rgba?\\(([^)]+)\\)/.exec(s); const p = m ? m[1].split(/[ ,/]+/).filter(Boolean).map(parseFloat) : [0,0,0,1]; return [p[0], p[1], p[2], p[3] ?? 1]; };
+  // Any CSS color (rgb, hsl, oklab, color-mix…) → sRGB bytes, by painting one pixel.
+  const pc = document.createElement('canvas'); pc.width = pc.height = 1; const pg = pc.getContext('2d', { willReadFrequently: true });
+  const parse = (s) => { pg.clearRect(0, 0, 1, 1); pg.fillStyle = '#000'; pg.fillStyle = s; pg.fillRect(0, 0, 1, 1); const d = pg.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
   const res = [];
   for (const b of window.__mwTextBoxes || []) {
     const samples = [];
@@ -178,8 +190,8 @@ function contrastScript(dataUrl, scale) {
     }).sort((x, y) => x - y);
     const worst = ratios[Math.floor(ratios.length * 0.1)];
     const median = ratios[Math.floor(ratios.length * 0.5)];
-    const need = b.large ? 3 : 4.5;
-    if (median < need || worst < need * 0.66) res.push({ severity: median < (b.large ? 2 : 3) ? 'error' : 'warning', code: 'low-contrast', selector: b.sel, text: b.text,
+    const need = b.backed ? 1.6 : b.large ? 3 : 4.5;
+    if (median < need || worst < need * 0.66) res.push({ severity: median < (b.backed ? 1.3 : b.large ? 2 : 3) ? 'error' : 'warning', code: 'low-contrast', selector: b.sel, text: b.text,
       message: 'Text contrast is ' + median.toFixed(1) + ':1 against what is behind it' + (worst < median * 0.8 ? ' (worst spots ' + worst.toFixed(1) + ':1)' : '') + '; aim for ' + need + ':1.',
       fix: 'Use a lighter/darker text color, add a solid or semi-opaque backing, or a text-shadow.' });
   }
@@ -224,30 +236,20 @@ export async function check(input, opts = {}) {
     push(info.issues);
     const fps = info.fps;
     const lastT = Math.max(0, info.duration - 1 / fps);
-    // One forward pass over the video (works for stateful pages too).
-    // A moment is "at rest" when the next frame is identical; those are analysed.
-    const dt = 1 / fps;
-    const step = Math.max(2 / fps, Math.min(0.25, info.duration / 240));
-    const keys = keyTimes(info, 24);
+    // One forward pass over the video (works for stateful pages too). Every sample is analysed;
+    // elements that are mid-animation at that moment are skipped by the page-side analyser.
+    const step = Math.max(1 / fps, Math.min(0.1, info.duration / 300));
     const planned = new Set();
-    for (let t = 0; t <= lastT - dt + 1e-9; t += step) planned.add(Math.round(t * fps) / fps);
-    for (const k of keys) planned.add(Math.max(0, Math.round((k - dt) * fps) / fps));
+    for (let t = 0; t <= lastT + 1e-9; t += step) planned.add(Math.round(t * fps) / fps);
+    for (const k of keyTimes(info, 24)) planned.add(k);
     const times = [...planned].sort((a, b) => a - b);
-    const contrastEvery = Math.max(info.duration / (opts.contrastSamples || 8), 0.5);
+    const contrastEvery = Math.max(info.duration / (opts.contrastSamples || 10), 0.4);
     let lastContrast = -Infinity;
-    let cur = -1;
-    for (const t0 of times) {
-      if (t0 <= cur) continue;
-      await ctx.page.seek(t0);
-      const t = Math.min(lastT, t0 + dt);
-      const r2 = await ctx.page.seek(t);
-      cur = t;
-      const atRest = !r2.dirty;
-      const isKey = keys.some((k) => Math.abs(k - t) < dt / 2);
-      if (!atRest && !isKey) continue;
+    for (const t of times) {
+      await ctx.page.seek(t);
       const a = await ctx.page.evaluate(PAGE_ANALYZE);
       push(a.issues, t);
-      if (a.boxes && (t - lastContrast >= contrastEvery || isKey && t - lastContrast >= contrastEvery / 2)) {
+      if (a.boxes && t - lastContrast >= contrastEvery) {
         lastContrast = t;
         await ctx.page.evaluate(PAGE_HIDE_TEXT);
         const png = await ctx.page.capture('png');
@@ -274,13 +276,16 @@ function pickSpread(arr, n) {
   return [...new Set(out)];
 }
 
-/** Same issue at many times → one entry with a time range. */
+/** Same issue at many times → one entry with a time range (the worst message is kept). */
 function mergeIssues(list) {
+  const rank = { error: 0, warning: 1, info: 2 };
   const map = new Map();
   for (const i of list) {
-    const k = [i.severity, i.code, i.selector, i.message].join('|');
-    if (!map.has(k)) map.set(k, { ...i, times: i.time != null ? [i.time] : [] });
-    else if (i.time != null) map.get(k).times.push(i.time);
+    const k = [i.code, i.selector || i.message].join('|');
+    const cur = map.get(k);
+    if (!cur) { map.set(k, { ...i, times: i.time != null ? [i.time] : [] }); continue; }
+    if (i.time != null) cur.times.push(i.time);
+    if (rank[i.severity] < rank[cur.severity]) { cur.severity = i.severity; cur.message = i.message; }
   }
   const out = [...map.values()].map((i) => {
     const ts = i.times.sort((a, b) => a - b);
@@ -289,7 +294,6 @@ function mergeIssues(list) {
     if (ts.length) { r.time = ts[0]; if (ts.length > 1) r.until = ts[ts.length - 1]; }
     return r;
   });
-  const rank = { error: 0, warning: 1, info: 2 };
   return out.sort((a, b) => rank[a.severity] - rank[b.severity] || (a.time ?? -1) - (b.time ?? -1));
 }
 

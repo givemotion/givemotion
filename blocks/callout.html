@@ -21,15 +21,27 @@ usage: <mw-include src="blocks/callout.html" x="980" y="420" label="Click Deploy
   const label = root.querySelector('.mwb-call__label');
   label.style.left = lx + 'px'; label.style.top = ly + 'px';
   label.style.translate = side === 'left' ? '-100% -50%' : side === 'top' ? '-50% -100%' : side === 'bottom' ? '-50% 0' : '0 -50%';
-  // arrow from label edge to near the target, slightly curved
-  const sx = lx - (dir[0] / n) * 24 * S, sy = ly - (dir[1] / n) * 24 * S;
-  const ex = x + (dir[0] / n) * 46 * S, ey = y + (dir[1] / n) * 46 * S;
-  const cx = (sx + ex) / 2 - (dir[1] / n) * 50 * S, cy = (sy + ey) / 2 + (dir[0] / n) * 50 * S;
-  const ang = Math.atan2(ey - cy, ex - cx), h = 22 * S;
-  const p = (a) => `${ex - Math.cos(ang + a) * h},${ey - Math.sin(ang + a) * h}`;
   const svg = root.querySelector('svg');
-  svg.querySelector('.mwb-call__path').setAttribute('d', `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`);
-  svg.querySelector('.mwb-call__head').setAttribute('d', `M${p(0.5)} L${ex},${ey} L${p(-0.5)}`);
+  const draw = (lx2, ly2) => {
+    // arrow from the label edge to near the target, slightly curved
+    const vx = x - lx2, vy = y - ly2, len = Math.hypot(vx, vy) || 1, ux = vx / len, uy = vy / len;
+    const sx = lx2 + ux * 24 * S, sy = ly2 + uy * 24 * S;
+    const ex = x - ux * 46 * S, ey = y - uy * 46 * S;
+    const cx = (sx + ex) / 2 + uy * 50 * S, cy = (sy + ey) / 2 - ux * 50 * S;
+    const ang = Math.atan2(ey - cy, ex - cx), h = 22 * S;
+    const p = (a) => `${ex - Math.cos(ang + a) * h},${ey - Math.sin(ang + a) * h}`;
+    svg.querySelector('.mwb-call__path').setAttribute('d', `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`);
+    svg.querySelector('.mwb-call__head').setAttribute('d', `M${p(0.5)} L${ex},${ey} L${p(-0.5)}`);
+  };
+  draw(lx, ly);
+  // Keep the label inside the frame (and re-aim the arrow).
+  mw.wait(document.fonts.ready.then(() => {
+    const r = label.getBoundingClientRect(), m = 40 * S;
+    let dx = 0, dy = 0;
+    if (r.right > mw.width - m) dx = mw.width - m - r.right; else if (r.left < m) dx = m - r.left;
+    if (r.bottom > mw.height - m) dy = mw.height - m - r.bottom; else if (r.top < m) dy = m - r.top;
+    if (dx || dy) { label.style.left = (lx + dx) + 'px'; label.style.top = (ly + dy) + 'px'; draw(lx + dx, ly + dy); }
+  }));
 })();
 </script>
 <style>

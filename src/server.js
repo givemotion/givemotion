@@ -41,6 +41,7 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     body = body.replace(/<!--\s*block:[\s\S]*?-->\s*/, '');
     const vars = { ...attrs, content: inner != null ? expandIncludes(inner, fileDir, rootDir, depth + 1, seen) : '' };
     body = body.replace(/\{\{\s*([\w.-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, key, def) => {
+      if (key.startsWith('data.')) return mm; // resolved later from render data
       const v = vars[key];
       if (v != null && v !== '') return key === 'content' ? v : esc(v);
       return def != null ? def.trim() : '';
@@ -62,6 +63,25 @@ function parseAttrs(s) {
   return out;
 }
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+/**
+ * Replace {{data.path}} / {{data.path|default}} with values from the render data
+ * (--data / --props, or the page's <script type="application/json" id="mw-data">).
+ * Arrays become comma lists, objects become JSON. Values are HTML-escaped.
+ */
+export function applyData(html, data) {
+  if (data == null) {
+    const m = /<script[^>]*id=["']mw-data["'][^>]*>([\s\S]*?)<\/script>/i.exec(html);
+    if (m) { try { data = JSON.parse(m[1]); } catch { data = null; } }
+  }
+  return html.replace(/\{\{\s*data\.([\w.\[\]-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, path, def) => {
+    const v = path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((o, k) => (o == null ? o : o[k]), data);
+    if (v == null) return def != null ? esc(def.trim()) : '';
+    if (Array.isArray(v)) return esc(v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : x)).join(','));
+    if (typeof v === 'object') return esc(JSON.stringify(v));
+    return esc(String(v));
+  });
+}
 
 export function injectRuntime(html, { inlineConfig } = {}) {
   const tags = `<link rel="stylesheet" href="/__mw/preset.css" data-mw-preset><script>window.__MW_CONFIG = window.__MW_CONFIG || ${JSON.stringify(inlineConfig || { mode: 'preview' })};</script><script src="/__mw/runtime.js"></script>`;
@@ -127,7 +147,7 @@ class FrameExtractor {
  * Start the server for a project root.
  * Returns { url(pathname), port, close, events }.
  */
-export async function startServer({ root, maxW = 3840, maxH = 2160, studio = false, inlineConfig, port: wantPort = 0, host = '127.0.0.1' } = {}) {
+export async function startServer({ root, maxW = 3840, maxH = 2160, studio = false, inlineConfig, port: wantPort = 0, host = '127.0.0.1', data = null } = {}) {
   root = resolve(root);
   const runtime = () => readRuntime();
   const extractor = new FrameExtractor(maxW, maxH);
@@ -168,7 +188,8 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       if (ext === '.html' || ext === '.htm') {
         let html = readFileSync(file, 'utf8');
         html = expandIncludes(html, dirname(file), root);
-        if (!u.searchParams.has('raw')) html = injectRuntime(html, { inlineConfig });
+        html = applyData(html, data);
+        if (!u.searchParams.has('raw')) html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });
         return send(res, 200, MIME[ext], html, { 'Cache-Control': 'no-store' });
       }
       return serveFile(req, res, file, MIME[ext] || 'application/octet-stream');

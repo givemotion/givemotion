@@ -705,6 +705,9 @@
       const cps = v ? parseFloat(v) : 30;
       const caret = el.hasAttribute('data-type-caret') ? document.createElement('span') : null;
       if (caret) caret.className = 'mw-caret';
+      // Reserve the final size so the layout doesn't jump while typing (block-level elements).
+      const disp = getComputedStyle(el).display;
+      if (disp !== 'inline' && el.offsetHeight > 0 && !el.style.minHeight) el.style.minHeight = el.offsetHeight + 'px';
       typers.push({ el, nodes, total, cps: cps > 0 ? cps : 30, delay: parseTime(el.getAttribute('data-type-delay'), el, 'data-type-delay') ?? 0, caret, last: -1 });
     }
   }
@@ -1130,6 +1133,9 @@
     }
     return out;
   }
+
+  // Read size/fps from <html> right away so CSS (--px, --stage-w) and early scripts see the right values.
+  try { readSettings(); } catch (e) {}
 
   const mw = {
     __runtime: true,

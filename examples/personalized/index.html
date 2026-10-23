@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- One template, many videos. Values come from --props / --data (or the defaults below).
+     npx motionwright render examples/personalized/index.html --props '{"name":"Ada","plan":"Pro","color":"#22c55e"}' -o out/ada.mp4
+     Batch from Node:  for (const p of people) await render('index.html', { data: p, output: `out/${p.name}.mp4` }) -->
+<html data-width="1080" data-height="1080" data-fps="30" data-duration="5">
+<head>
+<meta charset="utf-8">
+<script type="application/json" id="mw-data">{ "name": "Friend", "plan": "Starter", "color": "#8ea2ff", "days": 30 }</script>
+<style>
+  body { background: #0b0d14; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  .wrap { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; text-align: center; padding: 0 90px; }
+  .hi { font-size: 54px; color: #ffffffb8; }
+  h1 { margin: 0; font-size: 120px; line-height: 1; letter-spacing: -.045em; font-weight: 800; }
+  .plan { padding: 18px 40px; border-radius: 99px; font-size: 44px; font-weight: 800; color: #0b0d14; background: {{data.color}}; box-shadow: 0 20px 60px {{data.color}}55; }
+  .ring { position: absolute; width: 860px; height: 860px; border-radius: 50%; border: 3px solid {{data.color}}33; animation: pulse 3s ease-in-out infinite; }
+  .small { font-size: 36px; color: #ffffff99; }
+</style>
+</head>
+<body>
+  <div class="ring"></div>
+  <div class="wrap">
+    <div class="hi" data-enter="fade-up 0.6">Welcome aboard,</div>
+    <h1 data-split="chars" data-enter="pop 0.5 0.3" data-stagger="0.04">{{data.name}}</h1>
+    <div class="plan" data-enter="scale 0.6 1.0 out-back">{{data.plan}} plan</div>
+    <div class="small" data-enter="fade 0.6 1.6">Your first <span data-count="0 {{data.days}}" data-count-delay="1.6"></span> days are on us.</div>
+  </div>
+</body>
+</html>

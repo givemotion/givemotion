@@ -1,0 +1,9 @@
+node_modules/
+out/
+snapshots/
+*.mp4
+*.mov
+*.webm
+*.gif
+!examples/**/assets/*.mp4
+.DS_Store

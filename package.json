@@ -1,0 +1,26 @@
+{
+  "name": "motionwright",
+  "version": "0.1.0",
+  "description": "HTML in, video out. A fast, deterministic video renderer built for AI agents: write HTML + CSS, get MP4.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "motionwright": "src/cli.js",
+    "mw": "src/cli.js"
+  },
+  "main": "src/api.js",
+  "exports": {
+    ".": "./src/api.js",
+    "./runtime": "./src/runtime/runtime.js",
+    "./preset.css": "./src/runtime/preset.css",
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "blocks", "templates", "skills", "SKILL.md", "README.md", "LICENSE", "llms.txt"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/",
+    "bench": "node src/cli.js bench"
+  },
+  "keywords": ["video", "html-to-video", "animation", "motion-graphics", "ai", "agents", "claude", "render", "mp4", "ffmpeg", "headless-chrome"],
+  "dependencies": {}
+}

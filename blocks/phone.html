@@ -1,6 +1,6 @@
 <!-- block:
 description: A modern phone frame. Shows an image (image=…) or any HTML between the tags as the screen.
-params: image (path), height (px at 1080p, default 860), color (frame color, default #111)
+params: image (path), height (px at 1080p; scales with the short side, default 860), color (frame color, default #111)
 usage: <mw-include src="blocks/phone.html" image="assets/app.png" data-duration="4"></mw-include>
 -->
 <div class="mwb-phone" style="--ph:{{height|860}};--frame:{{color|#111}}" data-enter="rise 0.9">

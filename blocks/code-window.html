@@ -1,6 +1,6 @@
 <!-- block:
 description: Editor window with syntax highlighting and an optional typing effect. Put the code between the tags as plain text (no escaping needed).
-params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p, default 1200), size (font px, default 34)
+params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p; scales with the short side, default 1200), size (font px, default 34)
 usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing="40" data-duration="6">const answer = await ai.run(prompt);</mw-include>
 -->
 <div class="mwb-code" style="--w:{{width|1200}};--fs:{{size|34}}" data-enter="scale 0.7 0 out-expo">

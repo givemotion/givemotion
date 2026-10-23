@@ -1,6 +1,6 @@
 <!-- block:
 description: A clean browser window frame. Shows an image (image=…) or any HTML you put between the tags. Optional slow scroll.
-params: url, image (path), width (px at 1080p, default 1500), height (default 860), scroll (pixels to scroll the page over the clip, default 0), theme (dark|light)
+params: url, image (path), width (px at 1080p; scales with the short side, default 1500), height (default 860), scroll (pixels to scroll the page over the clip, default 0), theme (dark|light)
 usage: <mw-include src="blocks/browser-window.html" url="example.com/pricing" image="assets/site.png" scroll="600" data-duration="5"></mw-include>
 -->
 <div class="mwb-browser mwb-browser--{{theme|dark}}" style="--w:{{width|1500}};--h:{{height|860}}" data-scroll="{{scroll|0}}" data-enter="rise 0.9">
@@ -17,7 +17,7 @@ usage: <mw-include src="blocks/browser-window.html" url="example.com/pricing" im
     const page = root.querySelector('.mwb-browser__page');
     mw.onFrame(root, (t, f) => {
       const p = mw.interpolate(t, [0.8, Math.max(1.2, f.clipDuration - 0.8)], [0, 1], { easing: 'in-out-cubic' });
-      page.style.translate = `0 ${-p * px * (mw.height / 1080)}px`;
+      page.style.translate = `0 ${-p * px * mw.px}px`;
     });
   }
 })();

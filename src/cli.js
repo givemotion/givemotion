@@ -61,13 +61,35 @@ Render options
 
 Docs: SKILL.md in the package, or \`motionwright skill\` to install it for your agent.`;
 
+const CMD_HELP = {
+  render: 'motionwright render [file.html] -o out.mp4 [options]\n\nSee "Render options" in `motionwright --help`.',
+  still: 'motionwright still [file.html] -t <seconds> | --frame <n> -o frame.png [--transparent] [--json]',
+  snapshot: `motionwright snapshot [file.html] [options]
+  -o <dir>          Where to write (default: snapshots/ next to the HTML file)
+  --times 1,2.5,4   Exact moments (seconds) instead of automatic ones
+  --every 0.5       One frame every N seconds
+  --max 12          Max automatic moments (default 12; one per scene when settled)
+  --sheet-only      Only write sheet.png
+  --cols 3          Columns in the sheet
+  --transparent     Show a checkerboard behind (auto-detected when the page has no background)
+  --json            Machine-readable output`,
+  check: `motionwright check [file.html] [--json] [--samples 10] [--transparent]
+  Exit code 1 when there are errors. Warnings do not fail.`,
+  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), media, issues.',
+  dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
+  init: 'motionwright init [dir] [--force]',
+  add: 'motionwright add <block> [more…] [--dir blocks]',
+  blocks: 'motionwright blocks [--json]',
+  bench: 'motionwright bench [file.html] [--workers n] [--json]',
+};
+
 const BOOLS = ['json', 'force', 'transparent', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0] && !argv[0].startsWith('-') ? argv[0] : (argv.includes('--version') || argv.includes('-v') ? 'version' : 'help');
   const args = parseArgs(cmd === argv[0] ? argv.slice(1) : argv, { boolean: BOOLS, alias: { o: 'output', t: 'time', w: 'workers', q: 'quality', h: 'help', f: 'format' } });
-  if (args.help && cmd !== 'help') return console.log(HELP);
+  if (args.help && cmd !== 'help') return console.log(CMD_HELP[cmd] || HELP);
   switch (cmd) {
     case 'help': return console.log(HELP);
     case 'version': return console.log(pkg.version);
@@ -148,19 +170,19 @@ async function cmdStill(args) {
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, r.buffers[0]);
     if (args.json) console.log(JSON.stringify({ output: out, time: t }));
-    else console.error(`wrote ${relative(process.cwd(), out)} (t=${t}s)`);
+    else console.error(`wrote ${shortPath(out)} (t=${t}s)`);
   } catch (e) { fail(e, args); }
 }
 
 async function cmdSnapshot(args) {
   const { snapshot } = await import('./check.js');
   try {
-    const r = await snapshot(inputOf(args), { ...commonOpts(args), output: args.output, times: args.times, every: args.every, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, cols: args.cols ? +args.cols : undefined });
+    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times, every: args.every, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, cols: args.cols ? +args.cols : undefined });
     if (args.json) console.log(JSON.stringify(r, null, 2));
     else {
-      console.log(`sheet: ${relative(process.cwd(), r.sheet)}`);
+      console.log(`sheet: ${shortPath(r.sheet)}`);
       console.log(`times: ${r.times.map((t) => t.toFixed(2) + 's').join(', ')}`);
-      if (r.files.length) console.log(`frames: ${relative(process.cwd(), dirname(r.files[0]))}/ (${r.files.length} PNGs)`);
+      if (r.files.length) console.log(`frames: ${shortPath(dirname(r.files[0]))}/ (${r.files.length} PNGs)`);
     }
   } catch (e) { fail(e, args); }
 }
@@ -168,7 +190,7 @@ async function cmdSnapshot(args) {
 async function cmdCheck(args) {
   const { check, formatReport } = await import('./check.js');
   try {
-    const rep = await check(inputOf(args), { ...commonOpts(args), contrastSamples: args.samples ? +args.samples : undefined });
+    const rep = await check(inputOf(args), { ...commonOpts(args), transparent: args.transparent, contrastSamples: args.samples ? +args.samples : undefined });
     if (args.json) console.log(JSON.stringify(rep, null, 2));
     else console.log(formatReport(rep, { file: inputOf(args) }));
     if (!rep.ok) process.exitCode = 1;
@@ -195,7 +217,7 @@ async function cmdInit(args) {
   if (!existsSync(tpl)) throw new Error('Template not found: ' + (args.template || 'starter'));
   copyDir(tpl, dir, args.force);
   installSkill(dir, true);
-  console.log(`Created ${relative(process.cwd(), dir) || '.'}/
+  console.log(`Created ${shortPath(dir) || '.'}/
   index.html                 your video (edit me)
   .claude/skills/motionwright/SKILL.md   how AI agents should use motionwright
   AGENTS.md                  short pointer for other agents
@@ -285,6 +307,8 @@ async function cmdClean() {
   rmSync(join(CACHE_DIR, 'frames'), { recursive: true, force: true });
   console.log(`removed ${join(CACHE_DIR, 'frames')}`);
 }
+
+function shortPath(p) { const r = relative(process.cwd(), p); return r && !r.startsWith('..') ? r : p; }
 
 function fail(e, args) {
   if (args && args.json) console.log(JSON.stringify({ ok: false, error: e.message, issues: e.issues || undefined }, null, 2));

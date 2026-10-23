@@ -1,6 +1,6 @@
 <!-- block:
 description: Before/after comparison: a divider sweeps across to reveal the "after" image. Labels on both sides.
-params: before (image), after (image), before-label, after-label, width (px at 1080p, default 1500), height (default 840), from (0-100, default 100), to (0-100, default 30)
+params: before (image), after (image), before-label, after-label, width (px at 1080p; scales with the short side, default 1500), height (default 840), from (0-100, default 100), to (0-100, default 30)
 usage: <mw-include src="blocks/compare.html" before="assets/old.png" after="assets/new.png" before-label="Before" after-label="After" data-duration="4"></mw-include>
 -->
 <div class="mwb-cmp" style="--w:{{width|1500}};--h:{{height|840}}" data-from="{{from|100}}" data-to="{{to|30}}" data-enter="scale 0.7">

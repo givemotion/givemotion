@@ -1,0 +1,24 @@
+<!-- block:
+description: One big number that counts up, with a label and an optional change badge.
+params: value, from (default 0), label, prefix, suffix, decimals, delta (e.g. "+38%"), accent (color), size (px at 1080p, default 220)
+usage: <mw-include src="blocks/stat.html" value="12500" prefix="$" label="Saved per month" delta="+38%" data-duration="3"></mw-include>
+-->
+<div class="mwb-stat" style="--accent:{{accent|#7c9cff}};--size:{{size|220}}">
+  <div class="mwb-stat__num" data-enter="scale 0.8 0 out-expo"><span data-count="{{from|0}} {{value|100}}" data-count-duration="1.6" data-count-prefix="{{prefix}}" data-count-suffix="{{suffix}}" data-count-decimals="{{decimals}}"></span></div>
+  <div class="mwb-stat__row">
+    <div class="mwb-stat__label" data-enter="fade-up 0.6 0.3">{{label}}</div>
+    <div class="mwb-stat__delta" data-enter="pop 0.5 1.2">{{delta}}</div>
+  </div>
+</div>
+<script>
+(() => { const s = document.currentScript.previousElementSibling.querySelector('[data-count]'); if (!s.getAttribute('data-count-decimals')) s.removeAttribute('data-count-decimals'); })();
+</script>
+<style>
+.mwb-stat{display:flex;flex-direction:column;align-items:center;text-align:center;gap:calc(var(--px)*18)}
+.mwb-stat__num{font-size:calc(var(--px)*var(--size));font-weight:800;letter-spacing:-.045em;line-height:.95;font-variant-numeric:tabular-nums;
+  background:linear-gradient(180deg,#fff 30%,color-mix(in oklab,var(--accent),white 35%));-webkit-background-clip:text;background-clip:text;color:transparent}
+.mwb-stat__row{display:flex;align-items:center;gap:calc(var(--px)*20)}
+.mwb-stat__label{font-size:calc(var(--px)*44);opacity:.75}
+.mwb-stat__delta{font-size:calc(var(--px)*34);font-weight:700;padding:calc(var(--px)*8) calc(var(--px)*18);border-radius:99px;background:color-mix(in oklab,var(--accent),transparent 78%);color:color-mix(in oklab,var(--accent),white 40%)}
+.mwb-stat__label:empty,.mwb-stat__delta:empty{display:none}
+</style>

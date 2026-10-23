@@ -10,11 +10,11 @@ A composition is one HTML file. Every frame is that page at a moment in time. CS
 ## The loop (always do all four)
 
 1. Write or edit the `.html` composition.
-2. `npx motionwright check video.html` — fix every ✖ error. Fix ⚠ warnings unless you meant it.
-3. `npx motionwright snapshot video.html` — **open `snapshots/sheet.png` and look at it.** It shows the key moment of every scene. Fix anything that looks wrong, cramped, cut off, or ugly. Repeat 2–3.
+2. `npx motionwright check video.html` — fix every ✖ error. Fix ⚠ warnings unless you meant it. (Exit code 1 when there are errors.)
+3. `npx motionwright snapshot video.html` — **open `snapshots/sheet.png` (next to the HTML file) and look at it.** It shows the key moment of every scene. Fix anything that looks wrong, cramped, cut off, or ugly. Repeat 2–3.
 4. `npx motionwright render video.html -o out/video.mp4`
 
-Use `--json` on any command for machine-readable output. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment. Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
+Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose. Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
 
 ## Minimal composition
 
@@ -51,6 +51,7 @@ No script tag or import is needed: the runtime and a preset stylesheet are injec
 - **Video length** = `data-duration` on `<html>`, otherwise the end of the last clip.
 - **Sequences.** `data-sequence` on a container plays its children one after another. Every child needs `data-duration`. Options: `data-gap="0.2"` (negative = overlap), `data-transition="<name> <seconds> [easing]"` which overlaps neighbours and animates the change.
   Transitions: `fade` `slide-left` `slide-right` `slide-up` `slide-down` (push) `wipe-left` `wipe-right` `wipe-up` `wipe-down` `zoom` `blur` `iris` `fade-up`.
+  A child can set its own `data-transition` (how it comes in). **Each transition overlaps two scenes, so it takes its length off the total**: 3 scenes of 4s with `fade 0.5` last 11s. `npx motionwright inspect video.html` prints the real start/end of every clip.
 - **CSS animations run on clip time.** `animation: fade-up .6s .4s both` starts .4s after its clip appears, in every frame of the render. Use `both` (or `backwards`) fill so the element is hidden before its delay.
 - Timers, `requestAnimationFrame`, `Date.now()`, `performance.now()` are virtual and `Math.random()` is seeded. Normal web animation code just works.
 
@@ -75,7 +76,7 @@ Enter/exit use the `translate`, `scale`, `opacity`, `filter`, `clip-path` proper
 - Keyframes: `fade-in` `fade-out` `fade-up` `fade-down` `fade-left` `fade-right` `scale-in` `pop-in` `zoom-in` `blur-in` `slide-in-up/down/left/right` `wipe-right/left/up/down` `draw` `spin` `float` `pulse` `shimmer` `blink`.
   Example: `animation: pop-in .5s var(--ease-out-back) .3s both;`
 - Easing variables: `--ease-out-expo` `--ease-out-back` `--ease-in-out-cubic` `--ease-spring` `--ease-bouncy` `--ease-snappy` `--ease-gentle` and the usual `--ease-in/out/in-out-{quad,cubic,quart,expo,back}`.
-- `var(--px)` = 1px at 1080p, so `calc(var(--px) * 48)` scales with the video height. `var(--stage-w)` / `var(--stage-h)` = frame size.
+- `var(--px)` = 1px when the **short side** of the frame is 1080px (1920×1080, 1080×1920 and 1080×1080 all have `--px` = 1px; 4K has 2px). `calc(var(--px) * 48)` scales with the video. In JS: `mw.px`. `var(--stage-w)` / `var(--stage-h)` = frame size. Block sizes ("px at 1080p") use the same unit.
 - Stagger with split text: `.title .word { animation: fade-up .5s var(--ease-out-expo) calc(var(--i) * 60ms) both; }`
 - SVG line drawing: `<path pathLength="1" style="stroke-dasharray:1; animation: draw 1.2s var(--ease-in-out-cubic) both">`.
 
@@ -111,16 +112,23 @@ Rules for seekable JS:
 
 - Data: `npx motionwright render v.html --props '{"title":"Q3 results"}'` (or `--data file.json`) then `<h1 data-bind="title">`, `<img data-bind-src="logo">`, `data-bind-style-color="brand"`, or `mw.data` in JS.
 - Reuse: `<mw-include src="parts/intro.html" title="Hi" data-start="2">optional inner HTML</mw-include>` inserts the file; `{{title}}` / `{{title|default}}` / `{{content}}` are replaced.
+- Layering: `.scene` is its own layer. Background blocks (`gradient-bg`, `grid-bg`) always sit behind the scene's content. Full-frame blocks (`title-card`, `end-card`, `quote`, `logo-reveal`, `word-pop`, `captions`, `callout`, `cursor`) cover the scene themselves; other blocks are normal boxes you place with flex/grid.
+- `class`, `style`, `id` and `data-*` on `<mw-include>` go to a wrapper `div` around the block. Block parameters are any other attribute.
 - Ready-made blocks: `npx motionwright blocks` lists them; `npx motionwright add lower-third captions` copies them into `./blocks/`. Each file's header shows its params and usage. Blocks: title-card, lower-third, captions, code-window, bar-chart, line-chart, stat, checklist, steps, browser-window, phone, cursor, callout, compare, quote, word-pop, logo-reveal, end-card, gradient-bg, grid-bg.
 
 ## Making it look good
 
 - Layout for 1920×1080: keep text ≥ 96px from the edges. Titles 96–160px, body ≥ 36px, captions ≥ 56px. Max ~10 words on screen at once.
+- Vertical 1080×1920 (Shorts/Reels/TikTok): the same pixel sizes work (the short side is 1080). Keep the top 220px and bottom 380px free of key text (app buttons and titles cover them) and 60px at the sides. Titles 90–140px, captions 56–72px, max ~6 words per line.
 - One idea per scene, 2.5–5s each. Let things hold ≥ 1s after they land before the next change.
 - Enter with ease-out (`out-expo`, `out-back`, `spring`), exit with ease-in, and keep exits shorter than entrances. Stagger 40–90ms between items.
 - Animate `opacity`, `translate`, `scale`, `rotate`, `filter`, `clip-path`. Avoid animating `width`/`height`/`top`/`left` (slower, jittery).
 - Prefer depth: soft gradients, subtle grain, shadows, slight blur on entrance. Avoid pure #000 backgrounds and pure #fff text on busy images (add a scrim).
 - Use `.scene` for full-frame scenes and absolute layout inside; use flex/grid for groups.
+
+## Overlays with transparency
+
+Leave `<html>` and `<body>` without a background, then `npx motionwright render overlay.html -o out/overlay.mov --transparent` (ProRes 4444) or `-o out/overlay.webm --transparent` (VP9 with alpha). `check` and `snapshot` detect a transparent page automatically: contrast is not judged against nothing, and the sheet shows a checkerboard. Pass `--transparent` to `still` for a PNG with alpha.
 
 ## Render options
 
@@ -135,10 +143,10 @@ Rules for seekable JS:
 | `text-overflows-box` | Text spills out of its card/background. Add padding/width or shorten. |
 | `text-overlap` | Two texts on top of each other while settled. Move one or change timing. |
 | `tiny-text` | Hard to read in a video. Use ≥ 24px at 1080p. |
-| `low-contrast` | Text blends into what is behind it. Change color or add a backing/shadow. |
+| `low-contrast` | Text blends into what is behind it. Targets: 4.5:1 normal text, 3:1 large text (≥ 32px, or bold ≥ 24px), 1.6:1 for text with a `text-shadow` or outline. ✖ below two thirds of the target. Fix the color, or add a backing or shadow. |
 | `image-broken`, `http-404`, `video-frame` | A file path is wrong (paths are relative to the HTML file). |
 | `bad-time`, `bad-enter`, `bad-transition`, `sequence-missing-duration`, `no-duration` | Fix the attribute as the message says. |
 | `non-seekable-animation` | A CSS animation started inside `onFrame`; use `data-start` or set styles from `t`. |
 | `script-error`, `console-error` | Your JS threw; the message has the stack. |
 
-Checks skip elements that are mid-animation; look at `sheet.png` for motion problems.
+Checks skip elements that are mid-animation, and skip overlap/contrast during scene transitions (two scenes are on screen then); look at `sheet.png` for motion problems.

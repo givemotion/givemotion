@@ -1,6 +1,6 @@
 <!-- block:
 description: Word-by-word captions (TikTok/Reels style) from a word-timed JSON file or an .srt file. The spoken word is highlighted.
-params: file (captions.json or .srt), words (max words per line, default 5), accent (color), position (bottom|center|top), size (px at 1080p, default 64)
+params: file (captions.json or .srt), words (max words per line, default 5), accent (color), position (bottom|center|top), size (px at 1080p; scales with the short side, default 64)
 usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>   JSON: [{"word":"Hello","start":0.2,"end":0.5}, …] (times in seconds, relative to the block's start)
 -->
 <div class="mwb-cap mwb-cap--{{position|bottom}}" style="--accent:{{accent|#ffd23f}};--size:{{size|64}}" data-file="{{file}}" data-words="{{words|5}}"><div class="mwb-cap__line"></div></div>

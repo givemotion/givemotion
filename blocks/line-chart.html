@@ -1,6 +1,6 @@
 <!-- block:
 description: Line chart that draws itself left to right, with a soft area fill and a highlighted last point.
-params: values (comma list), labels (comma list, optional), title, color, suffix, width (px at 1080p, default 1400), height (default 560), duration (draw time in s, default 1.8)
+params: values (comma list), labels (comma list, optional), title, color, suffix, width (px at 1080p; scales with the short side, default 1400), height (default 560), duration (draw time in s, default 1.8)
 usage: <mw-include src="blocks/line-chart.html" title="Weekly users" values="120,180,160,240,310,420" labels="W1,W2,W3,W4,W5,W6" data-duration="5"></mw-include>
 -->
 <div class="mwb-line" style="--c:{{color|#5eead4}};--w:{{width|1400}};--h:{{height|560}};--d:{{duration|1.8}}s" data-values="{{values|10,14,12,20,26,34}}" data-labels="{{labels}}" data-suffix="{{suffix}}">

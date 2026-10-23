@@ -1,9 +1,9 @@
 <!-- block:
-description: Soft animated mesh-gradient background (slowly drifting color blobs with fine grain). Put it first inside a scene.
-params: c1, c2, c3 (colors), base (background color), speed (1 = default), grain (0-1, default 0.06)
+description: Soft animated mesh-gradient background (slowly drifting color blobs with fine grain). Put it anywhere inside a .scene: it always sits behind the scene content (no z-index needed).
+params: c1, c2, c3 (colors; keep them mid-to-dark when the text on top is white), base (background color), speed (1 = default), grain (0-1, default 0.06)
 usage: <mw-include src="blocks/gradient-bg.html" c1="#6d5dfc" c2="#00c2ff" c3="#ff4ecd"></mw-include>
 -->
-<div class="mwb-grad" data-c="{{c1|#6d5dfc}},{{c2|#00b3ff}},{{c3|#ff4ecd}}" data-base="{{base|#07080d}}" data-speed="{{speed|1}}" style="--grain:{{grain|0.06}}">
+<div class="mwb-grad" data-c="{{c1|#4f3fd1}},{{c2|#0284c7}},{{c3|#be2a8f}}" data-base="{{base|#07080d}}" data-speed="{{speed|1}}" style="--grain:{{grain|0.06}}">
   <canvas class="mwb-grad__c" width="240" height="135"></canvas><div class="mwb-grad__grain"></div>
 </div>
 <script>
@@ -42,7 +42,7 @@ usage: <mw-include src="blocks/gradient-bg.html" c1="#6d5dfc" c2="#00c2ff" c3="#
 })();
 </script>
 <style>
-.mwb-grad{position:absolute;inset:0;overflow:hidden;z-index:0}
+.mwb-grad{position:absolute;inset:0;overflow:hidden;z-index:-1}
 .mwb-grad__c{position:absolute;inset:0;width:100%;height:100%;display:block}
 .mwb-grad__grain{position:absolute;inset:0;opacity:var(--grain);background-size:calc(var(--px)*160)}
 </style>

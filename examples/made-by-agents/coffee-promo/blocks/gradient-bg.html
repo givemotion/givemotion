@@ -1,0 +1,48 @@
+<!-- block:
+description: Soft animated mesh-gradient background (slowly drifting color blobs with fine grain). Put it first inside a scene.
+params: c1, c2, c3 (colors), base (background color), speed (1 = default), grain (0-1, default 0.06)
+usage: <mw-include src="blocks/gradient-bg.html" c1="#6d5dfc" c2="#00c2ff" c3="#ff4ecd"></mw-include>
+-->
+<div class="mwb-grad" data-c="{{c1|#6d5dfc}},{{c2|#00b3ff}},{{c3|#ff4ecd}}" data-base="{{base|#07080d}}" data-speed="{{speed|1}}" style="--grain:{{grain|0.06}}">
+  <canvas class="mwb-grad__c" width="240" height="135"></canvas><div class="mwb-grad__grain"></div>
+</div>
+<script>
+(() => {
+  // Drawn small and scaled up: soft gradients look identical, and it renders ~5x faster than big blurred layers.
+  const root = document.currentScript.previousElementSibling;
+  const cv = root.querySelector('canvas'), g = cv.getContext('2d');
+  const [c1, c2, c3] = root.dataset.c.split(',');
+  const base = root.dataset.base, sp = parseFloat(root.dataset.speed) || 1;
+  const W = cv.width, H = cv.height;
+  const blobs = [
+    { c: c1, x: 0.18, y: 0.12, ax: 0.22, ay: 0.16, p: 14, r: 0.62 },
+    { c: c2, x: 0.82, y: 0.42, ax: -0.24, ay: 0.14, p: 17, r: 0.6 },
+    { c: c3, x: 0.45, y: 0.95, ax: 0.16, ay: -0.22, p: 20, r: 0.66 },
+  ];
+  const hex = (c, a) => { const h = c.trim().replace('#', ''); const n = parseInt(h.length === 3 ? [...h].map((x) => x + x).join('') : h.slice(0, 6), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
+  mw.onFrame(root, (t, f) => {
+    t = f.time; // drift on global time so it continues smoothly across scenes
+    g.globalCompositeOperation = 'source-over';
+    g.fillStyle = base; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'screen';
+    for (const b of blobs) {
+      const k = (1 - Math.cos((2 * Math.PI * t * sp) / b.p)) / 2; // smooth back-and-forth drift
+      const x = (b.x + b.ax * k) * W, y = (b.y + b.ay * k) * H, r = b.r * W;
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, hex(b.c, 0.72)); gr.addColorStop(0.45, hex(b.c, 0.26)); gr.addColorStop(1, hex(b.c, 0));
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    }
+  });
+  // Static film grain tile
+  const n = document.createElement('canvas'); n.width = n.height = 160;
+  const ng = n.getContext('2d'), id = ng.createImageData(160, 160);
+  for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+  ng.putImageData(id, 0, 0);
+  root.querySelector('.mwb-grad__grain').style.backgroundImage = `url(${n.toDataURL()})`;
+})();
+</script>
+<style>
+.mwb-grad{position:absolute;inset:0;overflow:hidden;z-index:0}
+.mwb-grad__c{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mwb-grad__grain{position:absolute;inset:0;opacity:var(--grain);background-size:calc(var(--px)*160)}
+</style>

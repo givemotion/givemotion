@@ -470,7 +470,8 @@
   // ---------------------------------------------------------------------------
   // data-enter / data-exit
   // ---------------------------------------------------------------------------
-  const PX = () => comp.height / 1080;
+  // 1 unit = 1px when the short side of the frame is 1080px (so 1080p, 1080x1920 and 1080x1080 all use the same sizes).
+  const PX = () => Math.min(comp.width, comp.height) / 1080;
   const PRESETS = {
     'fade': () => [{ opacity: 0 }, { opacity: 1 }],
     'fade-up': () => [{ opacity: 0, translate: `0 ${48 * PX()}px` }, { opacity: 1, translate: '0 0' }],
@@ -934,8 +935,8 @@
   function setStageVars() {
     root.style.setProperty('--stage-w', comp.width + 'px');
     root.style.setProperty('--stage-h', comp.height + 'px');
-    root.style.setProperty('--px', (comp.height / 1080) + 'px');
-    root.style.setProperty('--stage-px', (comp.height / 1080));
+    root.style.setProperty('--px', PX() + 'px');
+    root.style.setProperty('--stage-px', PX());
   }
 
   function readSettings() {
@@ -1147,6 +1148,7 @@
     get height() { return comp.height; },
     get fps() { return comp.fps; },
     get duration() { return comp.duration; },
+    get px() { return PX(); },
     get data() { return getData(); },
     onFrame(a, b) {
       if (typeof a === 'function') frameFns.push({ fn: a });

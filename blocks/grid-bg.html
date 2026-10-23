@@ -1,5 +1,5 @@
 <!-- block:
-description: Subtle tech background: a slowly drifting line grid (or dots) with a soft glow and vignette. Put it first inside a scene.
+description: Subtle tech background: a slowly drifting line grid (or dots) with a soft glow and vignette. Put it anywhere inside a .scene: it always sits behind the scene content (no z-index needed).
 params: base (background color), line (grid color), glow (color), size (cell px at 1080p, default 64), pattern (lines|dots)
 usage: <mw-include src="blocks/grid-bg.html" glow="#3b82f6"></mw-include>
 -->
@@ -7,7 +7,7 @@ usage: <mw-include src="blocks/grid-bg.html" glow="#3b82f6"></mw-include>
   <div class="mwb-gridbg__glow"></div><div class="mwb-gridbg__grid"></div><div class="mwb-gridbg__vig"></div>
 </div>
 <style>
-.mwb-gridbg{position:absolute;inset:0;overflow:hidden;background:var(--base);z-index:0}
+.mwb-gridbg{position:absolute;inset:0;overflow:hidden;background:var(--base);z-index:-1}
 .mwb-gridbg__grid{position:absolute;inset:calc(var(--px)*var(--cell)*-1);--c:calc(var(--px)*var(--cell));will-change:translate;animation:mwb-gridbg-drift 12s linear infinite}
 .mwb-gridbg--lines .mwb-gridbg__grid{background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:var(--c) var(--c)}
 .mwb-gridbg--dots .mwb-gridbg__grid{background-image:radial-gradient(var(--line) calc(var(--px)*2.2),transparent calc(var(--px)*2.6));background-size:var(--c) var(--c);filter:brightness(1.8)}

@@ -13,7 +13,7 @@ usage: <mw-include src="blocks/cursor.html" points="300,800 960,540! 1500,300!" 
   const arrow = root.querySelector('.mwb-cursor__arrow'), ring = root.querySelector('.mwb-cursor__ring');
   const pts = root.dataset.points.trim().split(/\s+/).map((p) => { const click = p.endsWith('!'); const [x, y] = p.replace('!', '').split(',').map(Number); return { x, y, click }; });
   const ts = root.dataset.times ? root.dataset.times.trim().split(/\s+/).map(Number) : pts.map((_, i) => 0.3 + i * 1.1);
-  const S = () => mw.height / 1080;
+  const S = () => mw.px;
   mw.onFrame(root, (t) => {
     let i = 0;
     while (i < pts.length - 1 && t >= ts[i + 1]) i++;

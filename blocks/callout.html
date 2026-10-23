@@ -11,7 +11,7 @@ usage: <mw-include src="blocks/callout.html" x="980" y="420" label="Click Deploy
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
-  const S = mw.height / 1080;
+  const S = mw.px;
   const x = +root.dataset.x * S, y = +root.dataset.y * S, d = +root.dataset.dist * S, side = root.dataset.side;
   const dir = { right: [1, -0.35], left: [-1, -0.35], top: [0.25, -1], bottom: [0.25, 1] }[side] || [1, -0.35];
   const n = Math.hypot(dir[0], dir[1]);

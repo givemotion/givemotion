@@ -1,6 +1,6 @@
 <!-- block:
 description: Animated bar chart. Bars grow one after another and their values count up.
-params: values (comma list), labels (comma list), title, prefix, suffix, max (optional), color, highlight (index of bar to highlight, 0-based), height (px at 1080p, default 560)
+params: values (comma list), labels (comma list), title, prefix, suffix, max (optional), color, highlight (index of bar to highlight, 0-based), height (px at 1080p; scales with the short side, default 560)
 usage: <mw-include src="blocks/bar-chart.html" title="Revenue (k$)" values="12,19,31,48" labels="Q1,Q2,Q3,Q4" highlight="3" data-duration="5"></mw-include>
 -->
 <div class="mwb-bars" style="--c:{{color|#7c9cff}};--h:{{height|560}}" data-values="{{values|3,5,8,13}}" data-labels="{{labels}}" data-prefix="{{prefix}}" data-suffix="{{suffix}}" data-max="{{max}}" data-hl="{{highlight|-1}}">

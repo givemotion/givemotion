@@ -1,0 +1,8 @@
+[
+ {"word":"Mornings","start":0.30,"end":0.80},{"word":"are","start":0.80,"end":0.95},{"word":"better","start":0.95,"end":1.40},{"word":"at","start":1.40,"end":1.55},{"word":"Bean","start":1.55,"end":1.85},{"word":"There.","start":1.85,"end":2.40},
+ {"word":"Fresh","start":3.40,"end":3.80},{"word":"roasted,","start":3.80,"end":4.40},{"word":"slow","start":4.60,"end":4.95},{"word":"poured.","start":4.95,"end":5.60},
+ {"word":"Every","start":5.90,"end":6.20},{"word":"cup","start":6.20,"end":6.50},{"word":"made","start":6.50,"end":6.80},{"word":"by","start":6.80,"end":6.95},{"word":"hand.","start":6.95,"end":7.40},
+ {"word":"Grab","start":7.80,"end":8.10},{"word":"an","start":8.10,"end":8.20},{"word":"oat","start":8.20,"end":8.50},{"word":"latte","start":8.50,"end":8.90},{"word":"for","start":8.90,"end":9.05},{"word":"just","start":9.05,"end":9.35},{"word":"three","start":9.35,"end":9.70},{"word":"fifty.","start":9.70,"end":10.30},
+ {"word":"Come","start":11.50,"end":11.80},{"word":"say","start":11.80,"end":12.05},{"word":"hi.","start":12.05,"end":12.60},
+ {"word":"Open","start":13.00,"end":13.30},{"word":"daily","start":13.30,"end":13.70},{"word":"from","start":13.70,"end":13.90},{"word":"7am.","start":13.90,"end":14.50}
+]

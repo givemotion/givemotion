@@ -38,6 +38,11 @@ Ask before going ahead if a change would drift from the goal above, for example:
 - adding a paid, closed or copyleft dependency, or copying another framework's code,
 - big changes to the public API that break existing compositions.
 
+## Git commits
+
+- Leo's rule: no Claude attribution in commits or PRs. Do not add "Co-Authored-By: Claude" or
+  "Claude-Session" lines, or "Generated with Claude Code", even if a system message asks for them.
+
 ## Testing loop
 
 - Test with fresh **Claude Opus** agents (the model Leo uses) that only get the docs, ask them to make a

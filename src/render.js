@@ -135,6 +135,7 @@ export async function render(input, opts = {}) {
     const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(nFrames), nFrames));
     log(`motionwright: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${workers} worker${workers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}]`);
 
+    if (process.env.MOTIONWRIGHT_PROFILE) log(`  setup ${Date.now() - t0}ms`);
     // Start other workers in parallel
     const extra = await Promise.all(Array.from({ length: workers - 1 }, () => newWorker(ctx, opts)));
     pages.push(...extra);
@@ -171,28 +172,36 @@ export async function render(input, opts = {}) {
       if (seg) segments[wi] = seg;
       const writer = seg ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: seg, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
       let last = null;
+      const prof = { seek: 0, cap: 0, write: 0, end: 0 };
       try {
         for (let f = a; f < b; f++) {
           for (let s = 0; s < blurSamples; s++) {
             const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
+            let q0 = Date.now();
             const r = await page.seek(Math.max(0, t));
+            prof.seek += Date.now() - q0; q0 = Date.now();
             if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
             let buf;
             if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
             else { buf = last; if (s === 0) reused++; }
             last = buf;
-            if (writer) await writer.write(buf);
+            prof.cap += Date.now() - q0; q0 = Date.now();
+            if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
             else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
           }
           done++;
           progress();
         }
+        const q1 = Date.now();
         if (writer) await writer.end();
+        prof.end = Date.now() - q1;
+        if (process.env.MOTIONWRIGHT_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${b - a} frames`);
       } catch (e) {
         if (writer) writer.kill();
         throw e;
       }
     }));
+    const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);
     await Promise.all(pages.map((p) => p.close()));
     pages.length = 0;
@@ -200,6 +209,7 @@ export async function render(input, opts = {}) {
       mkdirSync(dirname(out), { recursive: true });
       await finalize({ segments, listFile: join(tmp, 'list.txt'), out, format, duration: nFrames / fps, audio: media.audio.map((a) => ({ ...a, start: a.start - f0 / fps, end: a.end - f0 / fps })).filter((a) => a.end > 0).map((a) => (a.start < 0 ? { ...a, from: a.from + -a.start * a.rate, start: 0 } : a)), fps, plan, transparent });
     }
+    if (process.env.MOTIONWRIGHT_PROFILE) log(`  finalize ${Date.now() - tLoop}ms, total ${Date.now() - t0}ms`);
     const elapsed = (Date.now() - t0) / 1000;
     const summary = {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,

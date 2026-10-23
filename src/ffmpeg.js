@@ -65,7 +65,10 @@ export function qualitySettings(q = 'standard') { return QUALITY[q] || QUALITY.s
 export function encoderPlan({ format, quality = 'standard', crf, codec, transparent, info, hardware }) {
   const q = qualitySettings(quality);
   const colorTags = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
-  const toYuv = (pix) => ['-vf', `scale=out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int,format=${pix}`];
+  // Frames arrive as sRGB images. Convert through RGB to BT.709 limited range (what players expect).
+  // The accurate swscale flags cost ~3x encode time, so only the high/max presets use them.
+  const precise = quality === 'high' || quality === 'max' ? ':flags=accurate_rnd+full_chroma_int' : '';
+  const toYuv = (pix) => ['-vf', `format=rgb24,scale=out_color_matrix=bt709:out_range=tv${precise},format=${pix}`];
   if (format === 'mp4' || format === 'mkv') {
     if (transparent) throw new Error('MP4 cannot hold transparency. Use --format mov (ProRes 4444) or --format webm (VP9 alpha).');
     const c = codec || 'h264';
@@ -127,9 +130,13 @@ export function openSegmentWriter({ fps, inputCodec, out, plan, motionBlur }) {
     proc.on('error', reject);
   });
   proc.stdin.on('error', () => {});
+  // Frames are queued so capturing the next frame overlaps with encoding this one.
+  // Back-pressure only kicks in when ~64MB are waiting.
+  const HIGH = 64 * 1024 * 1024;
   return {
     async write(buf) {
-      if (!proc.stdin.write(buf)) await new Promise((r) => proc.stdin.once('drain', r));
+      proc.stdin.write(buf);
+      if (proc.stdin.writableLength > HIGH) await new Promise((r) => proc.stdin.once('drain', r));
     },
     async end() { proc.stdin.end(); await done; },
     kill() { try { proc.kill('SIGKILL'); } catch {} },

@@ -1,0 +1,70 @@
+<!doctype html>
+<!--
+  A motionwright composition. Edit freely.
+  Preview:  npx motionwright dev index.html
+  Check:    npx motionwright check index.html
+  Look:     npx motionwright snapshot index.html   (open snapshots/sheet.png)
+  Render:   npx motionwright render index.html -o out/video.mp4
+-->
+<html data-width="1920" data-height="1080" data-fps="30">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --accent: #8ea2ff; --accent-2: #5eead4; }
+  body {
+    background: radial-gradient(120% 120% at 20% 0%, #1a1f35 0%, #0a0b10 55%);
+    color: #f4f6fb;
+    font-family: Inter, "SF Pro Display", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .scene { display: grid; place-items: center; padding: 0 160px; }
+  .stack { display: flex; flex-direction: column; align-items: center; gap: 28px; text-align: center; }
+  .kicker { font-size: 30px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--accent); }
+  h1 { margin: 0; font-size: 140px; line-height: 1; letter-spacing: -.04em; font-weight: 800; }
+  h2 { margin: 0; font-size: 96px; line-height: 1.05; letter-spacing: -.03em; font-weight: 800; max-width: 16ch; }
+  p  { margin: 0; font-size: 44px; color: #b7bfd3; max-width: 30ch; }
+  .grad { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  /* Scene 2: three cards that pop in one after another */
+  .cards { display: flex; gap: 40px; }
+  .card { width: 470px; padding: 48px; border-radius: 28px; background: #141826; border: 1px solid #ffffff14;
+          box-shadow: 0 30px 80px #0007; text-align: left; }
+  .card b { display: block; font-size: 50px; margin: 26px 0 12px; letter-spacing: -.01em; }
+  .card span { font-size: 34px; color: #9aa3b8; line-height: 1.35; }
+  .icon { width: 84px; height: 84px; border-radius: 22px; display: grid; place-items: center; font-size: 44px; }
+
+  /* Scene 3: a number that counts up */
+  .big { font-size: 220px; font-weight: 800; letter-spacing: -.05em; line-height: .9; font-variant-numeric: tabular-nums; }
+  .orb { position: absolute; width: 900px; height: 900px; border-radius: 50%;
+         background: radial-gradient(closest-side, #8ea2ff40, transparent); animation: pulse 4s ease-in-out infinite; }
+</style>
+</head>
+<body>
+  <main data-sequence data-transition="fade 0.6">
+
+    <section class="scene" data-duration="3.5">
+      <div class="stack">
+        <div class="kicker" data-enter="fade-up 0.6">Made with motionwright</div>
+        <h1 data-split="words" data-enter="rise 0.9 0.15" data-stagger="0.08">HTML in, <span class="grad">video out</span></h1>
+        <p data-enter="fade-up 0.7 0.7">Write a web page. Get an MP4.</p>
+      </div>
+    </section>
+
+    <section class="scene" data-duration="4">
+      <div class="cards" data-enter="pop 0.7" data-stagger="0.14">
+        <div class="card"><div class="icon" style="background:#8ea2ff22">✍️</div><b>Write HTML</b><span>Layout with CSS you already know.</span></div>
+        <div class="card"><div class="icon" style="background:#5eead422">🎬</div><b>Animate</b><span>CSS animations, or one attribute.</span></div>
+        <div class="card"><div class="icon" style="background:#fbbf2422">🚀</div><b>Render</b><span>Frame-exact MP4, in parallel.</span></div>
+      </div>
+    </section>
+
+    <section class="scene" data-duration="3.5">
+      <div class="orb"></div>
+      <div class="stack">
+        <div class="big grad" data-count="0 60" data-count-suffix=" fps" data-count-duration="1.8"></div>
+        <p data-enter="fade-up 0.6 0.4">Deterministic. Every frame, every time.</p>
+      </div>
+    </section>
+
+  </main>
+</body>
+</html>

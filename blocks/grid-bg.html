@@ -1,17 +1,18 @@
 <!-- block:
-description: Subtle tech background: a slowly drifting line grid (or dots) with a glow and vignette. Put it first inside a scene.
+description: Subtle tech background: a slowly drifting line grid (or dots) with a soft glow and vignette. Put it first inside a scene.
 params: base (background color), line (grid color), glow (color), size (cell px at 1080p, default 64), style (lines|dots)
 usage: <mw-include src="blocks/grid-bg.html" glow="#3b82f6"></mw-include>
 -->
-<div class="mwb-gridbg mwb-gridbg--{{style|lines}}" style="--base:{{base|#07090f}};--line:{{line|rgba(255,255,255,.07)}};--glow:{{glow|#4f7cff}};--cell:{{size|64}}">
-  <div class="mwb-gridbg__grid"></div><div class="mwb-gridbg__glow"></div>
+<div class="mwb-gridbg mwb-gridbg--{{style|lines}}" style="--base:{{base|#07090f}};--line:{{line|rgba(255,255,255,.08)}};--glow:{{glow|#4f7cff}};--cell:{{size|64}}">
+  <div class="mwb-gridbg__glow"></div><div class="mwb-gridbg__grid"></div><div class="mwb-gridbg__vig"></div>
 </div>
 <style>
 .mwb-gridbg{position:absolute;inset:0;overflow:hidden;background:var(--base);z-index:0}
-.mwb-gridbg__grid{position:absolute;inset:-20%;--c:calc(var(--px)*var(--cell));animation:mwb-gridbg-drift 12s linear infinite;
-  mask-image:radial-gradient(ellipse 60% 60% at 50% 45%,#000 30%,transparent 75%)}
+.mwb-gridbg__grid{position:absolute;inset:calc(var(--px)*var(--cell)*-1);--c:calc(var(--px)*var(--cell));will-change:translate;animation:mwb-gridbg-drift 12s linear infinite}
 .mwb-gridbg--lines .mwb-gridbg__grid{background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:var(--c) var(--c)}
 .mwb-gridbg--dots .mwb-gridbg__grid{background-image:radial-gradient(var(--line) calc(var(--px)*2.2),transparent calc(var(--px)*2.6));background-size:var(--c) var(--c);filter:brightness(1.8)}
-.mwb-gridbg__glow{position:absolute;left:50%;top:40%;width:80%;aspect-ratio:2;translate:-50% -50%;background:radial-gradient(closest-side,color-mix(in oklab,var(--glow),transparent 72%),transparent);animation:pulse 6s ease-in-out infinite}
+.mwb-gridbg__vig{position:absolute;inset:0;background:radial-gradient(ellipse 62% 62% at 50% 45%,transparent 35%,var(--base) 80%)}
+.mwb-gridbg__glow{position:absolute;left:50%;top:40%;width:80%;aspect-ratio:2;translate:-50% -50%;background:radial-gradient(closest-side,color-mix(in oklab,var(--glow),transparent 70%),transparent);will-change:opacity;animation:mwb-gridbg-breathe 6s ease-in-out infinite alternate}
 @keyframes mwb-gridbg-drift{to{translate:calc(var(--px)*var(--cell)) calc(var(--px)*var(--cell))}}
+@keyframes mwb-gridbg-breathe{from{opacity:.65}to{opacity:1}}
 </style>

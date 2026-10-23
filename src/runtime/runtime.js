@@ -255,7 +255,7 @@
     const toks = v.trim().split(/\s+/);
     const name = toks[0];
     let dur = 0.6;
-    for (const t of toks.slice(1)) { const n = parseTime(t, null, 'data-transition'); if (n != null) dur = n; }
+    for (const t of toks.slice(1)) { if (isEasingName(t)) continue; const n = parseTime(t, null, 'data-transition'); if (n != null) dur = n; }
     if (!TRANSITIONS[name]) { report('error', 'bad-transition', `Unknown transition "${name}".`, null, 'Use one of: ' + Object.keys(TRANSITIONS).join(', ')); return null; }
     return { name, dur, ease: toks.find(isEasingName) || null };
   }
@@ -270,14 +270,14 @@
       while (p && !info.has(p)) p = p.parentElement;
       return p || null;
     }
-    function seqLayout(container, parentStart, parentEnd) {
+    function seqLayout(container) {
       if (seqCache.has(container)) return seqCache.get(container);
       const tr = parseTransition(container.getAttribute('data-transition'));
       const gap = parseTime(container.getAttribute('data-gap'), container, 'data-gap') || 0;
-      const overlap = tr ? tr.dur : 0;
       const kids = [...container.children].filter((c) => !SKIP_TAGS.has(c.tagName));
       let cursor = 0;
       const map = new Map();
+      const trs = [];
       kids.forEach((k, i) => {
         let d = parseTime(k.getAttribute('data-duration'), k, 'data-duration');
         if (d == null) {
@@ -288,11 +288,16 @@
           report('error', 'sequence-missing-duration', 'Every child of a data-sequence needs data-duration.', k, 'Add data-duration="3" (seconds) to this element.');
           d = 0;
         }
+        // How this child comes in: its own data-transition, else the container's.
+        const own = i > 0 ? parseTransition(k.getAttribute('data-transition')) : null;
+        const t = i > 0 ? (own || tr) : null;
+        trs.push(t);
+        if (t) cursor -= t.dur;
         const offset = parseTime(k.getAttribute('data-start'), k, 'data-start') || 0; // extra shift inside sequence
         map.set(k, { start: cursor + offset, dur: d, index: i, count: kids.length });
-        cursor += d + gap - (i < kids.length - 1 ? overlap : 0);
+        cursor += d + gap;
       });
-      const res = { map, length: cursor, tr };
+      const res = { map, length: cursor - gap, tr, trs };
       seqCache.set(container, res);
       return res;
     }
@@ -346,13 +351,15 @@
     clips.forEach((c) => clipOf.set(c.el, c));
     // Apply sequence transitions to children that do not define their own enter/exit.
     for (const [container, lay] of seqCache) {
-      if (!lay.tr) continue;
-      const def = TRANSITIONS[lay.tr.name];
       const kids = [...lay.map.keys()];
       kids.forEach((k, i) => {
-        const tail = `${lay.tr.dur}s${lay.tr.ease ? ' ' + lay.tr.ease : ''}`;
-        if (i > 0 && def.enter && !k.hasAttribute('data-enter')) k.setAttribute('data-enter', `${def.enter} ${tail}`);
-        if (i < kids.length - 1 && def.exit && !k.hasAttribute('data-exit')) k.setAttribute('data-exit', `${def.exit} ${tail}`);
+        const t = lay.trs[i];
+        if (!t) return;
+        const def = TRANSITIONS[t.name];
+        const tail = `${t.dur}s${t.ease ? ' ' + t.ease : ''}`;
+        if (def.enter && !k.hasAttribute('data-enter')) k.setAttribute('data-enter', `${def.enter} ${tail}`);
+        const prev = kids[i - 1];
+        if (prev && def.exit && !prev.hasAttribute('data-exit')) prev.setAttribute('data-exit', `${def.exit} ${tail}`);
       });
     }
     // Lint: clips that never show
@@ -617,6 +624,7 @@
         tn.parentNode.replaceChild(frag, tn);
       }
       el.style.setProperty('--n', String(pieces.length));
+      fixClipText(el, pieces);
       if (mode === 'lines') {
         // group words by their rendered line (after fonts load)
         const words = pieces;
@@ -632,6 +640,31 @@
         splitTargets.set(el, words);
         el.__mwLineIndex = true;
       } else splitTargets.set(el, pieces);
+    }
+  }
+
+  // Gradient text (background-clip: text) on a parent stops painting a child while the child
+  // animates on its own layer. Give each piece its own slice of the same gradient.
+  function fixClipText(root, pieces) {
+    for (const p of pieces) {
+      let anc = p.parentElement;
+      while (anc) {
+        const cs = getComputedStyle(anc);
+        if ((cs.backgroundClip === 'text' || cs.webkitBackgroundClip === 'text') && cs.backgroundImage !== 'none') {
+          const a = anc.getBoundingClientRect(), r = p.getBoundingClientRect();
+          p.style.backgroundImage = cs.backgroundImage;
+          p.style.backgroundSize = `${a.width}px ${a.height}px`;
+          p.style.backgroundPosition = `${a.left - r.left}px ${a.top - r.top}px`;
+          p.style.backgroundRepeat = 'no-repeat';
+          p.style.webkitBackgroundClip = 'text';
+          p.style.backgroundClip = 'text';
+          p.style.color = 'transparent';
+          p.style.webkitTextFillColor = 'transparent';
+          break;
+        }
+        if (anc === root) break;
+        anc = anc.parentElement;
+      }
     }
   }
 
@@ -820,6 +853,7 @@
         pendingWaits.push(pre.decode().then(() => { v.el.style.backgroundImage = 'url("' + url + '")'; v.keep = pre; }, () => { report('error', 'video-frame', `Could not load video frame ${fi} of ${v.src}.`, v.el, 'Check that the file exists and ffmpeg can read it.', T); }));
       } else {
         const el = v.el;
+        if (!v.duration && isFinite(el.duration) && el.duration > 0) v.duration = el.duration;
         if (Math.abs(el.currentTime - lt) > 0.5 / comp.fps) {
           changed = true;
           pendingWaits.push(new Promise((res) => {

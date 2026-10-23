@@ -13,6 +13,7 @@ usage: <mw-include src="blocks/lottie.html" file="assets/rocket.json" width="500
     const s = document.createElement('script'); s.src = d.lib; s.onload = () => res(window.lottie); s.onerror = () => rej(new Error('Could not load lottie-web from ' + d.lib)); document.head.appendChild(s);
   }));
   let anim = null, fr = 30, total = 0;
+  if (!d.src) { mw.__report('error', 'lottie', 'The lottie block needs file="path/to/animation.json".', root); return; }
   mw.wait(loadLib().then((lottie) => new Promise((res, rej) => {
     anim = lottie.loadAnimation({ container: root, renderer: d.renderer, loop: false, autoplay: false, path: d.src, rendererSettings: { preserveAspectRatio: 'xMidYMid meet', progressiveLoad: false } });
     anim.addEventListener('DOMLoaded', () => { fr = anim.frameRate || 30; total = anim.totalFrames; res(); });

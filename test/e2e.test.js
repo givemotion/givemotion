@@ -123,7 +123,10 @@ test('every block renders without errors', { skip }, async () => {
   mkdirSync(join(d, 'blocks'));
   for (const b of blocks) copyFileSync(join(ROOT, 'blocks', b), join(d, 'blocks', b));
   writeFileSync(join(d, 'cap.json'), '[{"word":"hi","start":0,"end":0.5}]');
-  const html = body.replace('src="blocks/captions.html"', 'src="blocks/captions.html" file="cap.json"');
+  // A tiny stand-in for lottie-web, so the test needs no network
+  writeFileSync(join(d, 'fake-lottie.js'), 'window.lottie={loadAnimation(o){const h={};const a={frameRate:30,totalFrames:30,addEventListener(n,f){h[n]=f;if(n==="DOMLoaded")setTimeout(f,5)},goToAndStop(f){o.container.dataset.f=f}};return a}};');
+  writeFileSync(join(d, 'anim.json'), '{}');
+  const html = body.replace('src="blocks/captions.html"', 'src="blocks/captions.html" file="cap.json"').replace('src="blocks/lottie.html"', 'src="blocks/lottie.html" file="anim.json" lib="fake-lottie.js"');
   const f = comp(d, 'blocks.html', `<main data-sequence>${html}</main>`, 'data-width="1280" data-height="720"');
   const info = await inspect(f);
   assert.deepEqual(info.issues.filter((i) => i.severity === 'error'), []);

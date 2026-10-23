@@ -34,6 +34,7 @@ Build faster
 Setup
   install                       Download the Chrome build used for rendering
   doctor                        Check Chrome and ffmpeg
+  clean                         Delete cached video frames
   bench [file]                  Measure render speed on this machine
 
 Render options
@@ -83,6 +84,7 @@ async function main() {
     case 'install': return cmdInstall(args);
     case 'doctor': return cmdDoctor(args);
     case 'bench': return cmdBench(args);
+    case 'clean': return cmdClean(args);
     default:
       console.error(`Unknown command "${cmd}".\n`);
       console.log(HELP);
@@ -275,6 +277,13 @@ async function cmdDoctor() {
 async function cmdBench(args) {
   const { bench } = await import('./bench.js');
   await bench(args._[0], { workers: args.workers ? +args.workers : undefined, json: args.json, chrome: args.chrome });
+}
+
+async function cmdClean() {
+  const { CACHE_DIR } = await import('./browser.js');
+  const { rmSync } = await import('node:fs');
+  rmSync(join(CACHE_DIR, 'frames'), { recursive: true, force: true });
+  console.log(`removed ${join(CACHE_DIR, 'frames')}`);
 }
 
 function fail(e, args) {

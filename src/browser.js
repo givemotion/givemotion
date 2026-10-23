@@ -159,7 +159,9 @@ export class FramePage {
       }
     }, sessionId);
     b.on('Network.responseReceived', (p) => { if (p.response.status >= 400 && !/favicon\.ico/.test(p.response.url)) this._err('http-' + p.response.status, `${p.response.status} for ${p.response.url}`); }, sessionId);
-    b.on('Network.loadingFailed', (p) => { if (!p.canceled) this._err('load-failed', `${p.errorText} for request ${p.requestId}${p.type ? ' (' + p.type + ')' : ''}`); }, sessionId);
+    const urls = new Map();
+    b.on('Network.requestWillBeSent', (p) => { if (urls.size > 5000) urls.clear(); urls.set(p.requestId, p.request.url); }, sessionId);
+    b.on('Network.loadingFailed', (p) => { if (!p.canceled) this._err('load-failed', `${p.errorText} loading ${urls.get(p.requestId) || p.requestId}. If it is on the internet, download it next to your HTML file instead.`); }, sessionId);
     await Promise.all([s('Page.enable'), s('Runtime.enable'), s('Network.enable')]);
     await s('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: this.opts.scale || 1, mobile: false });
     if (this.opts.transparent) await s('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });

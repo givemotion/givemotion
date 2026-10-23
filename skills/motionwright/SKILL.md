@@ -50,7 +50,7 @@ No script tag or import is needed: the runtime and a preset stylesheet are injec
 - **Clips.** An element with `data-start`, `data-duration` or `data-end` only exists (is `display`ed) from start to start+duration. Times are relative to its parent clip. Elements without timing are always there.
 - **Video length** = `data-duration` on `<html>`, otherwise the end of the last clip.
 - **Sequences.** `data-sequence` on a container plays its children one after another. Every child needs `data-duration`. Options: `data-gap="0.2"` (negative = overlap), `data-transition="<name> <seconds> [easing]"` which overlaps neighbours and animates the change.
-  Transitions: `fade` `slide-left` `slide-right` `slide-up` `slide-down` (push) `wipe-left` `wipe-right` `wipe-up` `wipe-down` `zoom` `blur` `iris` `fade-up`.
+  Transitions: `fade` `push-left/right/up/down` (new pushes old out) `cover-left/right/up/down` (new slides over) `whip-left/right/up/down` (fast, blurred) `wipe-left/right/up/down` `diagonal` `clock` `iris` `zoom` `zoom-through` (fly into the next scene) `flip` (3D) `dip` (through black) `blur` `fade-up`, and **`morph`**: elements with the same `data-morph="name"` in both scenes fly and resize from the old place to the new one while the rest crossfades (keynote "magic move"). Use it to carry a logo, card, photo or shape from one scene into the next.
   A child can set its own `data-transition` (how it comes in). **Each transition overlaps two scenes, so it takes its length off the total**: 3 scenes of 4s with `fade 0.5` last 11s. `npx motionwright inspect video.html` prints the real start/end of every clip.
 - **CSS animations run on clip time.** `animation: fade-up .6s .4s both` starts .4s after its clip appears, in every frame of the render. Use `both` (or `backwards`) fill so the element is hidden before its delay.
 - Timers, `requestAnimationFrame`, `Date.now()`, `performance.now()` are virtual and `Math.random()` is seeded. Normal web animation code just works.
@@ -65,9 +65,14 @@ No script tag or import is needed: the runtime and a preset stylesheet are injec
 | `data-split="words\|chars\|lines"` | Wrap pieces in `.word` / `.char` spans with `--i` (index) and `--n` (count) for your own CSS. |
 | `data-count="0 1250"` | Count up. Also `data-count-duration` (1.6), `-delay`, `-prefix`, `-suffix`, `-decimals`, `-ease`, `-group="false"`. |
 | `data-type="30"` | Typewriter at 30 chars/sec, keeps inner markup. Also `data-type-delay`, `data-type-caret`. |
+| `data-scramble="1.2"` | Text decodes from random glyphs, left to right, over 1.2s. Also `data-scramble-delay`, `data-scramble-chars`. |
+| `data-camera="push 1.1"` | Slow camera move over the clip (added on top of other transforms). Moves: `push [scale]` `pull [scale]` `move-left/right/up/down [px]` `rotate [deg]` `orbit [deg]` (3D) `float [amount]` (gentle drift) `handheld [amount]` `shake [amount]`. Combine with commas: `"push 1.08, float"`. Optional window `"push 1.2 1-3"` (seconds into the clip) and easing. Put it on the scene or on a wrapper of the content. |
+| `data-morph="logo"` | Shared element for `data-transition="morph"` (see Timing). |
+| `data-fit` | Shrink the text until it fits its box (give the box a width/height). `data-fit="grow"` makes one line fill the width. |
+| `data-loop="2"` `data-freeze="1.5"` `data-speed="0.5"` | On a clip: its content repeats every 2s / stops at 1.5s / plays at half speed (CSS animations, timeline, counters, video, onFrame). |
 
-Presets (motion is named by direction of travel): `fade` `fade-up` `fade-down` `fade-left` `fade-right` `rise` (up + unblur) `scale` `pop` (overshoot) `zoom` (from big) `blur` `slide-up/down/left/right` (by own size) `wipe-right/left/up/down` `iris` `draw` (SVG strokes) `none`.
-Easings: `linear` `ease` `in-cubic` `out-cubic` `in-out-cubic` `out-quart` `out-expo` `in-out-expo` `out-back` `in-out-back` `out-circ` `spring` `bouncy` `snappy` `gentle`.
+Presets (motion is named by direction of travel): `fade` `fade-up` `fade-down` `fade-left` `fade-right` `rise` (up + unblur) `scale` `pop` (overshoot) `zoom` (from big) `blur` `slide-up/down/left/right` (by own size) `wipe-right/left/up/down` `iris` `draw` (SVG strokes) `none`, and for text and objects: `mask-up` `mask-down` `mask-left` `mask-right` (slides out from behind an invisible edge: the classic kinetic-type reveal, best with `data-split`) `flip-up` `drop` (falls in and bounces) `swing` `stretch` `tilt` `spin-in` `elastic` `grow` `grow-x` `grow-y` (bars, lines) `typewriter` (use with `data-split="chars"`). Each has good default timing.
+Easings: `linear` `ease` `in/out/in-out-` + `sine` `quad` `cubic` `quart` `quint` `expo` `circ` `back` `elastic` `bounce`, springs `spring` `bouncy` `snappy` `gentle`, `steps(4)`, `cubic-bezier(…)`. GSAP names also work: `power2.out`, `back.out(1.7)`, `elastic.out(1,0.3)`, `sine.inOut`, `none`.
 
 Enter/exit use the `translate`, `scale`, `opacity`, `filter`, `clip-path` properties, so they combine with your own `transform`. Do not also animate `opacity` on the same element in your CSS; wrap it instead.
 
@@ -80,6 +85,34 @@ Enter/exit use the `translate`, `scale`, `opacity`, `filter`, `clip-path` proper
 - Stagger with split text: `.title .word { animation: fade-up .5s var(--ease-out-expo) calc(var(--i) * 60ms) both; }`
 - SVG line drawing: `<path pathLength="1" style="stroke-dasharray:1; animation: draw 1.2s var(--ease-in-out-cubic) both">`.
 
+## Timeline: precise choreography (GSAP-style API, built in)
+
+For anything with more than a few moving parts, use `mw.timeline`. It is the GSAP API you know, but every value is computed from the time, so it renders frame-exact and in parallel. Times are seconds **relative to the clip that contains the scope** (or each target's own clip).
+
+```js
+mw.timeline('#scene2')                                     // scope: selectors are looked up inside it
+  .from('.title .word', { y: 120, opacity: 0, rotate: 8, stagger: 0.06, duration: 0.8, ease: 'expo.out' })
+  .to('.card', { x: 400, scale: 1.2, duration: 1, ease: 'power3.inOut' }, '+=0.3')
+  .fromTo('.bar', { scaleY: 0 }, { scaleY: 1, stagger: { each: 0.08, from: 'center' } }, '<')
+  .to('#blob', { morph: mw.shape.star(5, 120), duration: 1.2 }, 2)   // shape morph
+  .to('#line', { draw: 1, duration: 1.5 }, 2)                       // draw an SVG stroke (0..1, or "0.2 0.8")
+  .to('.price', { textContent: 249, duration: 1.5 }, 2.5)           // count a number
+  .to('.dot', { x: 'random(-200, 200)', y: 'random(-120, 120)' }, 3) // seeded random per target
+  .addLabel('outro', 5).to('.all', { autoAlpha: 0 }, 'outro');
+mw.to('#logo', { rotate: 360, duration: 2, delay: 0.5, repeat: -1, ease: 'none' });  // one-off tween
+```
+- Positions: number (seconds), `'<'` (with previous), `'>'` (after previous, default), `'+=0.3'`, `'-=0.2'`, `'<0.2'`, labels.
+- Props: `x` `y` `z` `xPercent` `yPercent` `rotate` `rotateX` `rotateY` `scale` `scaleX` `scaleY` `skewX` `skewY` `transformPerspective` (written to `transform`), any CSS property (`backgroundColor`, `clipPath`, `filter`, `borderRadius`, `--css-var` …; colors blend in OKLab), `autoAlpha`, `attr: {cx: 50}`, `morph`, `draw`, `text` (type a new string), `textContent` (count). Options: `duration` (0.5) `ease` (`power1.out`) `delay` `stagger` `repeat` `yoyo` `repeatDelay` `keyframes` `onUpdate(progress, el)`.
+- `mw.timeline(scope, { repeat: -1, yoyo: true, delay: 1, global: true })` (global = times from the start of the video).
+- The timeline uses `transform`; `data-enter`/`data-exit` use `translate`/`scale`, and `data-camera` adds on top, so all three combine on one element.
+- Plain objects work too (for canvas/three.js): `const s = { r: 0 }; mw.to(s, { r: 100, duration: 2 }); mw.onFrame(() => draw(s.r));`
+
+## Shapes, paths and motion along a path
+
+- `mw.shape.circle(r)` `.rect(w, h, {r})` `.polygon(sides, r)` `.star(points, outer, inner)` `.heart(size)` `.wave(width, {amp, freq, phase})` `.blob(r, {t, wobble, points, seed})` return SVG path data centered on 0,0 (`{cx, cy}` to move). Animate a living blob: `mw.onFrame(t => path.setAttribute('d', mw.shape.blob(200, { t })))`.
+- Morph any path into any other: timeline `{ morph: '#other' or 'M…' }`, or `const f = mw.path.morph(a, b); f(0.5)`.
+- Point on a path: `mw.path.point(d, 0.3)` → `{x, y, angle}`. Or plain CSS: `offset-path: path('M…'); offset-rotate: auto;` and animate `offset-distance` from `0%` to `100%`.
+
 ## JavaScript (when CSS is not enough)
 
 ```js
@@ -91,21 +124,28 @@ mw.noise(t), mw.lerp(a, b, p), mw.clamp(v), mw.ease.outExpo(p)
 mw.data            // JSON passed with --data / --props, or <script type="application/json" id="mw-data">
 mw.width, mw.height, mw.fps, mw.duration
 mw.wait(promise)   // hold rendering until it resolves (fetch JSON, load a model…)
+mw.onLayout('#scene2', (local) => { /* runs after all animations are placed: measure with getBoundingClientRect, follow or aim at elements */ });
+mw.color.mix('#ff0', 'oklch(60% .2 260)', 0.5), mw.mapRange(v, 0, 1, 10, 50), mw.wrap(v, 0, 360)
 ```
 
 Rules for seekable JS:
 - In `onFrame`, compute everything from `t`. Don't accumulate state between calls.
 - Don't toggle classes inside `onFrame` to start CSS transitions; they can't be seeked. To do something "at 2s", use `setTimeout(fn, 2000)` (virtual and exact) or give the element `data-start="2"`.
-- Canvas / WebGL / three.js: draw inside `onFrame`. GSAP (bring your own copy): `const tl = gsap.timeline({ paused: true }); mw.onFrame(t => tl.seek(t));`. Lottie: `mw.onFrame(t => anim.goToAndStop(t * 1000))`.
+- Canvas / WebGL / three.js: draw inside `onFrame` (three.js: `preserveDrawingBuffer: true`). Libraries that animate with `requestAnimationFrame` (anime.js, Motion, GSAP) also work as they are, because the clock is virtual; `mw.timeline` is faster and frame-exact in parallel.
+- Lottie (After Effects JSON): `<mw-include src="blocks/lottie.html" file="anim.json" width="500" height="500">` plays it on the video clock.
+- Animated GIF / WebP / APNG in `<img>` play frame-exact on clip time (`data-loop="false"`, `data-rate`).
 
 ## Media
 
 ```html
 <video src="clip.mp4" data-start="2" data-duration="4" data-from="1.5" data-rate="1" data-volume="0.8" muted loop></video>
-<audio src="music.mp3" data-volume="0.4" data-fade-in="1" data-fade-out="2" loop></audio>
+<audio id="music" src="music.mp3" data-volume="0.4" data-fade-in="1" data-fade-out="2" data-duck="0.25" loop></audio>
+<audio src="voice.mp3" data-start="1.5"></audio>
 ```
 - Video is decoded frame-exact by ffmpeg (any codec); style the `<video>` element with CSS as usual. `data-from` = where to start in the source. `muted` drops its audio.
-- Audio is mixed by ffmpeg: `data-start`, `data-duration`, `data-from`, `data-rate`, `data-volume`, `data-fade-in`, `data-fade-out`, `loop`.
+- Audio is mixed by ffmpeg: `data-start`, `data-duration`, `data-from`, `data-rate`, `data-volume`, `data-fade-in`, `data-fade-out`, `loop`. Volume curve: `data-volume="0:0 1:0.8 9:0.8 10:0"` (seconds in the clip : volume). `data-duck="0.25"` lowers music to 25% while any other sound plays (voice-over, video with sound).
+- **React to sound**: `const music = mw.audio('#music')` (or a file path). In `onFrame(t => …)`: `music.level(t)` (0..1 loudness), `music.bass(t)` `music.mid(t)` `music.treble(t)`, `music.bands(t, 16)` (spectrum), `music.wave(t, 128)` (waveform), `music.beat(t, 0.25)` (1 on each beat, fading to 0: great for pulses), `music.beats` / `music.onsets` (times, to cut on the beat), `music.bpm`.
+- `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack; `--muted` renders without audio.
 - Paths are relative to the HTML file. Use local fonts (`@font-face` with a file) for identical results on every machine.
 
 ## Templates and blocks
@@ -114,7 +154,20 @@ Rules for seekable JS:
 - Reuse: `<mw-include src="parts/intro.html" title="Hi" data-start="2">optional inner HTML</mw-include>` inserts the file; `{{title}}` / `{{title|default}}` / `{{content}}` are replaced.
 - Layering: `.scene` is its own layer. Background blocks (`gradient-bg`, `grid-bg`) always sit behind the scene's content. Full-frame blocks (`title-card`, `end-card`, `quote`, `logo-reveal`, `word-pop`, `captions`, `callout`, `cursor`) cover the scene themselves; other blocks are normal boxes you place with flex/grid.
 - `class`, `style`, `id` and `data-*` on `<mw-include>` go to a wrapper `div` around the block. Block parameters are any other attribute.
-- Ready-made blocks: `npx motionwright blocks` lists them; `npx motionwright add lower-third captions` copies them into `./blocks/`. Each file's header shows its params and usage. Blocks: title-card, lower-third, captions, code-window, bar-chart, line-chart, stat, checklist, steps, browser-window, phone, cursor, callout, compare, quote, word-pop, logo-reveal, end-card, gradient-bg, grid-bg.
+- Cursor demos: the `cursor` block aims at real elements: `points="1700,980 #email #submit! .menu li:nth-child(3)!"` (selector or x,y; `!` = click). It follows elements while they move, presses them, and sets `data-mw-hover` / `data-mw-pressed` on them so you can style hover and press.
+- Ready-made blocks: `npx motionwright blocks` lists them; `npx motionwright add lower-third captions` copies them into `./blocks/`. Each file's header shows its params and usage. Blocks: title-card, lower-third, captions, code-window, bar-chart, line-chart, stat, checklist, steps, browser-window, phone, cursor, callout, compare, quote, word-pop, logo-reveal, end-card, gradient-bg, grid-bg, lottie.
+
+## Make it feel like animation, not slides
+
+The most common failure is a video that looks like a slideshow or a website: a centered box of text fades in, sits still, fades out. Motion design is different. Check your sheet against this list:
+
+1. **Something always moves.** Give every scene a slow camera (`data-camera="push 1.06"`, `"float"`), living backgrounds (drifting gradients, shapes, particles, a morphing blob), and never leave the frame frozen for more than ~1s.
+2. **Scenes flow into each other.** Prefer transitions with direction and continuity: `morph` (carry an element into the next scene), `push-*`, `whip-*`, `zoom-through`, or match cuts (an element ends where the next scene's element starts). Plain `fade` is the slideshow default; use it rarely.
+3. **Choreograph, don't dump.** Elements arrive one after another (stagger 40-90ms), with overshoot and settle (`back.out`, `spring`, `bouncy`), and small secondary motion (a slight rotate that settles, a shadow that grows). Use `mw.timeline` to overlap moves (`'<0.1'`, `'-=0.2'`).
+4. **Kinetic type.** Split headlines into words or chars and reveal them (`mask-up`, `flip-up`, `stretch`), scale up the key word, change its color, move the camera through the text. Big type (120-260px) beats paragraphs.
+5. **Shapes over boxes.** Build visuals from SVG shapes, lines that draw on, icons made of simple paths, blobs and morphs. Rows of rounded cards on a grid look like a web page; use them only for UI demos, and then move the camera over the UI, zoom into the part that matters, and use the cursor.
+6. **Rhythm.** Change something every 0.5-1.5s. With music, cut and pulse on the beat (`mw.audio(...).beats`, `.beat(t)`).
+7. **Depth.** Layers that move at different speeds (parallax), soft shadows, blur on fast moves (`--motion-blur 8` at render), light and grain.
 
 ## Making it look good
 
@@ -130,9 +183,17 @@ Rules for seekable JS:
 
 Leave `<html>` and `<body>` without a background, then `npx motionwright render overlay.html -o out/overlay.mov --transparent` (ProRes 4444) or `-o out/overlay.webm --transparent` (VP9 with alpha). `check` and `snapshot` detect a transparent page automatically: contrast is not judged against nothing, and the sheet shows a checkerboard. Pass `--transparent` to `still` for a PNG with alpha.
 
+## Share and embed
+
+`npx motionwright bundle video.html -o dist/` writes a standalone page (plays in any browser, no server), `mw-player.js` and a demo `player.html`. Embed in a site or app: `<script src="mw-player.js"></script><mw-player src="video.html" controls autoplay loop muted></mw-player>` (methods `play()`, `pause()`, `seekTo(s)`; events `ready`, `timeupdate`, `ended`; `data='{"name":"Ana"}'` feeds `mw.data`).
+
+## React (JSX) compositions
+
+You can also write a composition as a React component in `video.jsx`; every command works the same (`check video.jsx`, `render video.jsx`). See `react.md` next to this file.
+
 ## Render options
 
-`-o out.mp4|.webm|.mov|.gif|folder/` · `--quality draft|standard|high|max` · `--fps 60` · `--scale 2` (4K from a 1080p layout) · `--frames 0-90` or `2s-5s` · `--transparent` (with `.mov` ProRes 4444 or `.webm`) · `--motion-blur 8` · `--codec h265|av1` · `--hardware` · `--workers N` · `--data f.json` · `--props '{…}'` · `--seed 7` · `--force`.
+`-o out.mp4|.webm|.mov|.gif|out.mp3|folder/` · `--quality draft|standard|high|max` · `--fps 60` · `--scale 2` (4K from a 1080p layout) · `--frames 0-90` or `2s-5s` · `--transparent` (with `.mov` ProRes 4444 or `.webm`) · `--muted` · `--motion-blur 8` · `--codec h265|av1` · `--hardware` · `--workers N` · `--data f.json` · `--props '{…}'` · `--seed 7` · `--force`.
 
 ## Check codes
 
@@ -147,6 +208,9 @@ Leave `<html>` and `<body>` without a background, then `npx motionwright render 
 | `image-broken`, `http-404`, `video-frame` | A file path is wrong (paths are relative to the HTML file). |
 | `bad-time`, `bad-enter`, `bad-transition`, `sequence-missing-duration`, `no-duration` | Fix the attribute as the message says. |
 | `non-seekable-animation` | A CSS animation started inside `onFrame`; use `data-start` or set styles from `t`. |
+| `timeline-no-target`, `cursor-target` | A selector matched nothing. |
+| `morph-no-pairs` | `morph` transition without matching `data-morph` names in both scenes. |
+| `load-timeout` | Something given to `mw.wait()` never finished. |
 | `script-error`, `console-error` | Your JS threw; the message has the stack. |
 
 Checks skip elements that are mid-animation, and skip overlap/contrast during scene transitions (two scenes are on screen then); look at `sheet.png` for motion problems.

@@ -15,12 +15,40 @@
     "./preset.css": "./src/runtime/preset.css",
     "./package.json": "./package.json"
   },
-  "files": ["src", "blocks", "templates", "skills", "examples", "README.md", "LICENSE", "llms.txt", "AGENTS.md"],
-  "engines": { "node": ">=20" },
+  "files": [
+    "src",
+    "blocks",
+    "templates",
+    "skills",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "llms.txt",
+    "AGENTS.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "bench": "node src/cli.js bench"
   },
-  "keywords": ["video", "html-to-video", "animation", "motion-graphics", "ai", "agents", "claude", "render", "mp4", "ffmpeg", "headless-chrome"],
-  "dependencies": {}
+  "keywords": [
+    "video",
+    "html-to-video",
+    "animation",
+    "motion-graphics",
+    "ai",
+    "agents",
+    "claude",
+    "render",
+    "mp4",
+    "ffmpeg",
+    "headless-chrome"
+  ],
+  "optionalDependencies": {
+    "esbuild": "^0.28.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
 }

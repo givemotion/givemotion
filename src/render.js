@@ -30,7 +30,7 @@ function parseRange(range, fps, totalFrames) {
 /** Resolve the HTML file and the folder that will be served. */
 export function resolveInput(input) {
   let file = resolve(input || 'index.html');
-  if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
+  if (existsSync(file) && statSync(file).isDirectory()) file = ['index.html', 'index.jsx', 'index.tsx'].map((n) => join(file, n)).find((f) => existsSync(f)) || join(file, 'index.html');
   if (!existsSync(file)) throw new Error(`Composition not found: ${file}`);
   // Serve from the nearest folder that looks like a project root (has package.json) or the file's folder.
   let root = dirname(file);

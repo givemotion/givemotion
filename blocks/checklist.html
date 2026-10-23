@@ -1,0 +1,32 @@
+<!-- block:
+description: A list whose items appear one by one and get a check mark. Put <li> items between the tags.
+params: title, every (seconds between items, default 0.6), first (seconds before the first item, default 0.4), accent (color)
+usage: <mw-include src="blocks/checklist.html" title="Launch plan" every="0.7" data-duration="5"><li>Write the script</li><li>Record voiceover</li><li>Render</li></mw-include>
+-->
+<div class="mwb-check" style="--accent:{{accent|#4ade80}}" data-every="{{every|0.6}}" data-first="{{first|0.4}}">
+  <div class="mwb-check__title" data-enter="fade-up 0.6">{{title}}</div>
+  <ul class="mwb-check__list">{{content}}</ul>
+</div>
+<script>
+(() => {
+  const root = document.currentScript.previousElementSibling;
+  const every = parseFloat(root.dataset.every) || 0.6, start = parseFloat(root.dataset.first) || 0;
+  [...root.querySelectorAll('li')].forEach((li, i) => {
+    const d = start + i * every;
+    li.style.setProperty('--d', d + 's');
+    li.insertAdjacentHTML('afterbegin', '<span class="mwb-check__box"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7" pathLength="1"/></svg></span>');
+  });
+})();
+</script>
+<style>
+.mwb-check{display:flex;flex-direction:column;gap:calc(var(--px)*30)}
+.mwb-check__title{font-size:calc(var(--px)*56);font-weight:800;letter-spacing:-.02em}
+.mwb-check__title:empty{display:none}
+.mwb-check__list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:calc(var(--px)*22)}
+.mwb-check__list li{display:flex;align-items:center;gap:calc(var(--px)*24);font-size:calc(var(--px)*46);font-weight:500;animation:fade-left .55s var(--ease-out-expo) var(--d) both}
+.mwb-check__box{flex:none;width:calc(var(--px)*52);height:calc(var(--px)*52);border-radius:calc(var(--px)*14);border:calc(var(--px)*3) solid rgba(255,255,255,.3);display:grid;place-items:center;position:relative;
+  animation:mwb-check-fill .35s var(--ease-out-cubic) calc(var(--d) + .35s) both}
+.mwb-check__box svg{width:72%;height:72%;fill:none;stroke:#0b1210;stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+.mwb-check__box path{stroke-dasharray:1 1;animation:draw .4s var(--ease-out-cubic) calc(var(--d) + .45s) both}
+@keyframes mwb-check-fill{from{background:transparent;border-color:rgba(255,255,255,.3);scale:.85}to{background:var(--accent);border-color:var(--accent);scale:1}}
+</style>

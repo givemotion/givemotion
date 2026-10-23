@@ -1,0 +1,42 @@
+<!-- block:
+description: Animated bar chart. Bars grow one after another and their values count up.
+params: values (comma list), labels (comma list), title, prefix, suffix, max (optional), color, highlight (index of bar to highlight, 0-based), height (px at 1080p, default 560)
+usage: <mw-include src="blocks/bar-chart.html" title="Revenue (k$)" values="12,19,31,48" labels="Q1,Q2,Q3,Q4" highlight="3" data-duration="5"></mw-include>
+-->
+<div class="mwb-bars" style="--c:{{color|#7c9cff}};--h:{{height|560}}" data-values="{{values|3,5,8,13}}" data-labels="{{labels}}" data-prefix="{{prefix}}" data-suffix="{{suffix}}" data-max="{{max}}" data-hl="{{highlight|-1}}">
+  <div class="mwb-bars__title" data-enter="fade-up 0.6">{{title}}</div>
+  <div class="mwb-bars__plot"></div>
+</div>
+<script>
+(() => {
+  const root = document.currentScript.previousElementSibling;
+  const plot = root.querySelector('.mwb-bars__plot');
+  const vals = root.dataset.values.split(',').map((x) => parseFloat(x));
+  const labels = root.dataset.labels ? root.dataset.labels.split(',') : vals.map((_, i) => String(i + 1));
+  const max = parseFloat(root.dataset.max) || Math.max(...vals) * 1.08;
+  const hl = parseInt(root.dataset.hl, 10);
+  vals.forEach((v, i) => {
+    const col = document.createElement('div');
+    col.className = 'mwb-bars__col' + (i === hl ? ' is-hl' : '') + (hl >= 0 && i !== hl ? ' is-dim' : '');
+    col.style.setProperty('--i', i);
+    col.innerHTML = `<div class="mwb-bars__val"><span data-count="${v}" data-count-duration="1.2" data-count-delay="${0.35 + i * 0.12}" data-count-prefix="${root.dataset.prefix}" data-count-suffix="${root.dataset.suffix}"></span></div>
+      <div class="mwb-bars__bar" style="height:${(v / max) * 100}%"></div><div class="mwb-bars__lbl">${(labels[i] || '').trim()}</div>`;
+    plot.appendChild(col);
+  });
+  root.style.setProperty('--n', vals.length);
+})();
+</script>
+<style>
+.mwb-bars{display:flex;flex-direction:column;gap:calc(var(--px)*36);width:calc(var(--px)*1400);max-width:calc(var(--stage-w,1920px) - var(--px)*192)}
+.mwb-bars__title{font-size:calc(var(--px)*48);font-weight:700;letter-spacing:-.01em}
+.mwb-bars__title:empty{display:none}
+.mwb-bars__plot{display:flex;align-items:flex-end;gap:calc(var(--px)*28);height:calc(var(--px)*var(--h));border-bottom:2px solid rgba(255,255,255,.18);padding:0 calc(var(--px)*8)}
+.mwb-bars__col{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;position:relative}
+.mwb-bars__bar{border-radius:calc(var(--px)*14) calc(var(--px)*14) calc(var(--px)*4) calc(var(--px)*4);background:linear-gradient(180deg,color-mix(in oklab,var(--c),white 18%),var(--c));
+  transform-origin:bottom;animation:mwb-bar-grow 1.1s var(--ease-out-expo) calc(.3s + var(--i)*.12s) both}
+.mwb-bars__col.is-dim .mwb-bars__bar{opacity:.38}
+.mwb-bars__col.is-hl .mwb-bars__bar{box-shadow:0 0 calc(var(--px)*40) color-mix(in oklab,var(--c),transparent 40%)}
+.mwb-bars__val{text-align:center;font-size:calc(var(--px)*40);font-weight:700;margin-bottom:calc(var(--px)*14);font-variant-numeric:tabular-nums;animation:fade-up .6s var(--ease-out-expo) calc(.35s + var(--i)*.12s) both}
+.mwb-bars__lbl{position:absolute;top:100%;left:0;right:0;text-align:center;margin-top:calc(var(--px)*16);font-size:calc(var(--px)*30);opacity:.7}
+@keyframes mwb-bar-grow{from{scale:1 0}}
+</style>

@@ -1,0 +1,19 @@
+<!-- block:
+description: Big pull quote. Words fade in one by one, then the author slides in.
+params: text, author, role, accent (color)
+usage: <mw-include src="blocks/quote.html" text="Simplicity is prerequisite for reliability." author="Edsger W. Dijkstra" data-duration="5"></mw-include>
+-->
+<figure class="mwb-quote" style="--accent:{{accent|#7c9cff}}">
+  <div class="mwb-quote__mark" data-enter="pop 0.6">“</div>
+  <blockquote class="mwb-quote__text" data-split="words" data-enter="fade-up 0.5 0.2" data-stagger="0.05">{{text|Make it simple, but significant.}}</blockquote>
+  <figcaption class="mwb-quote__by" data-enter="fade-right 0.6 1.2"><b>{{author}}</b><span>{{role}}</span></figcaption>
+</figure>
+<style>
+.mwb-quote{position:absolute;inset:0;margin:0;display:flex;flex-direction:column;justify-content:center;padding:0 calc(var(--px)*220);gap:calc(var(--px)*30)}
+.mwb-quote__mark{font-size:calc(var(--px)*260);line-height:.6;height:calc(var(--px)*110);color:var(--accent);font-family:Georgia,"Times New Roman",serif}
+.mwb-quote__text{margin:0;font-size:calc(var(--px)*76);line-height:1.18;font-weight:600;letter-spacing:-.02em;max-width:26ch;text-wrap:pretty}
+.mwb-quote__by{display:flex;align-items:baseline;gap:calc(var(--px)*16);font-size:calc(var(--px)*38)}
+.mwb-quote__by b{font-weight:700} .mwb-quote__by span{opacity:.6}
+.mwb-quote__by b:empty,.mwb-quote__by span:empty{display:none}
+.mwb-quote__by b::before{content:"— ";color:var(--accent)}
+</style>

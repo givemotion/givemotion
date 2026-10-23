@@ -1,0 +1,24 @@
+<!-- block:
+description: Name and role plate that wipes in at the bottom left and wipes out at the end of its clip.
+params: name, role, accent (color), position (left|right)
+usage: <mw-include src="blocks/lower-third.html" name="Ada Lovelace" role="Mathematician" data-start="1" data-duration="4"></mw-include>
+-->
+<div class="mwb-lt mwb-lt--{{position|left}}" style="--accent:{{accent|#7c9cff}}">
+  <div class="mwb-lt__plate" data-enter="wipe-right 0.7 0 out-expo" data-exit="wipe-left 0.45 0 in-cubic">
+    <div class="mwb-lt__bar"></div>
+    <div class="mwb-lt__text">
+      <div class="mwb-lt__name" data-enter="fade-right 0.6 0.25">{{name|Jane Doe}}</div>
+      <div class="mwb-lt__role" data-enter="fade-right 0.6 0.38">{{role}}</div>
+    </div>
+  </div>
+</div>
+<style>
+.mwb-lt{position:absolute;left:calc(var(--px)*96);bottom:calc(var(--px)*104);z-index:10}
+.mwb-lt--right{left:auto;right:calc(var(--px)*96)}
+.mwb-lt__plate{display:flex;align-items:stretch;gap:calc(var(--px)*22);padding:calc(var(--px)*22) calc(var(--px)*40) calc(var(--px)*22) calc(var(--px)*22);
+  background:rgba(12,14,20,.82);backdrop-filter:blur(calc(var(--px)*18));border:1px solid rgba(255,255,255,.08);border-radius:calc(var(--px)*18);box-shadow:0 calc(var(--px)*20) calc(var(--px)*60) rgba(0,0,0,.35)}
+.mwb-lt__bar{width:calc(var(--px)*8);border-radius:99px;background:var(--accent)}
+.mwb-lt__name{font-size:calc(var(--px)*52);font-weight:700;letter-spacing:-.01em;color:#fff;line-height:1.1}
+.mwb-lt__role{font-size:calc(var(--px)*32);color:rgba(255,255,255,.7);margin-top:calc(var(--px)*6)}
+.mwb-lt__role:empty{display:none}
+</style>

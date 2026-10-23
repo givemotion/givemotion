@@ -29,18 +29,29 @@ export function readRuntime() {
 /** Expand <mw-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */
 export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
   if (depth > 12) return html;
-  return html.replace(/<mw-include\b([^>]*?)(?:\/>|>\s*<\/mw-include>)/gi, (m, attrStr) => {
+  // <mw-include src="x.html" a="1"/>  or  <mw-include src="x.html" a="1">inner HTML</mw-include>
+  return html.replace(/<mw-include\b((?:[^>"']|"[^"]*"|'[^']*')*?)(?:\/>|>([\s\S]*?)<\/mw-include>)/gi, (m, attrStr, inner) => {
     const attrs = parseAttrs(attrStr);
     if (!attrs.src) return `<!-- mw-include without src -->`;
     const file = resolve(fileDir, attrs.src);
     if (!file.startsWith(rootDir) || !existsSync(file)) return `<div data-mw-include-error="${esc(attrs.src)}" style="color:#f33;font:24px monospace">mw-include not found: ${esc(attrs.src)}</div>`;
     if (seen.includes(file)) return `<!-- circular mw-include ${esc(attrs.src)} -->`;
-    let inner = readFileSync(file, 'utf8');
-    inner = inner.replace(/\{\{\s*([\w.-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, key, def) => (attrs[key] != null ? escText(attrs[key]) : (def != null ? def.trim() : '')));
-    inner = expandIncludes(inner, dirname(file), rootDir, depth + 1, [...seen, file]);
+    let body = readFileSync(file, 'utf8');
+    // Drop the block's documentation comment
+    body = body.replace(/<!--\s*block:[\s\S]*?-->\s*/, '');
+    const vars = { ...attrs, content: inner != null ? expandIncludes(inner, fileDir, rootDir, depth + 1, seen) : '' };
+    body = body.replace(/\{\{\s*([\w.-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, key, def) => {
+      const v = vars[key];
+      if (v != null && v !== '') return key === 'content' ? v : esc(v);
+      return def != null ? def.trim() : '';
+    });
+    body = expandIncludes(body, dirname(file), rootDir, depth + 1, [...seen, file]);
     const passthrough = Object.entries(attrs).filter(([k]) => k === 'class' || k === 'style' || k === 'id' || k.startsWith('data-'))
       .map(([k, v]) => `${k}="${esc(v)}"`).join(' ');
-    return `<div data-mw-include="${esc(attrs.src)}" ${passthrough}>${inner}</div>`;
+    // The wrapper takes no space in layout (display: contents) unless it needs its own box
+    // for animation or styling (data-enter/exit, class or style on the include).
+    const needsBox = ['data-enter', 'data-exit', 'class', 'style'].some((k) => k in attrs);
+    return `<div data-mw-include="${esc(attrs.src)}"${needsBox ? '' : ' style="display:contents"'} ${passthrough}>${body}</div>`;
   });
 }
 function parseAttrs(s) {
@@ -51,7 +62,6 @@ function parseAttrs(s) {
   return out;
 }
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-const escText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 export function injectRuntime(html, { inlineConfig } = {}) {
   const tags = `<link rel="stylesheet" href="/__mw/preset.css" data-mw-preset><script>window.__MW_CONFIG = window.__MW_CONFIG || ${JSON.stringify(inlineConfig || { mode: 'preview' })};</script><script src="/__mw/runtime.js"></script>`;

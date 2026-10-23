@@ -1,0 +1,20 @@
+<!-- block:
+description: Soft animated mesh-gradient background (slowly drifting color blobs with film grain). Put it first inside a scene.
+params: c1, c2, c3 (colors), base (background color), speed (1 = default), grain (0-1, default 0.08)
+usage: <mw-include src="blocks/gradient-bg.html" c1="#6d5dfc" c2="#00c2ff" c3="#ff4ecd"></mw-include>
+-->
+<div class="mwb-grad" style="--c1:{{c1|#6d5dfc}};--c2:{{c2|#00b3ff}};--c3:{{c3|#ff4ecd}};--base:{{base|#07080d}};--sp:{{speed|1}};--grain:{{grain|0.08}}">
+  <i></i><i></i><i></i>
+  <svg class="mwb-grad__grain"><filter id="mwb-grain"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .9 0"/></filter><rect width="100%" height="100%" filter="url(#mwb-grain)"/></svg>
+</div>
+<style>
+.mwb-grad{position:absolute;inset:0;overflow:hidden;background:var(--base);z-index:0}
+.mwb-grad i{position:absolute;width:90%;aspect-ratio:1;border-radius:50%;opacity:.8;mix-blend-mode:screen;background:radial-gradient(closest-side,var(--c),color-mix(in oklab,var(--c),transparent 55%) 45%,transparent)}
+.mwb-grad i:nth-child(1){--c:var(--c1);left:-25%;top:-45%;animation:mwb-grad-a calc(14s / var(--sp)) ease-in-out infinite alternate}
+.mwb-grad i:nth-child(2){--c:var(--c2);right:-30%;top:0%;animation:mwb-grad-b calc(17s / var(--sp)) ease-in-out infinite alternate}
+.mwb-grad i:nth-child(3){--c:var(--c3);left:10%;bottom:-60%;animation:mwb-grad-c calc(20s / var(--sp)) ease-in-out infinite alternate}
+.mwb-grad__grain{position:absolute;inset:0;width:100%;height:100%;opacity:var(--grain);mix-blend-mode:overlay}
+@keyframes mwb-grad-a{to{translate:25% 20%;scale:1.15}}
+@keyframes mwb-grad-b{to{translate:-30% 15%;scale:.9}}
+@keyframes mwb-grad-c{to{translate:15% -25%;scale:1.2}}
+</style>

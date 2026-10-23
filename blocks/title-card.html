@@ -1,0 +1,22 @@
+<!-- block:
+description: Big headline with optional kicker and subtitle. Words rise in one by one.
+params: title, subtitle, kicker, accent (color), align (center|left)
+usage: <mw-include src="blocks/title-card.html" kicker="Chapter 1" title="Ship faster" subtitle="Automate the boring parts" data-duration="4"></mw-include>
+-->
+<div class="mwb-title mwb-title--{{align|center}}" style="--accent:{{accent|#7c9cff}}">
+  <div class="mwb-title__kicker" data-enter="fade-up 0.6 0 out-expo">{{kicker}}</div>
+  <h1 class="mwb-title__h" data-split="words" data-enter="rise 0.9 0.1" data-stagger="0.07">{{title|Your title here}}</h1>
+  <div class="mwb-title__line"></div>
+  <p class="mwb-title__sub" data-enter="fade-up 0.7 0.55">{{subtitle}}</p>
+</div>
+<style>
+.mwb-title{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 calc(var(--px)*160);gap:calc(var(--px)*26)}
+.mwb-title--left{align-items:flex-start;text-align:left}
+.mwb-title__kicker{font-size:calc(var(--px)*30);font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+.mwb-title__h{margin:0;font-size:calc(var(--px)*132);line-height:1.02;font-weight:800;letter-spacing:-.035em;max-width:16ch;text-wrap:balance}
+.mwb-title__line{margin:calc(var(--px)*10) 0;width:calc(var(--px)*120);height:calc(var(--px)*8);border-radius:99px;background:var(--accent);transform-origin:left;animation:mwb-title-line .9s var(--ease-out-expo) .45s both}
+.mwb-title--center .mwb-title__line{transform-origin:center}
+.mwb-title__sub{margin:0;font-size:calc(var(--px)*44);line-height:1.3;opacity:.72;max-width:30ch;text-wrap:balance}
+.mwb-title__kicker:empty,.mwb-title__sub:empty{display:none}
+@keyframes mwb-title-line{from{scale:0 1}}
+</style>

@@ -1,0 +1,45 @@
+<!-- block:
+description: Label with a hand-drawn style arrow pointing at a spot, plus a pulsing ring on the target. Coordinates are px in a 1080p frame.
+params: x, y (target point), label, side (where the label sits: left|right|top|bottom, default right), distance (px, default 260), accent (color)
+usage: <mw-include src="blocks/callout.html" x="980" y="420" label="Click Deploy" side="right" data-start="1" data-duration="3"></mw-include>
+-->
+<div class="mwb-call" style="--accent:{{accent|#ffd23f}}" data-x="{{x|960}}" data-y="{{y|540}}" data-side="{{side|right}}" data-dist="{{distance|260}}">
+  <div class="mwb-call__ring"></div>
+  <svg class="mwb-call__svg"><path class="mwb-call__path" pathLength="1"/><path class="mwb-call__head" pathLength="1"/></svg>
+  <div class="mwb-call__label" data-enter="pop 0.5 0.55">{{label|Look here}}</div>
+</div>
+<script>
+(() => {
+  const root = document.currentScript.previousElementSibling;
+  const S = mw.height / 1080;
+  const x = +root.dataset.x * S, y = +root.dataset.y * S, d = +root.dataset.dist * S, side = root.dataset.side;
+  const dir = { right: [1, -0.35], left: [-1, -0.35], top: [0.25, -1], bottom: [0.25, 1] }[side] || [1, -0.35];
+  const n = Math.hypot(dir[0], dir[1]);
+  const lx = x + (dir[0] / n) * d, ly = y + (dir[1] / n) * d;
+  const ring = root.querySelector('.mwb-call__ring');
+  ring.style.left = x + 'px'; ring.style.top = y + 'px';
+  const label = root.querySelector('.mwb-call__label');
+  label.style.left = lx + 'px'; label.style.top = ly + 'px';
+  label.style.translate = side === 'left' ? '-100% -50%' : side === 'top' ? '-50% -100%' : side === 'bottom' ? '-50% 0' : '0 -50%';
+  // arrow from label edge to near the target, slightly curved
+  const sx = lx - (dir[0] / n) * 24 * S, sy = ly - (dir[1] / n) * 24 * S;
+  const ex = x + (dir[0] / n) * 46 * S, ey = y + (dir[1] / n) * 46 * S;
+  const cx = (sx + ex) / 2 - (dir[1] / n) * 50 * S, cy = (sy + ey) / 2 + (dir[0] / n) * 50 * S;
+  const ang = Math.atan2(ey - cy, ex - cx), h = 22 * S;
+  const p = (a) => `${ex - Math.cos(ang + a) * h},${ey - Math.sin(ang + a) * h}`;
+  const svg = root.querySelector('svg');
+  svg.querySelector('.mwb-call__path').setAttribute('d', `M${sx},${sy} Q${cx},${cy} ${ex},${ey}`);
+  svg.querySelector('.mwb-call__head').setAttribute('d', `M${p(0.5)} L${ex},${ey} L${p(-0.5)}`);
+})();
+</script>
+<style>
+.mwb-call{position:absolute;inset:0;pointer-events:none;z-index:40}
+.mwb-call__svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.mwb-call__path,.mwb-call__head{fill:none;stroke:var(--accent);stroke-width:calc(var(--px)*6);stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 1;filter:drop-shadow(0 calc(var(--px)*3) calc(var(--px)*6) rgba(0,0,0,.35))}
+.mwb-call__path{animation:draw .55s var(--ease-in-out-cubic) .15s both}
+.mwb-call__head{animation:draw .25s var(--ease-out-cubic) .65s both}
+.mwb-call__ring{position:absolute;width:calc(var(--px)*72);height:calc(var(--px)*72);margin:calc(var(--px)*-36) 0 0 calc(var(--px)*-36);border-radius:50%;border:calc(var(--px)*5) solid var(--accent);
+  animation:pop-in .5s var(--ease-out-back) both,mwb-call-pulse 1.4s ease-out .6s infinite}
+.mwb-call__label{position:absolute;white-space:nowrap;padding:calc(var(--px)*14) calc(var(--px)*26);border-radius:calc(var(--px)*16);background:var(--accent);color:#111;font-size:calc(var(--px)*40);font-weight:800;box-shadow:0 calc(var(--px)*12) calc(var(--px)*30) rgba(0,0,0,.3)}
+@keyframes mwb-call-pulse{0%{box-shadow:0 0 0 0 color-mix(in oklab,var(--accent),transparent 30%)}100%{box-shadow:0 0 0 calc(var(--px)*30) transparent}}
+</style>

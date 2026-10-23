@@ -35,6 +35,18 @@ const PAGE_ANALYZE = String.raw`(() => {
   };
   const union = (rs) => rs.reduce((a, r) => a ? { left: Math.min(a.left, r.left), top: Math.min(a.top, r.top), right: Math.max(a.right, r.right), bottom: Math.max(a.bottom, r.bottom) } : { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, null);
   const sel = (el) => mw.__selector(el);
+  // Elements that are mid-animation right now are skipped (they are moving into place).
+  const moving = new Set();
+  for (const a of document.getAnimations()) {
+    try {
+      const ct = a.effect.getComputedTiming();
+      const lt = ct.localTime, d = ct.delay || 0, ad = ct.activeDuration;
+      if (ct.progress != null && lt > d && lt < d + ad && isFinite(ad)) moving.add(a.effect.target);
+    } catch (e) {}
+  }
+  const isMoving = (el) => { for (let c = el; c; c = c.parentElement) if (moving.has(c)) return true; return false; };
+  // Glyph boxes are taller than the visible letters; shrink them for overlap tests.
+  const tight = (r) => ({ left: r.left, right: r.right, top: r.top + r.height * 0.2, bottom: r.bottom - r.height * 0.22, width: r.width, height: r.height * 0.58 });
   const snippet = (el) => (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
   const texts = [];
   for (const el of document.body.querySelectorAll('*')) {
@@ -45,11 +57,12 @@ const PAGE_ANALYZE = String.raw`(() => {
     const rs = textRects(el);
     if (!rs.length) continue;
     const u = union(rs);
-    texts.push({ el, rs, u, op });
+    texts.push({ el, rs, u, op, moving: isMoving(el) });
   }
   for (const t of texts) {
     const { el, u } = t;
     const cs = getComputedStyle(el);
+    if (t.moving) continue;
     // 1. Off-screen text
     const outX = Math.max(0, -u.left) + Math.max(0, u.right - W);
     const outY = Math.max(0, -u.top) + Math.max(0, u.bottom - H);
@@ -72,17 +85,21 @@ const PAGE_ANALYZE = String.raw`(() => {
     }
     // 3. Spills out of its card (nearest ancestor with a visible background or border)
     anc = el.parentElement;
-    while (anc && anc !== document.body && !anc.classList.contains('scene')) {
+    let escapes = /^(absolute|fixed)$/.test(cs.position);
+    const clipText = cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text';
+    while (!escapes && !clipText && anc && anc !== document.body && !anc.classList.contains('scene')) {
       const acs = getComputedStyle(anc);
+      if (acs.webkitBackgroundClip === 'text' || acs.backgroundClip === 'text') break;
       const hasBox = (acs.backgroundColor && !/rgba\(0, 0, 0, 0\)|transparent/.test(acs.backgroundColor)) || acs.backgroundImage !== 'none' || parseFloat(acs.borderTopWidth) > 0 && acs.borderTopStyle !== 'none';
       if (hasBox) {
         const r = anc.getBoundingClientRect();
-        const slack = 2;
-        if (u.right > r.right + slack || u.left < r.left - slack || u.bottom > r.bottom + slack || u.top < r.top - slack) {
+        const slack = 2, vslack = 0.3 * parseFloat(cs.fontSize);
+        if (u.right > r.right + slack || u.left < r.left - slack || u.bottom > r.bottom + vslack || u.top < r.top - vslack) {
           out.push({ severity: 'warning', code: 'text-overflows-box', selector: sel(el), text: snippet(el), message: 'Text spills outside its box ' + sel(anc) + '.', fix: 'Add padding/width to the box, shorten the text, or reduce font-size.' });
         }
         break;
       }
+      if (/^(absolute|fixed)$/.test(acs.position)) escapes = true;
       anc = anc.parentElement;
     }
     // 4. Tiny text (visual size, after transforms)
@@ -100,14 +117,18 @@ const PAGE_ANALYZE = String.raw`(() => {
   for (let i = 0; i < texts.length; i++) {
     for (let j = i + 1; j < texts.length; j++) {
       const a = texts[i], b = texts[j];
+      if (a.moving || b.moving) continue;
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      const splitParent = (e) => e.closest('[data-split]');
+      if (splitParent(a.el) && splitParent(a.el) === splitParent(b.el)) continue;
       let inter = 0;
-      for (const ra of a.rs) for (const rb of b.rs) {
+      for (const ra0 of a.rs) for (const rb0 of b.rs) {
+        const ra = tight(ra0), rb = tight(rb0);
         const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
         const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
         if (w > 0 && h > 0) inter += w * h;
       }
-      const area = (t) => t.rs.reduce((s, r) => s + r.width * r.height, 0);
+      const area = (t) => t.rs.reduce((s, r) => s + r.width * r.height * 0.58, 0);
       if (inter > 0.12 * Math.min(area(a), area(b))) {
         out.push({ severity: 'warning', code: 'text-overlap', selector: sel(a.el), text: snippet(a.el), message: 'Text overlaps other text: ' + sel(b.el) + ' ("' + snippet(b.el) + '").', fix: 'Move one of them, or make sure they are not visible at the same time.' });
       }
@@ -119,7 +140,7 @@ const PAGE_ANALYZE = String.raw`(() => {
     if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) out.push({ severity: 'error', code: 'image-broken', selector: sel(img), message: 'Image did not load: ' + img.getAttribute('src'), fix: 'Check the file path (relative to the HTML file).' });
   }
   // Text boxes for the contrast pass
-  window.__mwTextBoxes = texts.filter((t) => !t.clipText).map((t) => ({ sel: sel(t.el), text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, large: t.fontPx >= 32 * PX || (t.bold && t.fontPx >= 24 * PX) }));
+  window.__mwTextBoxes = texts.filter((t) => !t.clipText && !t.moving).map((t) => ({ sel: sel(t.el), text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, large: t.fontPx >= 32 * PX || (t.bold && t.fontPx >= 24 * PX) }));
   return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length };
 })()`;
 

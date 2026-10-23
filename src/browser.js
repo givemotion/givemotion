@@ -143,7 +143,7 @@ export class FramePage {
   async _launch(mode) {
     const { chrome, width, height } = this.opts;
     this.mode = mode;
-    this.browser = launchChrome(chrome.path, [...chromeArgs({ kind: chrome.kind, beginFrame: mode === 'beginframe', gl: this.opts.gl }), `--window-size=${width},${height}`, 'about:blank']);
+    this.browser = launchChrome(chrome.path, [...chromeArgs({ kind: chrome.kind, beginFrame: mode === 'beginframe', gl: this.opts.gl }), `--window-size=${width},${height}`, ...((this.opts.scale || 1) !== 1 ? [`--force-device-scale-factor=${this.opts.scale}`] : []), 'about:blank']);
     const b = this.browser;
     const { targetId } = await b.send('Target.createTarget', { url: 'about:blank', width, height, ...(mode === 'beginframe' ? { enableBeginFrameControl: true } : {}) });
     const { sessionId } = await b.send('Target.attachToTarget', { targetId, flatten: true });

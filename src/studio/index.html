@@ -197,24 +197,13 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
     raf = requestAnimationFrame(step);
   }
   function pause() { playing = false; cancelAnimationFrame(raf); $('play').textContent = 'Play'; $('play').classList.remove('on'); syncAudio(false); }
-  // Real audio while playing (the composition's <audio> elements)
+  // Real audio while playing (volume curves and ducking come from the runtime)
   let audioSynced = 0;
   function syncAudio(on, at) {
-    if (!info || !frame.contentDocument) return;
-    const now = at ?? t;
-    if (on && performance.now() - audioSynced < 400 && at == null) return;
+    if (!mw || !mw.__syncMedia) return;
+    if (on && performance.now() - audioSynced < 250 && at == null) return;
     audioSynced = performance.now();
-    const media = info.media.filter((m) => m.kind === 'audio');
-    const els = [...frame.contentDocument.querySelectorAll('audio')];
-    els.forEach((el, i) => {
-      const m = media[i];
-      if (!m || !on || speed !== 1) { el.pause(); return; }
-      const lt = (now - m.start) * (m.rate || 1) + (m.from || 0);
-      if (now < m.start || now >= m.end) { el.pause(); return; }
-      el.volume = Math.max(0, Math.min(1, m.volume ?? 1));
-      if (Math.abs(el.currentTime - lt) > 0.15) el.currentTime = lt;
-      if (el.paused) el.play().catch(() => {});
-    });
+    mw.__syncMedia(on, at ?? t, { rate: speed });
   }
 
   $('play').onclick = () => (playing ? pause() : play());

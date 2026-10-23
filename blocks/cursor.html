@@ -1,40 +1,87 @@
 <!-- block:
-description: A mouse pointer that glides between points and clicks. Points are "x,y" in px (1080p frame); add ! to click there. Times in seconds (one per point).
-params: points (e.g. "400,300 900,520! 1300,600!"), times (e.g. "0 1 2.2"), size (px, default 44)
-usage: <mw-include src="blocks/cursor.html" points="300,800 960,540! 1500,300!" times="0.2 1.2 2.4" data-duration="4"></mw-include>
+description: A mouse pointer that glides between targets and clicks them. Aim at real elements with CSS selectors (the pointer follows them even while they move), or at "x,y" points (px at 1080p). Add ! to click. Clicked elements get a short press, and the attribute data-mw-pressed while pressed and data-mw-hover while the pointer is over them, so you can style them.
+params: points (e.g. "#email #submit! 1500,900"), times (seconds, one per point, relative to the clip), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
+usage: <mw-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node:nth-child(2)!" times="0.3 1.4 3 4.2"></mw-include>
 -->
-<div class="mwb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}">
+<div class="mwb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-style="{{style|auto}}">
   <div class="mwb-cursor__ring"></div>
   <svg class="mwb-cursor__arrow" viewBox="0 0 24 24"><path d="M4 2.5l15.5 9.2-6.6 1.6-3.4 6.2z"/></svg>
+  <svg class="mwb-cursor__hand" viewBox="0 0 24 24"><path d="M9 3.2c.9 0 1.6.7 1.6 1.6v6.1l.6-.1c.8 0 1.5.6 1.6 1.4l.1.2c.3-.5.8-.8 1.4-.8.8 0 1.5.6 1.6 1.4.3-.3.7-.5 1.2-.5.9 0 1.6.7 1.6 1.6v2.3c0 3.1-2.5 5.6-5.6 5.6h-1.3c-1.9 0-3.6-1-4.6-2.6l-2.9-4.8c-.4-.7-.2-1.6.5-2 .6-.4 1.4-.2 1.9.3l.8 1V4.8c0-.9.7-1.6 1.6-1.6z"/></svg>
 </div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
-  const arrow = root.querySelector('.mwb-cursor__arrow'), ring = root.querySelector('.mwb-cursor__ring');
-  const pts = root.dataset.points.trim().split(/\s+/).map((p) => { const click = p.endsWith('!'); const [x, y] = p.replace('!', '').split(',').map(Number); return { x, y, click }; });
-  const ts = root.dataset.times ? root.dataset.times.trim().split(/\s+/).map(Number) : pts.map((_, i) => 0.3 + i * 1.1);
-  const S = () => mw.px;
-  mw.onFrame(root, (t) => {
+  const arrow = root.querySelector('.mwb-cursor__arrow'), hand = root.querySelector('.mwb-cursor__hand'), ring = root.querySelector('.mwb-cursor__ring');
+  const scope = root.closest('.scene,[data-duration],[data-start]') || document.body;
+  // "x,y" or a CSS selector; "!" at the end means click
+  const pts = root.dataset.points.trim().split(/\s+(?![^\[]*\])/).map((p) => {
+    const click = p.endsWith('!');
+    const s = click ? p.slice(0, -1) : p;
+    const m = /^(-?[\d.]+),(-?[\d.]+)$/.exec(s);
+    return m ? { x: +m[1], y: +m[2], click } : { sel: s, click, el: null };
+  });
+  const ts = root.dataset.times ? root.dataset.times.trim().split(/\s+/).map(Number) : pts.map((_, i) => 0.3 + i * 1.2);
+  const style = root.dataset.style;
+  const targetOf = (p) => { if (!p.sel) return null; if (!p.el || !p.el.isConnected) p.el = scope.querySelector(p.sel) || document.querySelector(p.sel); return p.el; };
+  for (const p of pts) if (p.sel && !targetOf(p)) mw.__report('error', 'cursor-target', `cursor: "${p.sel}" matched nothing.`, root, 'Use a selector for an element in the same scene, e.g. #button.');
+  // Where a point is right now, in this block's coordinates (px at 1080p)
+  function where(p) {
+    const el = targetOf(p);
+    if (!el) return { x: p.x || 0, y: p.y || 0 };
+    const r = el.getBoundingClientRect(), base = root.parentElement.getBoundingClientRect();
+    const k = (root.parentElement.offsetWidth ? base.width / root.parentElement.offsetWidth : 1) * mw.px;
+    // aim a little below the middle, like a real hand would
+    return { x: (r.left + r.width * 0.5 - base.left) / k, y: (r.top + r.height * 0.56 - base.top) / k, el, r };
+  }
+  const pressed = new Set();
+  mw.onLayout(root, (t) => {
     let i = 0;
     while (i < pts.length - 1 && t >= ts[i + 1]) i++;
-    let x = pts[i].x, y = pts[i].y;
+    let P = where(pts[i]);
+    let x = P.x, y = P.y;
     if (i < pts.length - 1 && t > ts[i]) {
       const seg = ts[i + 1] - ts[i], move = Math.min(seg, 0.9);
       const p = mw.interpolate(t, [ts[i + 1] - move, ts[i + 1]], [0, 1], { easing: 'in-out-cubic' });
-      // slight arc for natural motion
-      const mx = (pts[i].x + pts[i + 1].x) / 2, my = Math.min(pts[i].y, pts[i + 1].y) - 60;
-      const q = (a, b, c) => (1 - p) * (1 - p) * a + 2 * (1 - p) * p * b + p * p * c;
-      x = q(pts[i].x, mx, pts[i + 1].x); y = q(pts[i].y, my, pts[i + 1].y);
+      if (p > 0) {
+        const Q = where(pts[i + 1]);
+        const mx = (P.x + Q.x) / 2, my = Math.min(P.y, Q.y) - 60; // slight arc
+        const q = (a, b, c) => (1 - p) * (1 - p) * a + 2 * (1 - p) * p * b + p * p * c;
+        x = q(P.x, mx, Q.x); y = q(P.y, my, Q.y);
+      }
     }
-    // click: press + ripple right after arriving at a point marked with !
+    // clicks: press + ripple right after arriving at a point marked with !
     let press = 1, rp = -1;
+    const nowPressed = new Set();
     pts.forEach((pt, k) => {
       if (!pt.click) return;
       const dt = t - ts[k];
-      if (dt >= 0 && dt < 0.6) { rp = dt / 0.6; press = Math.min(press, 1 - 0.18 * Math.sin(Math.min(1, dt / 0.22) * Math.PI)); }
+      if (dt >= 0 && dt < 0.6) {
+        rp = dt / 0.6;
+        const s = Math.sin(Math.min(1, dt / 0.24) * Math.PI);
+        press = Math.min(press, 1 - 0.18 * s);
+        const el = targetOf(pt);
+        if (el && dt < 0.24) { nowPressed.add(el); el.style.scale = String(1 - 0.05 * s); }
+      }
     });
-    root.style.translate = `${x * S()}px ${y * S()}px`;
-    arrow.style.scale = press;
+    for (const el of pressed) if (!nowPressed.has(el)) { el.style.removeProperty('scale'); el.removeAttribute('data-mw-pressed'); }
+    for (const el of nowPressed) el.setAttribute('data-mw-pressed', '');
+    pressed.clear(); nowPressed.forEach((e) => pressed.add(e));
+    // hover state + hand pointer over targets
+    let over = false;
+    const px = mw.px, base = root.parentElement.getBoundingClientRect(), k = root.parentElement.offsetWidth ? base.width / root.parentElement.offsetWidth : 1;
+    for (const pt of pts) {
+      const el = targetOf(pt);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      const sx = base.left + x * px * k, sy = base.top + y * px * k;
+      const inside = sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom;
+      if (inside) { over = true; el.setAttribute('data-mw-hover', ''); } else el.removeAttribute('data-mw-hover');
+    }
+    const useHand = style === 'hand' || (style === 'auto' && over);
+    arrow.style.display = useHand ? 'none' : '';
+    hand.style.display = useHand ? '' : 'none';
+    root.style.translate = `${x * px}px ${y * px}px`;
+    arrow.style.scale = hand.style.scale = press;
     ring.style.opacity = rp < 0 ? 0 : 1 - rp;
     ring.style.scale = rp < 0 ? 0 : 0.3 + rp * 1.4;
     root.style.opacity = mw.interpolate(t, [0, 0.25], [0, 1]);
@@ -43,7 +90,9 @@ usage: <mw-include src="blocks/cursor.html" points="300,800 960,540! 1500,300!" 
 </script>
 <style>
 .mwb-cursor{position:absolute;left:0;top:0;width:0;height:0;z-index:50;pointer-events:none}
-.mwb-cursor__arrow{position:absolute;left:calc(var(--px)*-4);top:calc(var(--px)*-3);width:calc(var(--px)*var(--s));height:calc(var(--px)*var(--s));transform-origin:15% 10%;filter:drop-shadow(0 calc(var(--px)*4) calc(var(--px)*8) rgba(0,0,0,.4))}
-.mwb-cursor__arrow path{fill:#111;stroke:#fff;stroke-width:1.6;stroke-linejoin:round}
+.mwb-cursor__arrow,.mwb-cursor__hand{position:absolute;width:calc(var(--px)*var(--s));height:calc(var(--px)*var(--s));filter:drop-shadow(0 calc(var(--px)*4) calc(var(--px)*8) rgba(0,0,0,.4))}
+.mwb-cursor__arrow{left:calc(var(--px)*-4);top:calc(var(--px)*-3);transform-origin:15% 10%}
+.mwb-cursor__hand{left:calc(var(--px)*var(--s)*-0.37);top:calc(var(--px)*var(--s)*-0.12);transform-origin:37% 12%}
+.mwb-cursor svg path{fill:#111;stroke:#fff;stroke-width:1.6;stroke-linejoin:round}
 .mwb-cursor__ring{position:absolute;width:calc(var(--px)*110);height:calc(var(--px)*110);left:calc(var(--px)*-55);top:calc(var(--px)*-55);border-radius:50%;border:calc(var(--px)*4) solid rgba(255,255,255,.9);background:rgba(255,255,255,.15);opacity:0}
 </style>

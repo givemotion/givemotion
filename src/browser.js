@@ -42,6 +42,13 @@ export function findChrome(explicit) {
   if (own) return { path: own, kind: 'shell' };
   const pup = findInDir(join(homedir(), '.cache', 'puppeteer', 'chrome-headless-shell'), shellBinaryName(), 5);
   if (pup) return { path: pup, kind: 'shell' };
+  // Playwright's browser cache (chromium_headless_shell-NNNN)
+  const pwDirs = [process.env.PLAYWRIGHT_BROWSERS_PATH, join(homedir(), '.cache', 'ms-playwright'), join(homedir(), 'Library', 'Caches', 'ms-playwright'), process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'ms-playwright')].filter((d) => d && d !== '0');
+  for (const d of pwDirs) {
+    let entries = [];
+    try { entries = readdirSync(d).filter((e) => e.startsWith('chromium_headless_shell-')).sort().reverse(); } catch {}
+    for (const e of entries) { const p = findInDir(join(d, e), shellBinaryName(), 3); if (p) return { path: p, kind: 'shell' }; }
+  }
   const candidates = {
     darwin: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium', '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary'],
     linux: ['/usr/bin/google-chrome-stable', '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'],

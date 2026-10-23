@@ -18,6 +18,7 @@ Make
   init [dir]                    New project: index.html + AI skill files
   dev [file]                    Live preview studio (scrub, play, frame-step)
   render [file] -o out.mp4      Render to mp4 / webm / mov / gif / png frames
+                                (or -o sound.mp3/.wav/.m4a for the soundtrack only)
   still [file] -t 2.5 -o a.png  Render one frame
 
 Look (for AI review)
@@ -25,6 +26,10 @@ Look (for AI review)
                                 overlaps, tiny text, low contrast, broken assets
   snapshot [file] -o dir        Key moments as PNGs + one contact sheet (sheet.png)
   inspect [file]                Timeline as JSON: size, fps, duration, clips, media
+
+Share
+  bundle [file] -o dir          Standalone page that plays in any browser, plus
+                                <mw-player> to embed it in a website or app
 
 Build faster
   blocks                        List ready-made blocks (titles, charts, captions…)
@@ -49,6 +54,7 @@ Render options
   --frames <range>       Part of the video: "0-90" (frames) or "2s-5s"
   --workers <n>          Parallel browsers (default: based on CPU and memory)
   --transparent          Keep transparency (use --format mov or webm)
+  --muted                No audio track
   --motion-blur <n>      Real motion blur with n sub-frames (e.g. 8)
   --shutter <0-1>        Motion blur shutter (default 0.5)
   --data <file.json>     Data for data-bind / mw.data
@@ -75,6 +81,7 @@ const CMD_HELP = {
   --json            Machine-readable output`,
   check: `motionwright check [file.html] [--json] [--samples 10] [--transparent]
   Exit code 1 when there are errors. Warnings do not fail.`,
+  bundle: 'motionwright bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), mw-player.js and player.html.\n  Embed: <script src="mw-player.js"></script> <mw-player src="index.html" controls autoplay loop muted></mw-player>',
   inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), media, issues.',
   dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
   init: 'motionwright init [dir] [--force]',
@@ -83,7 +90,7 @@ const CMD_HELP = {
   bench: 'motionwright bench [file.html] [--workers n] [--json]',
 };
 
-const BOOLS = ['json', 'force', 'transparent', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
+const BOOLS = ['json', 'force', 'transparent', 'muted', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -98,6 +105,7 @@ async function main() {
     case 'snapshot': return cmdSnapshot(args);
     case 'check': return cmdCheck(args);
     case 'inspect': return cmdInspect(args);
+    case 'bundle': case 'export': return cmdBundle(args);
     case 'dev': case 'preview': case 'studio': return cmdDev(args);
     case 'init': return cmdInit(args);
     case 'blocks': return cmdBlocks(args);
@@ -136,7 +144,7 @@ async function cmdRender(args) {
   try {
     const summary = await render(inputOf(args), {
       ...commonOpts(args), output: out, format: args.format, quality: args.quality, crf: args.crf != null ? +args.crf : undefined, codec: args.codec,
-      hardware: args.hardware, workers: args.workers ? +args.workers : undefined, frames: args.frames, transparent: args.transparent,
+      hardware: args.hardware, workers: args.workers ? +args.workers : undefined, frames: args.frames, transparent: args.transparent, muted: args.muted,
       motionBlur: args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json,
       noReuse: args.reuse === false, lossless: args.lossless,
     });
@@ -202,6 +210,15 @@ async function cmdInspect(args) {
   try {
     const info = await inspect(inputOf(args), commonOpts(args));
     console.log(JSON.stringify(info, null, 2));
+  } catch (e) { fail(e, args); }
+}
+
+async function cmdBundle(args) {
+  const { bundle } = await import('./bundle.js');
+  try {
+    const r = bundle(inputOf(args), { output: args.output, data: loadData(args) });
+    if (args.json) return console.log(JSON.stringify(r, null, 2));
+    console.log(`Standalone page: ${shortPath(r.page)} (${r.files} asset file${r.files === 1 ? '' : 's'} copied)\nPlayer demo:     ${shortPath(r.player)}\nEmbed anywhere:  <script src="mw-player.js"></script> <mw-player src="${relative(r.outDir, r.page).split('\\').join('/')}" controls></mw-player>\n(Open through a web server, not file://.)`);
   } catch (e) { fail(e, args); }
 }
 

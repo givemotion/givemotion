@@ -53,7 +53,7 @@
     if (typeof fn !== 'function') return 0;
     const id = timerIdCounter++;
     const delay = Math.max(0, Number(ms) || 0) / 1000;
-    timers.set(id, { due: now + delay, fn, args, interval: interval ? Math.max(delay, 0.001) : 0, seq: timerSeq++ });
+    timers.set(id, { due: now + delay, delay, fn, args, interval: interval ? Math.max(delay, 0.001) : 0, seq: timerSeq++ });
     return id;
   }
   window.setTimeout = (fn, ms, ...args) => addTimer(fn, ms, args, false);
@@ -90,6 +90,20 @@
       try { t.fn(...(t.args || [])); } catch (e) { pageError(e); }
       flushAnimations(now, 'event');
     }
+  }
+  // While the page is still loading (waiting on mw.wait promises), libraries often poll with short
+  // timers (fonts, Lottie, model loaders). The video clock is paused then, so run those short timers
+  // for real. Long timers (likely meant as video events) still wait for their video time.
+  function loadPump() {
+    let ran = 0;
+    const due = [...timers.entries()].filter(([, t]) => t.delay <= 0.25).sort((a, b) => a[1].due - b[1].due || a[1].seq - b[1].seq);
+    for (const [id, t] of due) {
+      if (!timers.has(id)) continue;
+      if (t.interval) { t.due += t.interval; t.seq = timerSeq++; } else timers.delete(id);
+      try { t.fn(...(t.args || [])); } catch (e) { pageError(e); }
+      if (++ran > 200) break;
+    }
+    if (rafs.size) { const list = [...rafs.values()]; rafs.clear(); for (const fn of list) { try { fn(now * 1000); } catch (e) { pageError(e); } } }
   }
   function runRAF(T) {
     if (!rafs.size) return;
@@ -184,34 +198,91 @@
   }
   const BEZ = {
     'linear': [0, 0, 1, 1], 'ease': [0.25, 0.1, 0.25, 1], 'ease-in': [0.42, 0, 1, 1], 'ease-out': [0, 0, 0.58, 1], 'ease-in-out': [0.42, 0, 0.58, 1],
+    'in-sine': [0.12, 0, 0.39, 0], 'out-sine': [0.61, 1, 0.88, 1], 'in-out-sine': [0.37, 0, 0.63, 1],
     'in-quad': [0.11, 0, 0.5, 0], 'out-quad': [0.5, 1, 0.89, 1], 'in-out-quad': [0.45, 0, 0.55, 1],
     'in-cubic': [0.32, 0, 0.67, 0], 'out-cubic': [0.33, 1, 0.68, 1], 'in-out-cubic': [0.65, 0, 0.35, 1],
-    'out-quart': [0.25, 1, 0.5, 1], 'in-out-quart': [0.76, 0, 0.24, 1],
+    'in-quart': [0.5, 0, 0.75, 0], 'out-quart': [0.25, 1, 0.5, 1], 'in-out-quart': [0.76, 0, 0.24, 1],
+    'in-quint': [0.64, 0, 0.78, 0], 'out-quint': [0.22, 1, 0.36, 1], 'in-out-quint': [0.83, 0, 0.17, 1],
     'in-expo': [0.7, 0, 0.84, 0], 'out-expo': [0.16, 1, 0.3, 1], 'in-out-expo': [0.87, 0, 0.13, 1],
-    'out-circ': [0, 0.55, 0.45, 1], 'in-back': [0.36, 0, 0.66, -0.56], 'out-back': [0.34, 1.56, 0.64, 1], 'in-out-back': [0.68, -0.6, 0.32, 1.6],
+    'in-circ': [0.55, 0, 1, 0.45], 'out-circ': [0, 0.55, 0.45, 1], 'in-out-circ': [0.85, 0, 0.15, 1],
+    'in-back': [0.36, 0, 0.66, -0.56], 'out-back': [0.34, 1.56, 0.64, 1], 'in-out-back': [0.68, -0.6, 0.32, 1.6],
   };
   const SPRINGS = { spring: { stiffness: 170, damping: 26, T: 0.71 }, bouncy: { stiffness: 180, damping: 12, T: 1.14 }, snappy: { stiffness: 400, damping: 30, T: 0.4 }, gentle: { stiffness: 120, damping: 20, T: 0.58 } };
+  // Curves that are not cubic-beziers. Each takes x in [0,1].
+  function bounceOut(x) {
+    const n = 7.5625, d = 2.75;
+    if (x < 1 / d) return n * x * x;
+    if (x < 2 / d) return n * (x -= 1.5 / d) * x + 0.75;
+    if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + 0.9375;
+    return n * (x -= 2.625 / d) * x + 0.984375;
+  }
+  function elasticOut(amp = 1, period = 0.3) {
+    const a = Math.max(1, amp), s = (period / (2 * Math.PI)) * Math.asin(1 / a);
+    return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : a * Math.pow(2, -10 * x) * Math.sin(((x - s) * (2 * Math.PI)) / period) + 1);
+  }
+  function backOut(o = 1.7) { return (x) => 1 + (o + 1) * Math.pow(x - 1, 3) + o * Math.pow(x - 1, 2); }
+  const inv = (f) => (x) => 1 - f(1 - x);
+  const inOut = (fOut) => (x) => (x < 0.5 ? (1 - fOut(1 - 2 * x)) / 2 : (1 + fOut(2 * x - 1)) / 2);
+  const FUNCS = {
+    'out-bounce': () => bounceOut, 'in-bounce': () => inv(bounceOut), 'in-out-bounce': () => inOut(bounceOut),
+    'out-elastic': (p) => elasticOut(p[0], p[1]), 'in-elastic': (p) => inv(elasticOut(p[0], p[1])), 'in-out-elastic': (p) => inOut(elasticOut(p[0], p[1] ?? 0.45)),
+    'out-back': (p) => backOut(p[0]), 'in-back': (p) => inv(backOut(p[0])), 'in-out-back': (p) => inOut(backOut(p[0] ?? 2.5)),
+  };
+  // GSAP-style names ("power2.out", "back.out(1.7)", "sine.inOut", "none") are accepted because models write them by habit.
+  const GS_KIND = { power0: 'linear', none: 'linear', linear: 'linear', power1: 'quad', quad: 'quad', power2: 'cubic', cubic: 'cubic', power3: 'quart', quart: 'quart', power4: 'quint', quint: 'quint', strong: 'quint', sine: 'sine', expo: 'expo', circ: 'circ', back: 'back', elastic: 'elastic', bounce: 'bounce' };
+  function normEase(name) {
+    let s = String(name || 'linear').trim();
+    let params = [];
+    const pm = /^([\w.-]+)\(([^)]*)\)$/.exec(s);
+    if (pm && !/^(cubic-bezier|linear|steps)$/.test(pm[1])) { s = pm[1]; params = pm[2].split(',').map((x) => parseFloat(x)).filter((x) => isFinite(x)); }
+    if (BEZ[s] || SPRINGS[s]) return { key: s, params };
+    const g = /^([a-z]+\d?)(?:\.(in|out|inOut|in-out))?$/i.exec(s);
+    if (g && GS_KIND[g[1].toLowerCase()] && (g[2] || /^(power\d|none|strong|bounce|elastic)$/i.test(g[1]))) {
+      const kind = GS_KIND[g[1].toLowerCase()];
+      if (kind === 'linear') return { key: 'linear', params };
+      const dir = !g[2] ? 'out' : /^in-?out$/i.test(g[2]) ? 'in-out' : g[2].toLowerCase();
+      return { key: dir + '-' + kind, params };
+    }
+    s = s.replace(/^ease-(?=(in|out|spring|bouncy|snappy|gentle))/, '');
+    s = s.replace(/^ease(In|Out|InOut)(\w+)$/, (_, d, k) => (d === 'InOut' ? 'in-out' : d.toLowerCase()) + '-' + k.toLowerCase()); // easeOutCubic
+    s = s.replace(/^(in|out|inOut)([A-Z]\w*)$/, (_, d, k) => (d === 'inOut' ? 'in-out' : d) + '-' + k.toLowerCase()); // outCubic
+    return { key: s, params };
+  }
   const easeCache = new Map();
   function easing(name) {
     if (typeof name === 'function') return name;
-    name = String(name || 'linear').replace(/^ease-(?=(in|out|spring|bouncy|snappy|gentle))/, '');
-    if (easeCache.has(name)) return easeCache.get(name);
+    const ck = String(name);
+    if (easeCache.has(ck)) return easeCache.get(ck);
+    const { key, params } = normEase(name);
     let fn;
-    if (BEZ[name]) fn = cubicBezier(...BEZ[name]);
-    else if (SPRINGS[name]) { const s = SPRINGS[name], f = springFn(s); fn = (x) => (x >= 1 ? 1 : f(x * s.T)); }
-    else { const m = /cubic-bezier\(([^)]+)\)/.exec(name); fn = m ? cubicBezier(...m[1].split(',').map(Number)) : cubicBezier(...BEZ.linear); }
-    easeCache.set(name, fn);
+    let m;
+    if (FUNCS[key] && (params.length || !BEZ[key])) fn = FUNCS[key](params);
+    else if (BEZ[key]) fn = cubicBezier(...BEZ[key]);
+    else if (SPRINGS[key]) { const s = SPRINGS[key], f = springFn(s); fn = (x) => (x >= 1 ? 1 : f(x * s.T)); }
+    else if ((m = /^cubic-bezier\(([^)]+)\)$/.exec(key))) fn = cubicBezier(...m[1].split(',').map(Number));
+    else if ((m = /^steps\((\d+)\)$/.exec(key))) { const n = +m[1]; fn = (x) => (x >= 1 ? 1 : Math.floor(x * n) / n); }
+    else if ((m = /^linear\((.+)\)$/.exec(key))) { const pts = m[1].split(',').map((v) => parseFloat(v)); fn = (x) => { if (x <= 0) return pts[0]; if (x >= 1) return pts[pts.length - 1]; const f = x * (pts.length - 1), i = Math.floor(f); return pts[i] + (pts[i + 1] - pts[i]) * (f - i); }; }
+    else fn = (x) => x;
+    easeCache.set(ck, fn);
     return fn;
   }
   function cssEasing(name) {
-    name = String(name || 'out-expo').replace(/^ease-(?=(in|out|spring|bouncy|snappy|gentle))/, '');
-    if (BEZ[name]) return 'cubic-bezier(' + BEZ[name].join(',') + ')';
-    if (SPRINGS[name]) return 'var(--ease-' + name + ')';
-    return name;
+    if (typeof name === 'function') return sampleLinear(name);
+    const { key, params } = normEase(name || 'out-expo');
+    if (BEZ[key] && !params.length) return 'cubic-bezier(' + BEZ[key].join(',') + ')';
+    if (FUNCS[key] || SPRINGS[key] || /^steps\(/.test(key)) return sampleLinear(easing(name));
+    if (/^(cubic-bezier|linear)\(/.test(key)) return key;
+    return 'linear';
+  }
+  function sampleLinear(fn, n = 60) {
+    const pts = [];
+    for (let i = 0; i <= n; i++) pts.push(Math.round(fn(i / n) * 10000) / 10000);
+    return 'linear(' + pts.join(', ') + ')';
   }
   function isEasingName(tok) {
-    const n = tok.replace(/^ease-(?=(in|out|spring|bouncy|snappy|gentle))/, '');
-    return !!(BEZ[n] || SPRINGS[n] || /^cubic-bezier\(/.test(tok) || /^linear\(/.test(tok));
+    if (/^(cubic-bezier|linear|steps)\(/.test(tok)) return true;
+    const { key } = normEase(tok);
+    return !!(BEZ[key] || SPRINGS[key] || FUNCS[key]);
   }
 
   // ---------------------------------------------------------------------------
@@ -230,17 +301,36 @@
   const TRANSITIONS = {
     'fade': { enter: 'fade' },
     'crossfade': { enter: 'fade' },
-    'slide-left': { enter: 'slide-left', exit: 'slide-left' },
-    'slide-right': { enter: 'slide-right', exit: 'slide-right' },
-    'slide-up': { enter: 'slide-up', exit: 'slide-up' },
-    'slide-down': { enter: 'slide-down', exit: 'slide-down' },
-    'wipe-left': { enter: 'wipe-left' }, 'wipe-right': { enter: 'wipe-right' }, 'wipe-up': { enter: 'wipe-up' }, 'wipe-down': { enter: 'wipe-down' },
+    'slide-left': { enter: 'slide-left', exit: 'slide-left', ease: 'in-out-cubic' },
+    'slide-right': { enter: 'slide-right', exit: 'slide-right', ease: 'in-out-cubic' },
+    'slide-up': { enter: 'slide-up', exit: 'slide-up', ease: 'in-out-cubic' },
+    'slide-down': { enter: 'slide-down', exit: 'slide-down', ease: 'in-out-cubic' },
+    'push-left': { enter: 'slide-left', exit: 'slide-left', ease: 'in-out-quart' },
+    'push-right': { enter: 'slide-right', exit: 'slide-right', ease: 'in-out-quart' },
+    'push-up': { enter: 'slide-up', exit: 'slide-up', ease: 'in-out-quart' },
+    'push-down': { enter: 'slide-down', exit: 'slide-down', ease: 'in-out-quart' },
+    'cover-left': { enter: 'slide-left', ease: 'in-out-quart' }, 'cover-right': { enter: 'slide-right', ease: 'in-out-quart' },
+    'cover-up': { enter: 'slide-up', ease: 'in-out-quart' }, 'cover-down': { enter: 'slide-down', ease: 'in-out-quart' },
+    'whip-left': { enter: 'whip-left', exit: 'whip-left', ease: 'in-out-expo' },
+    'whip-right': { enter: 'whip-right', exit: 'whip-right', ease: 'in-out-expo' },
+    'whip-up': { enter: 'whip-up', exit: 'whip-up', ease: 'in-out-expo' },
+    'whip-down': { enter: 'whip-down', exit: 'whip-down', ease: 'in-out-expo' },
+    'wipe-left': { enter: 'wipe-left', ease: 'in-out-cubic' }, 'wipe-right': { enter: 'wipe-right', ease: 'in-out-cubic' },
+    'wipe-up': { enter: 'wipe-up', ease: 'in-out-cubic' }, 'wipe-down': { enter: 'wipe-down', ease: 'in-out-cubic' },
+    'diagonal': { enter: 'diagonal', ease: 'in-out-cubic' },
+    'clock': { enter: 'clock', ease: 'in-out-cubic' },
     'zoom': { enter: 'zoom', exit: 'fade' },
+    'zoom-through': { enter: 'zoom-near', exit: 'zoom-past', ease: 'in-out-cubic' },
+    'flip': { enter: 'flip-in', exit: 'flip-out', ease: 'in-out-cubic' },
+    'dip': { enter: 'dip-in', exit: 'dip-out', ease: 'linear' },
     'blur': { enter: 'blur' },
-    'iris': { enter: 'iris' },
+    'iris': { enter: 'iris', ease: 'in-out-cubic' },
     'fade-up': { enter: 'fade-up', exit: 'fade-up' },
+    'morph': { enter: 'fade', ease: 'in-out-cubic', morph: true },
   };
   let clips = []; // {el, start, end, parent}
+  let morphPairs = []; // shared-element transitions: {from, to, dur, ease}
+  let hasRemap = false;
   const clipOf = new WeakMap();
   let timelineDirty = true;
 
@@ -261,6 +351,7 @@
   }
 
   function buildTimeline() {
+    morphPairs = [];
     const els = [...document.querySelectorAll('[data-start],[data-duration],[data-end],[data-sequence] > *')].filter(isClipEl);
     const info = new Map();
     for (const el of els) info.set(el, null);
@@ -349,6 +440,25 @@
     comp.duration = total;
     clips = els.map((el) => Object.assign({ el }, info.get(el)));
     clips.forEach((c) => clipOf.set(c.el, c));
+    // Time remapping: data-loop, data-freeze, data-speed change the time seen by a clip's content.
+    hasRemap = false;
+    for (const c of clips) {
+      const el = c.el;
+      const loop = parseTime(el.getAttribute('data-loop'), el, 'data-loop');
+      const freeze = parseTime(el.getAttribute('data-freeze'), el, 'data-freeze');
+      const speed = el.hasAttribute('data-speed') ? parseFloat(el.getAttribute('data-speed')) : null;
+      if (loop != null || freeze != null || (speed != null && speed !== 1)) {
+        c.remap = { loop: loop > 0 ? loop : null, freeze, speed: speed != null && isFinite(speed) ? speed : 1 };
+        hasRemap = true;
+      }
+    }
+    for (const c of clips) {
+      const chain = [];
+      let p = c;
+      while (p) { if (p.remap) chain.unshift(p); p = p.parent ? clipOf.get(p.parent) : null; }
+      c.chain = chain; // outer → inner, includes c itself if it remaps
+      c.outer = chain[chain.length - 1] === c ? chain.slice(0, -1) : chain;
+    }
     // Apply sequence transitions to children that do not define their own enter/exit.
     for (const [container, lay] of seqCache) {
       const kids = [...lay.map.keys()];
@@ -356,7 +466,9 @@
         const t = lay.trs[i];
         if (!t) return;
         const def = TRANSITIONS[t.name];
-        const tail = `${t.dur}s${t.ease ? ' ' + t.ease : ''}`;
+        const ez = t.ease || def.ease;
+        const tail = `${t.dur}s${ez ? ' ' + ez : ''}`;
+        if (def.morph) morphPairs.push({ from: kids[i - 1], to: k, dur: t.dur, ease: ez || 'in-out-cubic' });
         if (def.enter && !k.hasAttribute('data-enter')) k.setAttribute('data-enter', `${def.enter} ${tail}`);
         const prev = kids[i - 1];
         if (prev && def.exit && !prev.hasAttribute('data-exit')) prev.setAttribute('data-exit', `${def.exit} ${tail}`);
@@ -370,6 +482,22 @@
     timelineDirty = false;
   }
 
+  function applyChain(chain, T) {
+    for (const R of chain) {
+      const r = R.remap;
+      let lt = T - R.start;
+      if (r.freeze != null) lt = r.freeze;
+      else { lt *= r.speed; if (r.loop) lt = lt >= 0 ? lt % r.loop : lt; }
+      T = R.start + lt;
+    }
+    return T;
+  }
+  // The time an element's content sees (after loop/freeze/speed of its clips).
+  function mapT(el, T) {
+    if (!hasRemap || !el) return T;
+    const c = nearestClip(el);
+    return c && c.chain.length ? applyChain(c.chain, T) : T;
+  }
   function nearestClip(el) {
     let cur = el;
     while (cur && cur.nodeType === 1) {
@@ -386,7 +514,8 @@
   function updateVisibility(T) {
     let sig = '';
     for (const c of clips) {
-      const on = T >= c.start - 1e-9 && T < c.end - 1e-9;
+      const tt = hasRemap && c.outer.length ? applyChain(c.outer, T) : T;
+      const on = tt >= c.start - 1e-9 && tt < c.end - 1e-9;
       sig += on ? '1' : '0';
       if (on) { if (c.el.hasAttribute('data-mw-hidden')) c.el.removeAttribute('data-mw-hidden'); }
       else if (!c.el.hasAttribute('data-mw-hidden')) c.el.setAttribute('data-mw-hidden', '');
@@ -452,7 +581,7 @@
       const rate = a.playbackRate || 1;
       try {
         if (ps !== 'paused') a.pause();
-        a.currentTime = (T - o) * 1000 * rate;
+        a.currentTime = ((hasRemap ? mapT(tg, T) : T) - o) * 1000 * rate;
       } catch (e) { continue; }
       if (!active) {
         try {
@@ -472,28 +601,63 @@
   // ---------------------------------------------------------------------------
   // 1 unit = 1px when the short side of the frame is 1080px (so 1080p, 1080x1920 and 1080x1080 all use the same sizes).
   const PX = () => Math.min(comp.width, comp.height) / 1080;
+  const B = (n) => `blur(${n * PX()}px)`;
+  const MASK_OUT = 'inset(-30% -10% -18% -10%)';
   const PRESETS = {
     'fade': () => [{ opacity: 0 }, { opacity: 1 }],
     'fade-up': () => [{ opacity: 0, translate: `0 ${48 * PX()}px` }, { opacity: 1, translate: '0 0' }],
     'fade-down': () => [{ opacity: 0, translate: `0 ${-48 * PX()}px` }, { opacity: 1, translate: '0 0' }],
     'fade-left': () => [{ opacity: 0, translate: `${48 * PX()}px 0` }, { opacity: 1, translate: '0 0' }],
     'fade-right': () => [{ opacity: 0, translate: `${-48 * PX()}px 0` }, { opacity: 1, translate: '0 0' }],
-    'rise': () => [{ opacity: 0, translate: `0 ${90 * PX()}px`, filter: `blur(${10 * PX()}px)` }, { opacity: 1, translate: '0 0', filter: 'blur(0px)' }],
+    'rise': () => [{ opacity: 0, translate: `0 ${90 * PX()}px`, filter: B(10) }, { opacity: 1, translate: '0 0', filter: B(0) }],
     'scale': () => [{ opacity: 0, scale: '0.85' }, { opacity: 1, scale: '1' }],
     'pop': () => [{ opacity: 0, scale: '0.4', offset: 0 }, { opacity: 1, offset: 0.5 }, { opacity: 1, scale: '1', offset: 1 }],
     'zoom': () => [{ opacity: 0, scale: '1.25' }, { opacity: 1, scale: '1' }],
-    'blur': () => [{ opacity: 0, filter: `blur(${18 * PX()}px)` }, { opacity: 1, filter: 'blur(0px)' }],
+    'blur': () => [{ opacity: 0, filter: B(18) }, { opacity: 1, filter: B(0) }],
     'slide-up': () => [{ translate: '0 100%' }, { translate: '0 0' }],
     'slide-down': () => [{ translate: '0 -100%' }, { translate: '0 0' }],
     'slide-left': () => [{ translate: '100% 0' }, { translate: '0 0' }],
     'slide-right': () => [{ translate: '-100% 0' }, { translate: '0 0' }],
+    'whip-left': () => [{ translate: '100% 0', filter: B(28) }, { translate: '0 0', filter: B(0) }],
+    'whip-right': () => [{ translate: '-100% 0', filter: B(28) }, { translate: '0 0', filter: B(0) }],
+    'whip-up': () => [{ translate: '0 100%', filter: B(28) }, { translate: '0 0', filter: B(0) }],
+    'whip-down': () => [{ translate: '0 -100%', filter: B(28) }, { translate: '0 0', filter: B(0) }],
     'wipe-right': () => [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0% 0 0)' }],
     'wipe-left': () => [{ clipPath: 'inset(0 0 0 100%)' }, { clipPath: 'inset(0 0 0 0%)' }],
     'wipe-down': () => [{ clipPath: 'inset(0 0 100% 0)' }, { clipPath: 'inset(0 0 0% 0)' }],
     'wipe-up': () => [{ clipPath: 'inset(100% 0 0 0)' }, { clipPath: 'inset(0% 0 0 0)' }],
+    'diagonal': () => [{ clipPath: 'polygon(0% 0%, 0% 0%, -40% 100%, -40% 100%)' }, { clipPath: 'polygon(0% 0%, 140% 0%, 100% 100%, -40% 100%)' }],
+    'clock': () => [{ '--mw-clock': '0%' }, { '--mw-clock': '100%' }],
     'iris': () => [{ clipPath: 'circle(0% at 50% 50%)' }, { clipPath: 'circle(75% at 50% 50%)' }],
+    'zoom-near': () => [{ opacity: 0, scale: '0.55' }, { opacity: 1, scale: '1' }],
+    'flip-in': () => [{ transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0 }, { transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0.5 }, { opacity: 1, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 1 }],
+    'dip-in': () => [{ opacity: 0, filter: 'brightness(0)', offset: 0 }, { opacity: 0, filter: 'brightness(0)', offset: 0.5 }, { opacity: 1, filter: 'brightness(0)', offset: 0.5001 }, { opacity: 1, filter: 'brightness(1)', offset: 1 }],
     'draw': () => [{ strokeDasharray: '1 1', strokeDashoffset: 1 }, { strokeDasharray: '1 1', strokeDashoffset: 0 }],
+    // Text and object entrances
+    'mask-up': () => [{ translate: '0 100%', clipPath: 'inset(-30% -10% 100% -10%)' }, { translate: '0 0', clipPath: MASK_OUT }],
+    'mask-down': () => [{ translate: '0 -100%', clipPath: 'inset(100% -10% -18% -10%)' }, { translate: '0 0', clipPath: MASK_OUT }],
+    'mask-left': () => [{ translate: '100% 0', clipPath: 'inset(-30% 100% -18% -10%)' }, { translate: '0 0', clipPath: MASK_OUT }],
+    'mask-right': () => [{ translate: '-100% 0', clipPath: 'inset(-30% -10% -18% 100%)' }, { translate: '0 0', clipPath: MASK_OUT }],
+    'flip-up': () => [{ opacity: 0, rotate: '1 0 0 -95deg', transformOrigin: '50% 100%' }, { opacity: 1, rotate: '1 0 0 0deg', transformOrigin: '50% 100%' }],
+    'drop': () => [{ opacity: 0, translate: `0 ${-160 * PX()}px` }, { opacity: 1, offset: 0.25 }, { opacity: 1, translate: '0 0' }],
+    'swing': () => [{ opacity: 0, rotate: '-28deg', transformOrigin: '0% 100%' }, { opacity: 1, rotate: '0deg', transformOrigin: '0% 100%' }],
+    'stretch': () => [{ opacity: 0, scale: '1.9 0.35', filter: B(8) }, { opacity: 1, scale: '1 1', filter: B(0) }],
+    'tilt': () => [{ opacity: 0, translate: `0 ${70 * PX()}px`, rotate: '7deg' }, { opacity: 1, translate: '0 0', rotate: '0deg' }],
+    'spin-in': () => [{ opacity: 0, scale: '0', rotate: '-200deg' }, { opacity: 1, scale: '1', rotate: '0deg' }],
+    'elastic': () => [{ scale: '0' }, { scale: '1' }],
+    'grow': () => [{ scale: '0' }, { scale: '1' }],
+    'grow-x': () => [{ scale: '0 1', transformOrigin: '0% 50%' }, { scale: '1 1', transformOrigin: '0% 50%' }],
+    'grow-y': () => [{ scale: '1 0', transformOrigin: '50% 100%' }, { scale: '1 1', transformOrigin: '50% 100%' }],
+    'typewriter': () => [{ opacity: 0 }, { opacity: 1 }],
     'none': () => null,
+  };
+  // Default duration and easing per preset (data-enter="name [duration] [delay] [easing]" overrides).
+  const PRESET_DEFAULTS = {
+    'drop': { ease: 'bouncy', dur: 1 }, 'swing': { ease: 'bouncy', dur: 1 }, 'elastic': { ease: 'out-elastic', dur: 1.1 },
+    'spin-in': { ease: 'out-back', dur: 0.8 }, 'grow': { ease: 'out-back', dur: 0.6 }, 'grow-x': { ease: 'out-expo', dur: 0.9 }, 'grow-y': { ease: 'out-expo', dur: 0.9 },
+    'mask-up': { ease: 'out-expo', dur: 0.8 }, 'mask-down': { ease: 'out-expo', dur: 0.8 }, 'mask-left': { ease: 'out-expo', dur: 0.8 }, 'mask-right': { ease: 'out-expo', dur: 0.8 },
+    'flip-up': { ease: 'out-back', dur: 0.8 }, 'stretch': { ease: 'out-expo', dur: 0.8 }, 'tilt': { ease: 'out-expo', dur: 0.8 },
+    'typewriter': { ease: 'steps(1)', dur: 0.02 },
   };
   // Exit motion keeps going in the named direction (fade-up exit moves up).
   const EXIT_PRESETS = {
@@ -502,23 +666,46 @@
     'fade-down': () => [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `0 ${48 * PX()}px` }],
     'fade-left': () => [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `${-48 * PX()}px 0` }],
     'fade-right': () => [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `${48 * PX()}px 0` }],
-    'rise': () => [{ opacity: 1, translate: '0 0', filter: 'blur(0px)' }, { opacity: 0, translate: `0 ${-90 * PX()}px`, filter: `blur(${10 * PX()}px)` }],
+    'rise': () => [{ opacity: 1, translate: '0 0', filter: B(0) }, { opacity: 0, translate: `0 ${-90 * PX()}px`, filter: B(10) }],
     'scale': () => [{ opacity: 1, scale: '1' }, { opacity: 0, scale: '0.85' }],
     'pop': () => [{ opacity: 1, scale: '1' }, { opacity: 0, scale: '0.4' }],
     'zoom': () => [{ opacity: 1, scale: '1' }, { opacity: 0, scale: '1.25' }],
-    'blur': () => [{ opacity: 1, filter: 'blur(0px)' }, { opacity: 0, filter: `blur(${18 * PX()}px)` }],
+    'blur': () => [{ opacity: 1, filter: B(0) }, { opacity: 0, filter: B(18) }],
     'slide-up': () => [{ translate: '0 0' }, { translate: '0 -100%' }],
     'slide-down': () => [{ translate: '0 0' }, { translate: '0 100%' }],
     'slide-left': () => [{ translate: '0 0' }, { translate: '-100% 0' }],
     'slide-right': () => [{ translate: '0 0' }, { translate: '100% 0' }],
+    'whip-left': () => [{ translate: '0 0', filter: B(0) }, { translate: '-100% 0', filter: B(28) }],
+    'whip-right': () => [{ translate: '0 0', filter: B(0) }, { translate: '100% 0', filter: B(28) }],
+    'whip-up': () => [{ translate: '0 0', filter: B(0) }, { translate: '0 -100%', filter: B(28) }],
+    'whip-down': () => [{ translate: '0 0', filter: B(0) }, { translate: '0 100%', filter: B(28) }],
     'wipe-right': () => [{ clipPath: 'inset(0 0 0 0%)' }, { clipPath: 'inset(0 0 0 100%)' }],
     'wipe-left': () => [{ clipPath: 'inset(0 0% 0 0)' }, { clipPath: 'inset(0 100% 0 0)' }],
     'wipe-down': () => [{ clipPath: 'inset(0% 0 0 0)' }, { clipPath: 'inset(100% 0 0 0)' }],
     'wipe-up': () => [{ clipPath: 'inset(0 0 0% 0)' }, { clipPath: 'inset(0 0 100% 0)' }],
     'iris': () => [{ clipPath: 'circle(75% at 50% 50%)' }, { clipPath: 'circle(0% at 50% 50%)' }],
+    'zoom-past': () => [{ opacity: 1, scale: '1', filter: B(0) }, { opacity: 0, scale: '2.4', filter: B(14) }],
+    'flip-out': () => [{ transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 0 }, { transform: 'perspective(2400px) rotateY(-90deg)', opacity: 1, offset: 0.5 }, { opacity: 0, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(-90deg)', opacity: 0, offset: 1 }],
+    'dip-out': () => [{ filter: 'brightness(1)', offset: 0 }, { filter: 'brightness(0)', offset: 0.5 }, { filter: 'brightness(0)', offset: 1 }],
     'draw': () => [{ strokeDasharray: '1 1', strokeDashoffset: 0 }, { strokeDasharray: '1 1', strokeDashoffset: -1 }],
+    'mask-up': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '0 -100%', clipPath: 'inset(100% -10% -18% -10%)' }],
+    'mask-down': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '0 100%', clipPath: 'inset(-30% -10% 100% -10%)' }],
+    'mask-left': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '-100% 0', clipPath: 'inset(-30% -10% -18% 100%)' }],
+    'mask-right': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '100% 0', clipPath: 'inset(-30% 100% -18% -10%)' }],
+    'flip-up': () => [{ opacity: 1, rotate: '1 0 0 0deg', transformOrigin: '50% 0%' }, { opacity: 0, rotate: '1 0 0 95deg', transformOrigin: '50% 0%' }],
+    'drop': () => [{ opacity: 1, translate: '0 0' }, { opacity: 1, offset: 0.7 }, { opacity: 0, translate: `0 ${200 * PX()}px` }],
+    'swing': () => [{ opacity: 1, rotate: '0deg', transformOrigin: '100% 100%' }, { opacity: 0, rotate: '28deg', transformOrigin: '100% 100%' }],
+    'stretch': () => [{ opacity: 1, scale: '1 1', filter: B(0) }, { opacity: 0, scale: '1.9 0.35', filter: B(8) }],
+    'tilt': () => [{ opacity: 1, translate: '0 0', rotate: '0deg' }, { opacity: 0, translate: `0 ${-70 * PX()}px`, rotate: '-7deg' }],
+    'spin-in': () => [{ opacity: 1, scale: '1', rotate: '0deg' }, { opacity: 0, scale: '0', rotate: '200deg' }],
+    'elastic': () => [{ scale: '1' }, { scale: '0' }],
+    'grow': () => [{ scale: '1' }, { scale: '0' }],
+    'grow-x': () => [{ scale: '1 1', transformOrigin: '100% 50%' }, { scale: '0 1', transformOrigin: '100% 50%' }],
+    'grow-y': () => [{ scale: '1 1', transformOrigin: '50% 100%' }, { scale: '1 0', transformOrigin: '50% 100%' }],
+    'typewriter': () => [{ opacity: 1 }, { opacity: 0 }],
     'none': () => null,
   };
+  const EXIT_DEFAULTS = { 'elastic': { ease: 'in-back', dur: 0.5 }, 'grow': { ease: 'in-back', dur: 0.5 }, 'spin-in': { ease: 'in-back', dur: 0.6 }, 'typewriter': { ease: 'steps(1)', dur: 0.02 }, 'drop': { ease: 'in-cubic', dur: 0.6 } };
   function parseMotion(v, el, attr, defDur, defEase) {
     const toks = String(v).trim().split(/\s+/).filter(Boolean);
     const out = { name: toks[0] || 'fade', dur: defDur, delay: 0, ease: defEase };
@@ -548,16 +735,19 @@
       targets.forEach((tg, i) => {
         const extra = stagger != null ? stagger * i : 0;
         if (en) {
-          const m = parseMotion(en, el, 'data-enter', 0.6, 'out-expo');
+          const nm = String(en).trim().split(/\s+/)[0];
+          const m = parseMotion(en, el, 'data-enter', (PRESET_DEFAULTS[nm] || {}).dur ?? 0.6, (PRESET_DEFAULTS[nm] || {}).ease || 'out-expo');
           if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).join(', ')); }
           else {
             if (m.name === 'draw') prepDraw(tg);
+            if (m.name === 'clock') prepClock(tg);
             const kf = PRESETS[m.name]();
             if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
           }
         }
         if (ex) {
-          const m = parseMotion(ex, el, 'data-exit', 0.45, 'in-cubic');
+          const nm = String(ex).trim().split(/\s+/)[0];
+          const m = parseMotion(ex, el, 'data-exit', (EXIT_DEFAULTS[nm] || {}).dur ?? 0.45, (EXIT_DEFAULTS[nm] || {}).ease || 'in-cubic');
           if (!EXIT_PRESETS[m.name]) { report('error', 'bad-exit', `Unknown data-exit "${m.name}".`, el, 'Use one of: ' + Object.keys(EXIT_PRESETS).join(', ')); }
           else if (!isFinite(cEnd)) { report('warning', 'exit-no-end', 'data-exit needs the element (or a parent) to have an end time.', el, 'Add data-duration to this element or its clip.'); }
           else {
@@ -571,6 +761,11 @@
         }
       });
     }
+  }
+  let clockReg = false;
+  function prepClock(el) {
+    if (!clockReg) { clockReg = true; try { CSS.registerProperty({ name: '--mw-clock', syntax: '<percentage>', inherits: false, initialValue: '100%' }); } catch (e) {} }
+    el.style.maskImage = el.style.webkitMaskImage = 'conic-gradient(from 0deg, #000 var(--mw-clock), transparent var(--mw-clock))';
   }
   function prepDraw(el) {
     const shapes = el instanceof SVGGeometryElement ? [el] : [...el.querySelectorAll('path,line,polyline,polygon,circle,ellipse,rect')];
@@ -722,14 +917,14 @@
   function updateCounters(T) {
     let changed = false;
     for (const c of counters) {
-      const lt = T - clipStartOf(c.el) - c.delay;
+      const lt = mapT(c.el, T) - clipStartOf(c.el) - c.delay;
       const p = c.dur > 0 ? Math.min(1, Math.max(0, lt / c.dur)) : 1;
       const v = c.from + (c.to - c.from) * c.ease(p);
       const txt = c.prefix + fmtNumber(v, c.decimals, c.group) + c.suffix;
       if (txt !== c.last) { c.el.textContent = txt; c.last = txt; changed = true; }
     }
     for (const ty of typers) {
-      const lt = T - clipStartOf(ty.el) - ty.delay;
+      const lt = mapT(ty.el, T) - clipStartOf(ty.el) - ty.delay;
       const n = Math.max(0, Math.min(ty.total, Math.floor(lt * ty.cps + 1e-6)));
       const typing = n > 0 && n < ty.total;
       if (n !== ty.last) {
@@ -762,6 +957,8 @@
   function getData() {
     if (dataCache !== undefined) return dataCache;
     if (CONFIG.data != null) return (dataCache = CONFIG.data);
+    const hm = /[#&]mw-data=([^&]+)/.exec(location.hash);
+    if (hm) { try { return (dataCache = JSON.parse(decodeURIComponent(hm[1]))); } catch (e) { report('error', 'bad-data', 'Could not read #mw-data from the page address.', null); } }
     const s = document.getElementById('mw-data');
     if (!s) return null;
     try { dataCache = JSON.parse(s.textContent); } catch (e) { report('error', 'bad-data', 'The <script id="mw-data"> block is not valid JSON: ' + e.message, s); dataCache = null; }
@@ -795,7 +992,11 @@
       from: parseTime(el.getAttribute('data-from') ?? el.getAttribute('data-trim'), el, 'data-from') || 0,
       rate: parseFloat(el.getAttribute('data-rate') || el.getAttribute('playbackrate') || '1') || 1,
       loop: el.hasAttribute('loop'),
-      volume: el.hasAttribute('data-volume') ? parseFloat(el.getAttribute('data-volume')) : 1,
+      volume: el.hasAttribute('data-volume') && !el.getAttribute('data-volume').includes(':') ? parseFloat(el.getAttribute('data-volume')) : 1,
+      // data-volume="0:0 1:0.8 9:0.8 10:0" → time:volume pairs (seconds into the clip), straight lines between
+      volumeKeys: el.hasAttribute('data-volume') && el.getAttribute('data-volume').includes(':') ? el.getAttribute('data-volume').trim().split(/[\s,]+/).map((kv) => { const [k, v] = kv.split(':'); return [parseTime(k, el, 'data-volume'), parseFloat(v)]; }).filter((x) => x[0] != null && isFinite(x[1])).sort((a, b) => a[0] - b[0]) : null,
+      // data-duck="0.3": drop to this volume while any other sound (voice, video) plays
+      duck: el.hasAttribute('data-duck') ? (parseFloat(el.getAttribute('data-duck')) >= 0 ? parseFloat(el.getAttribute('data-duck')) : 0.3) : null,
       fadeIn: parseTime(el.getAttribute('data-fade-in'), el, 'data-fade-in') || 0,
       fadeOut: parseTime(el.getAttribute('data-fade-out'), el, 'data-fade-out') || 0,
       muted: el.hasAttribute('muted') || el.muted === true,
@@ -844,8 +1045,9 @@
     let changed = false;
     for (const v of videos) {
       const tm = v.timing;
-      if (T < tm.start || T >= tm.end) continue;
-      const lt = videoTimeAt(v, T);
+      const TT = mapT(v.el, T);
+      if (TT < tm.start || TT >= tm.end) continue;
+      const lt = videoTimeAt(v, TT);
       if (v.bg) {
         const fi = Math.round(lt * comp.fps);
         if (fi === v.lastKey) continue;
@@ -858,6 +1060,8 @@
       } else {
         const el = v.el;
         if (!v.duration && isFinite(el.duration) && el.duration > 0) v.duration = el.duration;
+        if (livePlay.on) { if (Math.abs(el.currentTime - lt) > 0.25) { try { el.currentTime = lt; } catch (e) {} } if (el.paused) el.play().catch(() => {}); continue; }
+        if (!el.paused) el.pause();
         if (Math.abs(el.currentTime - lt) > 0.5 / comp.fps) {
           changed = true;
           pendingWaits.push(new Promise((res) => {
@@ -873,6 +1077,58 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Live playback (studio, player): real sound from <audio>/<video>, following the video clock.
+  // Volume curves and ducking match the rendered file.
+  // ---------------------------------------------------------------------------
+  const livePlay = { on: false, rate: 1, muted: false, volume: 1 };
+  function keysAt(keys, t) {
+    if (!keys || !keys.length) return 1;
+    if (t <= keys[0][0]) return keys[0][1];
+    for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) { const [a, va] = keys[i - 1], [b, vb] = keys[i]; return b === a ? vb : va + ((t - a) / (b - a)) * (vb - va); }
+    return keys[keys.length - 1][1];
+  }
+  function syncMedia(on, T, opts = {}) {
+    livePlay.on = !!on;
+    if (opts.rate != null) livePlay.rate = opts.rate;
+    if (opts.muted != null) livePlay.muted = opts.muted;
+    if (opts.volume != null) livePlay.volume = opts.volume;
+    T = T ?? now;
+    const auds = [...document.querySelectorAll('audio')];
+    const timings = auds.map((el) => ({ el, tm: mediaTiming(el), c: nearestClip(el) }));
+    const sounding = (x) => { const st = x.c ? x.c.start : 0, en = x.c ? x.c.end : comp.duration; return T >= st && T < en; };
+    for (const x of timings) {
+      const { el, tm } = x;
+      const st = x.c ? x.c.start : 0, en = x.c ? x.c.end : comp.duration;
+      if (!on || T < st || T >= en || livePlay.rate !== 1) { if (!el.paused) el.pause(); continue; }
+      let lt = (T - st) * tm.rate + tm.from;
+      if (tm.loop && isFinite(el.duration) && el.duration > tm.from) lt = tm.from + ((lt - tm.from) % (el.duration - tm.from));
+      let vol = tm.volume * keysAt(tm.volumeKeys, T - st);
+      if (tm.fadeIn > 0) vol *= Math.min(1, (T - st) / tm.fadeIn);
+      if (tm.fadeOut > 0) vol *= Math.min(1, (en - T) / tm.fadeOut);
+      if (tm.duck != null && (timings.some((o) => o !== x && o.tm.duck == null && sounding(o)) || videos.some((v) => !v.timing.muted && T >= v.timing.start && T < v.timing.end))) vol *= tm.duck;
+      el.volume = Math.max(0, Math.min(1, vol * livePlay.volume));
+      el.muted = livePlay.muted;
+      el.playbackRate = tm.rate;
+      if (Math.abs(el.currentTime - lt) > 0.15) { try { el.currentTime = lt; } catch (e) {} }
+      if (el.paused) el.play().catch(() => {});
+    }
+    for (const v of videos) { if (!v.bg) { v.el.muted = livePlay.muted || v.timing.muted; v.el.volume = Math.max(0, Math.min(1, (v.timing.volume ?? 1) * livePlay.volume)); if (!on) v.el.pause(); } }
+  }
+  // Same-origin pages can call mw directly; cross-origin embeds talk with postMessage.
+  if (MODE === 'preview') {
+    window.addEventListener('message', async (e) => {
+      const m = e.data;
+      if (!m || typeof m !== 'object' || !m.mw) return;
+      const reply = (x) => { try { e.source && e.source.postMessage(Object.assign({ mwReply: m.id }, x), '*'); } catch (er) {} };
+      try {
+        if (m.mw === 'ready') reply({ info: await ready() });
+        else if (m.mw === 'seek') { let r = seek(m.t); if (r && r.then) r = await r; if (m.playing != null) syncMedia(m.playing, m.t, m); reply({ t: m.t }); }
+        else if (m.mw === 'media') { syncMedia(m.playing, m.t, m); reply({}); }
+      } catch (er) { reply({ error: String(er && er.message || er) }); }
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Images: wait for newly shown images to decode before a frame is captured.
   // ---------------------------------------------------------------------------
   function waitImages() {
@@ -885,21 +1141,24 @@
   // Frame callbacks
   // ---------------------------------------------------------------------------
   const frameFns = [];
+  const layoutFns = []; // run after every animation is placed: safe to measure positions
   function info(T) {
     return { time: T, frame: Math.round(T * comp.fps), fps: comp.fps, duration: comp.duration, progress: comp.duration ? T / comp.duration : 0, width: comp.width, height: comp.height };
   }
-  function runFrameFns(T) {
-    if (!frameFns.length) return false;
+  function runFrameFns(T, list = frameFns) {
+    if (!list.length) return false;
     inFrameCallbacks = true;
     let ran = false;
-    for (const f of frameFns) {
+    for (const f of list) {
       try {
         if (f.el) {
           const c = nearestClip(f.el);
           const s = c ? c.start : 0, e = c ? c.end : comp.duration;
-          if (T < s || T >= e) continue;
+          const vis = hasRemap && c && c.outer.length ? applyChain(c.outer, T) : T;
+          if (vis < s || vis >= e) continue;
+          const tt = hasRemap ? mapT(f.el, T) : T;
           ran = true;
-          f.fn(T - s, Object.assign(info(T), { local: T - s, clipDuration: e - s }));
+          f.fn(tt - s, Object.assign(info(T), { local: tt - s, clipDuration: e - s }));
         } else { ran = true; f.fn(T, info(T)); }
       } catch (e) { pageError(e); }
     }
@@ -930,6 +1189,7 @@
   // ---------------------------------------------------------------------------
   let readyPromise = null;
   const waits = [];
+  const hooks = { preinit: [], init: [], seek: [], post: [], rebuild: [] };
   let initialized = false;
 
   function setStageVars() {
@@ -959,11 +1219,13 @@
     initialized = true;
     readSettings();
     applyBindings();
+    for (const h of hooks.preinit) { try { h(); } catch (e) { pageError(e); } }
     applySplit();
     buildTimeline();
     setupVideos();
     setupCountersAndTypers();
     applyEnterExit();
+    for (const h of hooks.init) { try { h(); } catch (e) { pageError(e); } }
     if (comp.background && !document.body.style.background) document.body.style.background = comp.background;
     for (const a of preInit) { const tg = targetOf(a); origin.set(a, tg ? clipStartOf(tg) : 0); }
     preInit.length = 0;
@@ -991,7 +1253,13 @@
       for (;;) {
         const w = waits.splice(0);
         if (!w.length) break;
-        await Promise.all(w.map((p) => Promise.resolve(p).catch((e) => pageError(e))));
+        let done = false;
+        const all = Promise.all(w.map((p) => Promise.resolve(p).catch((e) => pageError(e)))).finally(() => { done = true; });
+        const pump = () => { if (done) return; loadPump(); real.setTimeout(pump, 4); };
+        real.setTimeout(pump, 4);
+        const limit = (CONFIG.loadTimeout || 30) * 1000;
+        await Promise.race([all, new Promise((r) => real.setTimeout(r, limit))]);
+        if (!done) { done = true; report('error', 'load-timeout', `Something passed to mw.wait() did not finish within ${limit / 1000}s.`, null, 'Check that every promise given to mw.wait() resolves (files exist, libraries load).'); }
       }
       try { await document.fonts.ready; } catch (e) {}
       init();
@@ -1016,7 +1284,7 @@
     if (!initialized) init();
     T = Math.max(0, Number(T) || 0);
     handleRecords(mo.takeRecords());
-    if (timelineDirty) { buildTimeline(); applySplit(); setupVideos(); setupCountersAndTypers(); applyEnterExit(); dropOwnMutations(); }
+    if (timelineDirty) { buildTimeline(); applySplit(); setupVideos(); setupCountersAndTypers(); applyEnterExit(); for (const h of hooks.rebuild) { try { h(); } catch (e) { pageError(e); } } dropOwnMutations(); }
     let needsReload = false;
     if (lastT != null && T < lastT - 1e-9 && stateful) needsReload = true;
     // Step through intermediate frames for code that relies on requestAnimationFrame.
@@ -1039,7 +1307,9 @@
     const visChanged = updateVisibility(T);
     dropOwnMutations();
     flushAnimations(T, 'clip');
-    const ranFns = runFrameFns(T);
+    let hookChanged = false;
+    for (const h of hooks.seek) { try { if (h(T)) hookChanged = true; } catch (e) { pageError(e); } }
+    const ranFns = runFrameFns(T) || hookChanged;
     const hadRAF = rafs.size > 0;
     runRAF(T);
     if (hadRAF) flushAnimations(T, 'event');
@@ -1048,7 +1318,9 @@
     const vChanged = updateVideos(T);
     dropOwnMutations();
     flushAnimations(T, 'clip');
-    const animActive = seekAnimations(T);
+    let animActive = seekAnimations(T);
+    for (const h of hooks.post) { try { if (h(T)) animActive = true; } catch (e) { pageError(e); } }
+    if (layoutFns.length && runFrameFns(T, layoutFns)) animActive = true;
     waitImages();
     const tChanged = lastT == null || Math.abs(T - lastT) > 1e-9;
     const dirty = tChanged && (lastT == null || visChanged || cChanged || vChanged || ranFns || hadRAF || animActive || mutated || activeBefore);
@@ -1097,7 +1369,9 @@
     if (r) { const p = r[1].split(/[ ,/]+/).filter(Boolean).map(parseFloat); return [p[0], p[1], p[2], p[3] ?? 1]; }
     return [0, 0, 0, 1];
   }
+  let colorMixer = null;
   function mixColor(a, b, p) {
+    if (colorMixer) return colorMixer(a, b, p);
     const A = parseColor(a), B = parseColor(b);
     const v = A.map((x, i) => x + (B[i] - x) * p);
     return `rgba(${Math.round(v[0])}, ${Math.round(v[1])}, ${Math.round(v[2])}, ${round(v[3])})`;
@@ -1155,6 +1429,13 @@
       else if (a && typeof b === 'function') frameFns.push({ el: typeof a === 'string' ? document.querySelector(a) : a, fn: b });
       else throw new Error('mw.onFrame(fn) or mw.onFrame(element, fn)');
     },
+    // Like onFrame, but runs after all animations are applied for this frame, so
+    // getBoundingClientRect() returns where things really are. Use it to follow or aim at elements.
+    onLayout(a, b) {
+      if (typeof a === 'function') layoutFns.push({ fn: a });
+      else if (a && typeof b === 'function') layoutFns.push({ el: typeof a === 'string' ? document.querySelector(a) : a, fn: b });
+      else throw new Error('mw.onLayout(fn) or mw.onLayout(element, fn)');
+    },
     wait(p) { waits.push(typeof p === 'function' ? p() : p); return p; },
     timing(el) { if (typeof el === 'string') el = document.querySelector(el); const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
     interpolate, spring, noise, easing,
@@ -1171,7 +1452,17 @@
     __nearestClip: nearestClip,
     __real: real,
     __stateful: () => stateful || usedRAF,
+    __syncMedia: syncMedia,
     __setVideoDurations(map) { for (const v of videos) if (map[v.src] != null) v.duration = map[v.src]; },
+  };
+  // Shared internals for runtime extensions (motion.js, audio.js). Not a public API.
+  mw.__internal = {
+    hooks, comp, real, PX, report, pageError, parseTime, easing, cssEasing, isEasingName, normEase,
+    nearestClip, clipStartOf, clipEndOf, mapT, addOwn, selectorOf, makeRandom, parseColor, mixColor, info,
+    morphPairs: () => morphPairs,
+    addOwnAnim(a, originTime) { ownAnim.add(a); origin.set(a, originTime); known.add(a); },
+    setColorMixer(fn) { colorMixer = fn; }, clips: () => clips, waits, pendingWaits, MODE, CONFIG, SKIP_TAGS,
+    get now() { return now; }, get initialized() { return initialized; },
   };
   window.mw = mw;
   window.motionwright = mw;

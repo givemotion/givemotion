@@ -158,13 +158,25 @@ export function run(args, { quiet = true } = {}) {
  * Join segments and mix audio into the final file.
  * audio: [{file, start, end, from, rate, loop, volume, fadeIn, fadeOut}]
  */
-export async function finalize({ segments, listFile, out, format, duration, audio = [], fps, plan, transparent }) {
-  writeFileSync(listFile, segments.map((s) => `file '${s.replace(/'/g, "'\\''")}'`).join('\n'));
-  const args = ['-f', 'concat', '-safe', '0', '-i', listFile];
-  const filters = [];
-  const labels = [];
+function volumeExpr(keys, scale = 1) {
+  // piecewise linear, as a flat sum (no deep nesting); commas escaped for the filter graph
+  const f = (x) => (+x).toFixed(4);
+  const parts = [];
+  parts.push(`lt(t\\,${f(keys[0][0])})*${f(keys[0][1] * scale)}`);
+  for (let i = 1; i < keys.length; i++) {
+    const [a, va] = keys[i - 1], [b, vb] = keys[i];
+    if (b <= a) continue;
+    parts.push(`gte(t\\,${f(a)})*lt(t\\,${f(b)})*(${f(va * scale)}+(t-${f(a)})*${f(((vb - va) * scale) / (b - a))})`);
+  }
+  parts.push(`gte(t\\,${f(keys[keys.length - 1][0])})*${f(keys[keys.length - 1][1] * scale)}`);
+  return `volume='${parts.join('+')}':eval=frame`;
+}
+
+/** Build per-input audio filter chains. Inputs start at index `first`. */
+function audioChains(audio, args, first) {
+  const filters = [], labels = [];
   audio.forEach((a, i) => {
-    const idx = i + 1;
+    const idx = i + first;
     if (a.loop) args.push('-stream_loop', '-1');
     if (a.from > 0) args.push('-ss', String(a.from));
     args.push('-i', a.file);
@@ -177,7 +189,8 @@ export async function finalize({ segments, listFile, out, format, duration, audi
       chain.push(`atempo=${r.toFixed(5)}`);
     }
     chain.push(`atrim=0:${len.toFixed(4)}`, 'asetpts=PTS-STARTPTS');
-    if (a.volume != null && a.volume !== 1) chain.push(`volume=${a.volume}`);
+    if (a.volumeKeys && a.volumeKeys.length) chain.push(volumeExpr(a.volumeKeys, a.volume ?? 1));
+    else if (a.volume != null && a.volume !== 1) chain.push(`volume=${a.volume}`);
     if (a.fadeIn > 0) chain.push(`afade=t=in:st=0:d=${a.fadeIn}`);
     if (a.fadeOut > 0) chain.push(`afade=t=out:st=${Math.max(0, len - a.fadeOut).toFixed(4)}:d=${a.fadeOut}`);
     chain.push('aresample=48000', 'aformat=channel_layouts=stereo');
@@ -186,6 +199,26 @@ export async function finalize({ segments, listFile, out, format, duration, audi
     filters.push(`[${idx}:a]${chain.join(',')}[a${i}]`);
     labels.push(`[a${i}]`);
   });
+  return { filters, labels };
+}
+
+export async function mixAudio({ audio, out, format, duration }) {
+  const args = [];
+  const { filters, labels } = audioChains(audio, args, 0);
+  const bed = audio.length;
+  args.push('-f', 'lavfi', '-t', duration.toFixed(4), '-i', 'anullsrc=r=48000:cl=stereo');
+  filters.push(`[${bed}:a]asetpts=PTS-STARTPTS[bed]`);
+  filters.push(`[bed]${labels.join('')}amix=inputs=${labels.length + 1}:normalize=0:duration=first:dropout_transition=0,atrim=0:${duration.toFixed(4)}[aout]`);
+  args.push('-filter_complex', filters.join(';'), '-map', '[aout]');
+  const codec = { mp3: ['-c:a', 'libmp3lame', '-q:a', '2'], wav: ['-c:a', 'pcm_s16le'], m4a: ['-c:a', 'aac', '-b:a', '192k'], ogg: ['-c:a', 'libopus', '-b:a', '160k'], flac: ['-c:a', 'flac'] }[format] || [];
+  args.push(...codec, out);
+  return run(args);
+}
+
+export async function finalize({ segments, listFile, out, format, duration, audio = [], fps, plan, transparent }) {
+  writeFileSync(listFile, segments.map((s) => `file '${s.replace(/'/g, "'\\''")}'`).join('\n'));
+  const args = ['-f', 'concat', '-safe', '0', '-i', listFile];
+  const { filters, labels } = audioChains(audio, args, 1);
   if (format === 'gif') {
     const gifArgs = [...args, '-filter_complex', `[0:v]split[s0][s1];[s0]palettegen=max_colors=256:stats_mode=full${transparent ? ':reserve_transparent=1' : ''}[p];[s1][p]paletteuse=dither=sierra2_4a${transparent ? ':alpha_threshold=128' : ''}`, '-loop', '0', out];
     return run(gifArgs);

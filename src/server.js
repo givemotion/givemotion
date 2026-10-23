@@ -23,7 +23,7 @@ const MIME = {
 };
 
 export function readRuntime() {
-  return { js: readFileSync(join(RUNTIME_DIR, 'runtime.js'), 'utf8'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
+  return { js: ['runtime.js', 'motion.js', 'audio.js'].filter((f) => existsSync(join(RUNTIME_DIR, f))).map((f) => readFileSync(join(RUNTIME_DIR, f), 'utf8')).join('\n;\n'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
 }
 
 /** Expand <mw-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */
@@ -157,6 +157,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       const u = new URL(req.url, 'http://localhost');
       let path = decodeURIComponent(u.pathname);
       if (path === '/__mw/runtime.js') return send(res, 200, MIME['.js'], runtime().js);
+      if (path === '/__mw/player.js') return send(res, 200, MIME['.js'], readFileSync(join(HERE, 'player', 'mw-player.js'), 'utf8'));
       if (path === '/__mw/preset.css') return send(res, 200, MIME['.css'], runtime().css);
       if (path === '/__mw/events') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
@@ -175,6 +176,17 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'max-age=31536000, immutable' });
         return createReadStream(f).pipe(res);
       }
+      if (path === '/__mw/pcm') {
+        // Mono 32-bit float PCM of any audio/video file, for in-page analysis (mw.audio).
+        const src = u.searchParams.get('src');
+        const sr = Math.min(48000, Math.max(8000, parseInt(u.searchParams.get('sr'), 10) || 22050));
+        const file = safeJoin(root, decodeURIComponent(new URL(src, 'http://x').pathname));
+        if (!file || !existsSync(file)) return send(res, 404, 'text/plain', 'audio not found: ' + src);
+        const buf = await decodePCM(file, sr);
+        if (!buf) return send(res, 500, 'text/plain', 'ffmpeg could not decode ' + src);
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'max-age=31536000, immutable', 'Access-Control-Allow-Origin': '*' });
+        return res.end(buf);
+      }
       if (path.startsWith('/__mw/studio')) {
         const rel = path.slice('/__mw/studio'.length).replace(/^\/+/, '') || 'index.html';
         const f = safeJoin(STUDIO_DIR, rel);
@@ -189,7 +201,8 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         let html = readFileSync(file, 'utf8');
         html = expandIncludes(html, dirname(file), root);
         html = applyData(html, data);
-        if (!u.searchParams.has('raw')) html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });
+        // Pages that host <mw-player>, or are already bundled, are normal web pages: no runtime.
+        if (!u.searchParams.has('raw') && !/<mw-player\b|data-mw-preset>|<meta[^>]+name=["']motionwright["'][^>]+off/i.test(html)) html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });
         return send(res, 200, MIME[ext], html, { 'Cache-Control': 'no-store' });
       }
       return serveFile(req, res, file, MIME[ext] || 'application/octet-stream');
@@ -216,6 +229,24 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
     url: (p) => `http://127.0.0.1:${port}/${String(p).split(sep).join('/').replace(/^\/+/, '')}`,
     close: () => new Promise((r) => { if (watcher) watcher.close(); for (const c of clients) c.end(); server.closeAllConnections?.(); server.close(() => r()); }),
   };
+}
+
+const pcmCache = new Map();
+function decodePCM(file, sr) {
+  const st = statSync(file);
+  const key = `${file}|${st.size}|${st.mtimeMs}|${sr}`;
+  if (pcmCache.has(key)) return pcmCache.get(key);
+  const p = new Promise((resolveP) => {
+    const ff = ffmpegPath();
+    if (!ff) return resolveP(null);
+    const proc = spawn(ff, ['-v', 'error', '-i', file, '-vn', '-ac', '1', '-ar', String(sr), '-f', 'f32le', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const chunks = [];
+    proc.stdout.on('data', (d) => chunks.push(d));
+    proc.on('error', () => resolveP(null));
+    proc.on('close', (code) => resolveP(code === 0 ? Buffer.concat(chunks) : null));
+  });
+  pcmCache.set(key, p);
+  return p;
 }
 
 function safeJoin(root, p) {

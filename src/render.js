@@ -4,7 +4,7 @@ import { join, resolve, dirname, basename, extname, relative, isAbsolute } from 
 import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage } from './browser.js';
 import { startServer } from './server.js';
-import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, probe, qualitySettings } from './ffmpeg.js';
+import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, mixAudio, probe, qualitySettings } from './ffmpeg.js';
 
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
 
@@ -92,10 +92,40 @@ async function prepareMedia(ctx, page) {
     if (!p) throw new Error(`ffprobe could not read ${m.src}`);
     if (m.kind === 'video') durations[m.src] = p.duration;
     const wantsAudio = (m.kind === 'audio' || (m.kind === 'video' && !m.muted)) && p.hasAudio && (m.volume ?? 1) > 0;
-    if (wantsAudio) audio.push({ file, start: m.start, end: m.end, from: m.from || 0, rate: m.rate || 1, loop: !!m.loop, volume: m.volume ?? 1, fadeIn: m.fadeIn || 0, fadeOut: m.fadeOut || 0 });
+    if (wantsAudio) audio.push({ file, start: m.start, end: m.end, from: m.from || 0, rate: m.rate || 1, loop: !!m.loop, volume: m.volume ?? 1, fadeIn: m.fadeIn || 0, fadeOut: m.fadeOut || 0, volumeKeys: m.volumeKeys || null, duck: m.duck ?? null });
   }
+  applyDucking(audio);
   return { durations, audio };
 }
+
+// Piecewise-linear [t, v] helpers for volume curves
+function evalKeys(keys, t) {
+  if (!keys || !keys.length) return 1;
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) { const [a, va] = keys[i - 1], [b, vb] = keys[i]; return b === a ? vb : va + ((t - a) / (b - a)) * (vb - va); }
+  return keys[keys.length - 1][1];
+}
+/** Music with data-duck gets quieter while other sounds play (voice-over, video). */
+function applyDucking(audio) {
+  for (const a of audio) {
+    if (a.duck == null) continue;
+    const spans = audio.filter((o) => o !== a && o.duck == null).map((o) => [Math.max(o.start, a.start) - a.start, Math.min(o.end, a.end) - a.start]).filter(([s, e]) => e > s).sort((x, y) => x[0] - y[0]);
+    const merged = [];
+    for (const sp of spans) { const l = merged[merged.length - 1]; if (l && sp[0] <= l[1] + 0.6) l[1] = Math.max(l[1], sp[1]); else merged.push(sp.slice()); }
+    if (!merged.length) continue;
+    const down = 0.25, up = 0.45, lv = a.duck;
+    const duckKeys = [[0, 1]];
+    for (const [s, e] of merged) duckKeys.push([Math.max(0, s - down), 1], [Math.max(0, s), lv], [e, lv], [e + up, 1]);
+    duckKeys.sort((x, y) => x[0] - y[0]);
+    const pts = new Set([...duckKeys.map((k) => k[0]), ...(a.volumeKeys || []).map((k) => k[0])]);
+    const ts = [...pts].sort((x, y) => x - y);
+    const fine = [];
+    ts.forEach((t, i) => { fine.push(t); if (i < ts.length - 1) fine.push((t + ts[i + 1]) / 2); });
+    a.volumeKeys = fine.map((t) => [t, evalKeys(duckKeys, t) * evalKeys(a.volumeKeys, t)]);
+  }
+}
+
+const AUDIO_FORMATS = { '.mp3': 'mp3', '.wav': 'wav', '.m4a': 'm4a', '.aac': 'm4a', '.ogg': 'ogg', '.opus': 'ogg', '.flac': 'flac' };
 
 /**
  * Render a composition to a video file.
@@ -114,6 +144,7 @@ export async function render(input, opts = {}) {
   const blurSamples = opts.motionBlur ? Math.max(2, Math.min(32, parseInt(opts.motionBlur, 10) || 8)) : 1;
   const shutter = opts.shutter ?? 0.5;
 
+  if (AUDIO_FORMATS[extname(out).toLowerCase()] && !opts.format) return renderAudioOnly(input, out, AUDIO_FORMATS[extname(out).toLowerCase()], opts, log, t0);
   const ctx = await openComposition(input, { ...opts, mode: 'render', log });
   const cleanup = [];
   const tmp = mkdtempSync(join(opts.tmpdir || tmpdir(), 'mw-render-'));
@@ -132,8 +163,9 @@ export async function render(input, opts = {}) {
     const [f0, f1] = parseRange(opts.frames, fps, totalFrames);
     const nFrames = f1 - f0;
     const media = format === 'png' ? { durations: {}, audio: [] } : await prepareMedia(ctx, ctx.page);
+    if (opts.muted) media.audio = [];
     const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(nFrames), nFrames));
-    log(`motionwright: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${workers} worker${workers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}]`);
+    if (!opts.quiet) log(`motionwright: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${workers} worker${workers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}]`);
 
     if (process.env.MOTIONWRIGHT_PROFILE) log(`  setup ${Date.now() - t0}ms`);
     // Start other workers in parallel
@@ -224,6 +256,24 @@ export async function render(input, opts = {}) {
     await Promise.all(pages.map((p) => p.close().catch(() => {})));
     await ctx.server.close();
     for (const c of cleanup) { try { c(); } catch {} }
+  }
+}
+
+/** Only the soundtrack: `render comp.html -o sound.mp3` (also .wav .m4a .ogg .flac) */
+async function renderAudioOnly(input, out, fmt, opts, log, t0) {
+  requireFfmpeg();
+  const ctx = await openComposition(input, { ...opts, mode: 'render', log });
+  try {
+    const media = await prepareMedia(ctx, ctx.page);
+    if (!media.audio.length) throw new Error('This composition has no audio to export.');
+    mkdirSync(dirname(out), { recursive: true });
+    await mixAudio({ audio: media.audio, out, format: fmt, duration: ctx.info.duration });
+    const elapsed = (Date.now() - t0) / 1000;
+    if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s → ${relativeOut(out)}`);
+    return { output: out, format: fmt, duration: ctx.info.duration, seconds: +elapsed.toFixed(2), bytes: statSync(out).size, warnings: ctx.info.issues.filter((i) => i.severity !== 'error'), pageErrors: [] };
+  } finally {
+    await ctx.page.close();
+    await ctx.server.close();
   }
 }
 

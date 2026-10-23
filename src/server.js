@@ -117,7 +117,7 @@ class FrameExtractor {
  * Start the server for a project root.
  * Returns { url(pathname), port, close, events }.
  */
-export async function startServer({ root, maxW = 3840, maxH = 2160, studio = false, inlineConfig } = {}) {
+export async function startServer({ root, maxW = 3840, maxH = 2160, studio = false, inlineConfig, port: wantPort = 0, host = '127.0.0.1' } = {}) {
   root = resolve(root);
   const runtime = () => readRuntime();
   const extractor = new FrameExtractor(maxW, maxH);
@@ -166,7 +166,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       send(res, 500, 'text/plain', String(e && e.message || e));
     }
   });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise((r, j) => { server.once('error', j); server.listen(wantPort, host, r); });
   const port = server.address().port;
   let watcher = null;
   if (studio) {

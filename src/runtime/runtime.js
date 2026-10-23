@@ -776,18 +776,18 @@
       el.autoplay = false;
       el.removeAttribute('autoplay');
       if (MODE !== 'preview') {
-        // Render mode: frames come from ffmpeg via the local server as images.
-        const img = document.createElement('img');
-        for (const at of el.attributes) {
-          if (['src', 'autoplay', 'controls', 'loop', 'muted', 'playsinline', 'preload', 'poster'].includes(at.name)) continue;
-          img.setAttribute(at.name, at.value);
-        }
-        img.setAttribute('data-mw-video', '');
-        img.alt = '';
-        if (!img.style.objectFit) img.style.objectFit = getComputedStyle(el).objectFit;
-        el.replaceWith(img);
-        if (clipOf.has(el)) { const c = clipOf.get(el); clipOf.set(img, c); c.el = img; }
-        v.img = img;
+        // Render mode: the <video> element stays (so your CSS still applies) but shows
+        // frames decoded by ffmpeg as its background image. Frame-exact and codec-independent.
+        el.removeAttribute('src');
+        el.removeAttribute('poster');
+        for (const s of el.querySelectorAll('source')) s.remove();
+        try { el.load(); } catch (e) {}
+        const cs = getComputedStyle(el);
+        const fit = cs.objectFit || 'contain';
+        el.style.backgroundSize = fit === 'fill' ? '100% 100%' : fit === 'none' ? 'auto' : fit === 'scale-down' ? 'contain' : fit;
+        el.style.backgroundPosition = cs.objectPosition || '50% 50%';
+        el.style.backgroundRepeat = 'no-repeat';
+        v.bg = true;
       } else {
         el.muted = true; // preview: audio handled by the player
         el.preload = 'auto';
@@ -809,15 +809,15 @@
       const tm = v.timing;
       if (T < tm.start || T >= tm.end) continue;
       const lt = videoTimeAt(v, T);
-      if (v.img) {
+      if (v.bg) {
         const fi = Math.round(lt * comp.fps);
-        const key = fi;
-        if (key === v.lastKey) continue;
-        v.lastKey = key;
+        if (fi === v.lastKey) continue;
+        v.lastKey = fi;
         changed = true;
         const url = '/__mw/vframe?src=' + encodeURIComponent(v.src) + '&fps=' + comp.fps + '&i=' + fi;
-        v.img.src = url;
-        pendingWaits.push(v.img.decode().catch(() => { report('error', 'video-frame', `Could not load video frame ${fi} of ${v.src}.`, v.img, 'Check that the file exists and ffmpeg can read it.', T); }));
+        const pre = new Image();
+        pre.src = url;
+        pendingWaits.push(pre.decode().then(() => { v.el.style.backgroundImage = 'url("' + url + '")'; v.keep = pre; }, () => { report('error', 'video-frame', `Could not load video frame ${fi} of ${v.src}.`, v.el, 'Check that the file exists and ffmpeg can read it.', T); }));
       } else {
         const el = v.el;
         if (Math.abs(el.currentTime - lt) > 0.5 / comp.fps) {
@@ -839,7 +839,6 @@
   // ---------------------------------------------------------------------------
   function waitImages() {
     for (const img of document.images) {
-      if (img.hasAttribute('data-mw-video')) continue;
       if (!img.complete) pendingWaits.push(new Promise((res) => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', () => { report('error', 'image-failed', `Image failed to load: ${img.getAttribute('src')}`, img, 'Check the path (relative to the HTML file).'); res(); }, { once: true }); }));
     }
   }
@@ -981,9 +980,14 @@
     let needsReload = false;
     if (lastT != null && T < lastT - 1e-9 && stateful) needsReload = true;
     // Step through intermediate frames for code that relies on requestAnimationFrame.
-    if (lastT != null && T > lastT && usedRAF) {
-      const step = 1 / comp.fps;
-      for (let t = lastT + step; t < T - 1e-9; t += step) {
+    // (Starting from frame 0 when this page has not rendered anything yet, so parallel
+    // workers produce exactly the same frames as a single worker.)
+    if (usedRAF && (lastT == null || T > lastT)) {
+      const fps = comp.fps;
+      const i0 = lastT == null ? 0 : Math.floor(lastT * fps + 1e-6) + 1;
+      const i1 = Math.ceil(T * fps - 1e-6) - 1;
+      for (let i = i0; i <= i1; i++) {
+        const t = i / fps;
         runTimersUntil(t);
         now = t;
         runRAF(t);

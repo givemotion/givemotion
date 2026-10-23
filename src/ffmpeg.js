@@ -184,7 +184,11 @@ export async function finalize({ segments, listFile, out, format, duration, audi
     return run(gifArgs);
   }
   if (labels.length) {
-    filters.push(`${labels.join('')}amix=inputs=${labels.length}:normalize=0:dropout_transition=0,atrim=0:${duration.toFixed(4)}[aout]`);
+    // A silent bed as long as the video keeps the mix aligned to t=0 and the right length.
+    const bed = audio.length + 1;
+    args.push('-f', 'lavfi', '-t', duration.toFixed(4), '-i', 'anullsrc=r=48000:cl=stereo');
+    filters.push(`[${bed}:a]asetpts=PTS-STARTPTS[bed]`);
+    filters.push(`[bed]${labels.join('')}amix=inputs=${labels.length + 1}:normalize=0:duration=first:dropout_transition=0,atrim=0:${duration.toFixed(4)}[aout]`);
     args.push('-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[aout]');
     args.push('-c:v', 'copy');
     if (format === 'webm') args.push('-c:a', 'libopus', '-b:a', '160k');

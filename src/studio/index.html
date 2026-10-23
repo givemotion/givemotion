@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>motionwright studio</title>
+<style>
+:root{--bg:#0e0f12;--panel:#16181d;--line:#262a33;--text:#e7e9ee;--dim:#8b92a1;--accent:#7c9cff;--warn:#f5b041;--err:#ff6b6b;--ok:#4cd39b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.4 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+#app{display:grid;grid-template-rows:44px 1fr auto;height:100%}
+header{display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+header .name{font-weight:600}
+header .meta{color:var(--dim)}
+header .sp{flex:1}
+.badge{padding:3px 8px;border-radius:999px;background:#222630;color:var(--dim);cursor:pointer;user-select:none}
+.badge.err{background:#3a1d22;color:var(--err)} .badge.warn{background:#3a2e17;color:var(--warn)} .badge.ok{background:#173328;color:var(--ok)}
+#stageWrap{position:relative;overflow:hidden;display:grid;place-items:center;background:
+  repeating-conic-gradient(#15171b 0% 25%, #1a1c21 0% 50%) 50% / 24px 24px}
+#stage{position:relative;box-shadow:0 10px 40px #0008;transform-origin:center center}
+#stage iframe{border:0;display:block;background:transparent}
+#loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--dim);pointer-events:none}
+footer{background:var(--panel);border-top:1px solid var(--line);padding:8px 14px 12px}
+.transport{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+button{background:#222630;color:var(--text);border:1px solid var(--line);border-radius:8px;height:30px;min-width:34px;padding:0 10px;cursor:pointer;font:inherit}
+button:hover{border-color:#3a4150} button.on{background:#25304d;border-color:var(--accent);color:#cfdaff}
+#time{font-variant-numeric:tabular-nums;color:var(--text);min-width:210px}
+#time span{color:var(--dim)}
+select{background:#222630;color:var(--text);border:1px solid var(--line);border-radius:8px;height:30px;padding:0 6px;font:inherit}
+#timeline{position:relative;user-select:none;cursor:pointer}
+#ruler{position:relative;height:22px;border-bottom:1px solid var(--line);color:var(--dim);font-size:11px}
+#ruler .tick{position:absolute;top:0;height:100%;border-left:1px solid #2c313b;padding-left:4px}
+#tracks{position:relative;max-height:150px;overflow:auto;padding:6px 0}
+.row{position:relative;height:18px;margin:3px 0}
+.clip{position:absolute;top:0;height:18px;border-radius:5px;background:#2b3550;border:1px solid #3c4a70;color:#c9d4f3;font-size:11px;line-height:16px;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.clip:hover{background:#34416a}
+#playhead{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);pointer-events:none;box-shadow:0 0 0 1px #0006}
+#issues{position:absolute;right:14px;top:52px;width:440px;max-height:60%;overflow:auto;background:#16181df2;border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:none;z-index:5}
+#issues.open{display:block}
+#issues .i{padding:8px 0;border-bottom:1px solid var(--line)} #issues .i:last-child{border:0}
+#issues .c{font-weight:600} #issues .e{color:var(--err)} #issues .w{color:var(--warn)}
+#issues .f{color:var(--dim)}
+.kbd{color:var(--dim);font-size:11px;margin-left:auto}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="name" id="name">…</div>
+    <div class="meta" id="meta"></div>
+    <div class="sp"></div>
+    <div class="badge" id="badge">checking…</div>
+  </header>
+  <div id="stageWrap"><div id="stage"><iframe id="frame"></iframe></div><div id="loading">Loading…</div></div>
+  <footer>
+    <div class="transport">
+      <button id="home" title="Start (Home)">⏮</button>
+      <button id="back" title="Previous frame (←)">◀︎</button>
+      <button id="play" title="Play / pause (Space)" style="min-width:64px">Play</button>
+      <button id="fwd" title="Next frame (→)">▶︎</button>
+      <button id="end" title="End (End)">⏭</button>
+      <button id="loop" class="on" title="Loop (L)">Loop</button>
+      <select id="speed" title="Speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select>
+      <div id="time">0.00s</div>
+      <div class="kbd">Space play · ←/→ frame · Shift+←/→ 1s · Home/End · L loop</div>
+    </div>
+    <div id="timeline"><div id="ruler"></div><div id="tracks"></div><div id="playhead"></div></div>
+  </footer>
+  <div id="issues"></div>
+</div>
+<script>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const file = qs.get('file') || '/index.html';
+  const $ = (id) => document.getElementById(id);
+  const frame = $('frame'), stage = $('stage'), wrap = $('stageWrap');
+  let info = null, mw = null, t = parseFloat(qs.get('t') || '0') || 0, playing = false, loop = true, speed = 1, busy = false, pendingT = null;
+  $('name').textContent = file.split('/').pop();
+
+  function load(keepT) {
+    $('loading').style.display = 'grid';
+    const sep = file.includes('?') ? '&' : '?';
+    frame.src = file + sep + 'mw-preview=' + Date.now();
+    frame.onload = async () => {
+      const w = frame.contentWindow;
+      if (!w.mw) { $('loading').textContent = 'The runtime did not load in this page.'; return; }
+      mw = w.mw;
+      try { info = await mw.ready(); } catch (e) { $('loading').textContent = 'Error: ' + e.message; return; }
+      frame.width = info.width; frame.height = info.height;
+      frame.style.width = info.width + 'px'; frame.style.height = info.height + 'px';
+      $('meta').textContent = `${info.width}×${info.height} · ${info.fps}fps · ${info.duration.toFixed(2)}s · ${info.frames} frames`;
+      fit();
+      drawTimeline();
+      setBadge(info.issues);
+      $('loading').style.display = 'none';
+      t = Math.min(keepT ?? t, Math.max(0, info.duration - 1 / info.fps));
+      await seek(t, true);
+    };
+  }
+  function fit() {
+    if (!info) return;
+    const r = wrap.getBoundingClientRect();
+    const s = Math.min((r.width - 32) / info.width, (r.height - 32) / info.height, 2);
+    stage.style.width = info.width + 'px'; stage.style.height = info.height + 'px';
+    stage.style.transform = `scale(${s})`;
+  }
+  addEventListener('resize', fit);
+
+  function quant(x) { return Math.round(x * info.fps) / info.fps; }
+  async function seek(x, force) {
+    if (!mw || !info) return;
+    x = Math.max(0, Math.min(x, info.duration - 1 / info.fps));
+    x = quant(x);
+    if (busy) { pendingT = x; return; }
+    busy = true;
+    try {
+      let r = mw.seek(x);
+      if (r && typeof r.then === 'function') r = await r;
+      if (r && r.needsReload) { busy = false; return load(x); }
+      t = x;
+      updateUI();
+      if (playing) syncAudio(true);
+    } catch (e) { console.error(e); }
+    busy = false;
+    if (pendingT != null) { const p = pendingT; pendingT = null; seek(p); }
+  }
+  function updateUI() {
+    const f = Math.round(t * info.fps);
+    $('time').innerHTML = `${t.toFixed(2)}s <span>/ ${info.duration.toFixed(2)}s · frame ${f}/${info.frames - 1}</span>`;
+    const tl = $('timeline').getBoundingClientRect();
+    $('playhead').style.left = (t / info.duration) * tl.width + 'px';
+    history.replaceState(null, '', `?file=${encodeURIComponent(file)}&t=${t.toFixed(3)}`);
+  }
+  function drawTimeline() {
+    const ruler = $('ruler'), tracks = $('tracks');
+    ruler.innerHTML = ''; tracks.innerHTML = '';
+    const D = info.duration;
+    const stepS = D <= 6 ? 0.5 : D <= 20 ? 1 : D <= 60 ? 5 : 10;
+    for (let s = 0; s <= D + 1e-9; s += stepS) {
+      const d = document.createElement('div'); d.className = 'tick'; d.style.left = (s / D) * 100 + '%'; d.textContent = s + 's'; ruler.appendChild(d);
+    }
+    // pack clips into rows
+    const rows = [];
+    const clips = info.clips.filter((c) => c.end > c.start).sort((a, b) => a.start - b.start || b.end - a.end);
+    for (const c of clips) {
+      let r = rows.find((row) => row.end <= c.start + 1e-6);
+      if (!r) { r = { end: 0, items: [] }; rows.push(r); }
+      r.items.push(c); r.end = c.end;
+    }
+    for (const r of rows.slice(0, 12)) {
+      const row = document.createElement('div'); row.className = 'row';
+      for (const c of r.items) {
+        const el = document.createElement('div'); el.className = 'clip';
+        el.style.left = (c.start / D) * 100 + '%'; el.style.width = Math.max(0.3, ((c.end - c.start) / D) * 100) + '%';
+        el.textContent = c.selector; el.title = `${c.selector}\n${c.start}s → ${c.end}s`;
+        el.addEventListener('dblclick', (e) => { e.stopPropagation(); seek(c.start); });
+        row.appendChild(el);
+      }
+      tracks.appendChild(row);
+    }
+  }
+  function setBadge(issues) {
+    const e = issues.filter((i) => i.severity === 'error').length, w = issues.filter((i) => i.severity === 'warning').length;
+    const b = $('badge');
+    b.className = 'badge ' + (e ? 'err' : w ? 'warn' : 'ok');
+    b.textContent = e ? `${e} error${e > 1 ? 's' : ''}` + (w ? `, ${w} warning${w > 1 ? 's' : ''}` : '') : w ? `${w} warning${w > 1 ? 's' : ''}` : 'no problems';
+    $('issues').innerHTML = issues.length ? issues.map((i) => `<div class="i"><div class="c ${i.severity === 'error' ? 'e' : 'w'}">[${i.code}] ${esc(i.selector || '')}</div><div>${esc(i.message)}</div>${i.fix ? `<div class="f">fix: ${esc(i.fix)}</div>` : ''}</div>`).join('') + '<div class="f" style="padding-top:8px">Run <b>motionwright check</b> for layout and contrast checks.</div>' : '<div class="f">No problems found in the timeline. Run <b>motionwright check</b> for layout and contrast checks.</div>';
+  }
+  const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  $('badge').onclick = () => $('issues').classList.toggle('open');
+
+  // Timeline scrubbing
+  let dragging = false;
+  const tlSeek = (e) => { const r = $('timeline').getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * info.duration); };
+  $('timeline').addEventListener('pointerdown', (e) => { dragging = true; pause(); tlSeek(e); $('timeline').setPointerCapture(e.pointerId); });
+  $('timeline').addEventListener('pointermove', (e) => { if (dragging) tlSeek(e); });
+  $('timeline').addEventListener('pointerup', () => { dragging = false; });
+
+  // Playback
+  let raf = 0, t0 = 0, p0 = 0;
+  function play() {
+    if (!info) return;
+    if (t >= info.duration - 1.5 / info.fps) t = 0;
+    playing = true; $('play').textContent = 'Pause'; $('play').classList.add('on');
+    t0 = t; p0 = performance.now();
+    syncAudio(true);
+    const step = () => {
+      if (!playing) return;
+      let x = t0 + ((performance.now() - p0) / 1000) * speed;
+      if (x >= info.duration) {
+        if (loop) { t0 = 0; p0 = performance.now(); x = 0; syncAudio(true, 0); }
+        else { seek(info.duration); pause(); return; }
+      }
+      if (!busy) seek(x);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+  }
+  function pause() { playing = false; cancelAnimationFrame(raf); $('play').textContent = 'Play'; $('play').classList.remove('on'); syncAudio(false); }
+  // Real audio while playing (the composition's <audio> elements)
+  let audioSynced = 0;
+  function syncAudio(on, at) {
+    if (!info || !frame.contentDocument) return;
+    const now = at ?? t;
+    if (on && performance.now() - audioSynced < 400 && at == null) return;
+    audioSynced = performance.now();
+    const media = info.media.filter((m) => m.kind === 'audio');
+    const els = [...frame.contentDocument.querySelectorAll('audio')];
+    els.forEach((el, i) => {
+      const m = media[i];
+      if (!m || !on || speed !== 1) { el.pause(); return; }
+      const lt = (now - m.start) * (m.rate || 1) + (m.from || 0);
+      if (now < m.start || now >= m.end) { el.pause(); return; }
+      el.volume = Math.max(0, Math.min(1, m.volume ?? 1));
+      if (Math.abs(el.currentTime - lt) > 0.15) el.currentTime = lt;
+      if (el.paused) el.play().catch(() => {});
+    });
+  }
+
+  $('play').onclick = () => (playing ? pause() : play());
+  $('back').onclick = () => { pause(); seek(t - 1 / info.fps); };
+  $('fwd').onclick = () => { pause(); seek(t + 1 / info.fps); };
+  $('home').onclick = () => { pause(); seek(0); };
+  $('end').onclick = () => { pause(); seek(info.duration); };
+  $('loop').onclick = () => { loop = !loop; $('loop').classList.toggle('on', loop); };
+  $('speed').onchange = (e) => { speed = parseFloat(e.target.value); if (playing) { t0 = t; p0 = performance.now(); } };
+  addEventListener('keydown', (e) => {
+    if (!info) return;
+    if (e.key === ' ') { e.preventDefault(); playing ? pause() : play(); }
+    else if (e.key === 'ArrowLeft') { pause(); seek(t - (e.shiftKey ? 1 : 1 / info.fps)); }
+    else if (e.key === 'ArrowRight') { pause(); seek(t + (e.shiftKey ? 1 : 1 / info.fps)); }
+    else if (e.key === 'Home') { pause(); seek(0); }
+    else if (e.key === 'End') { pause(); seek(info.duration); }
+    else if (e.key === 'l' || e.key === 'L') $('loop').click();
+  });
+
+  // Live reload
+  try {
+    const es = new EventSource('/__mw/events');
+    es.onmessage = (e) => { const m = JSON.parse(e.data); if (m.type === 'reload') { const was = playing; pause(); load(t); if (was) setTimeout(play, 300); } };
+  } catch (e) {}
+  load();
+})();
+</script>
+</body>
+</html>

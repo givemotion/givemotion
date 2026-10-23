@@ -890,19 +890,21 @@
   function runFrameFns(T) {
     if (!frameFns.length) return false;
     inFrameCallbacks = true;
+    let ran = false;
     for (const f of frameFns) {
       try {
         if (f.el) {
           const c = nearestClip(f.el);
           const s = c ? c.start : 0, e = c ? c.end : comp.duration;
           if (T < s || T >= e) continue;
+          ran = true;
           f.fn(T - s, Object.assign(info(T), { local: T - s, clipDuration: e - s }));
-        } else f.fn(T, info(T));
+        } else { ran = true; f.fn(T, info(T)); }
       } catch (e) { pageError(e); }
     }
     flushAnimations(T, 'event');
     inFrameCallbacks = false;
-    return true;
+    return ran;
   }
 
   // ---------------------------------------------------------------------------

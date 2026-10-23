@@ -7,3 +7,6 @@ snapshots/
 *.gif
 !examples/**/assets/*.mp4
 .DS_Store
+benchmarks/**/node_modules/
+benchmarks/vs-hyperframes/mw/
+benchmarks/vs-hyperframes/hf/

@@ -1,0 +1,21 @@
+<!doctype html>
+<html data-width="1920" data-height="1080" data-duration="4">
+<head><style>
+body{background:#fafafa;font-family:Inter}
+.card{position:absolute;left:100px;top:100px;width:400px;padding:20px;background:#fff;border-radius:16px;box-shadow:0 8px 30px #0002}
+.clip{position:absolute;left:100px;top:400px;width:300px;height:60px;overflow:hidden;font-size:48px;white-space:nowrap}
+.off{position:absolute;left:1600px;top:700px;font-size:90px;white-space:nowrap}
+.low{position:absolute;left:900px;top:100px;color:#ddd;font-size:40px}
+.tiny{position:absolute;left:900px;top:300px;font-size:12px}
+.o1,.o2{position:absolute;left:900px;top:500px;font-size:60px}
+.o2{top:520px;left:950px}
+</style></head><body>
+<div class="card"><h2 style="font-size:64px;white-space:nowrap;margin:0">A very long headline here</h2></div>
+<div class="clip">This text is cut off for sure</div>
+<div class="off">Going off screen</div>
+<div class="low">Low contrast text</div>
+<div class="tiny">tiny caption</div>
+<div class="o1">Overlap one</div><div class="o2">Overlap two</div>
+<img src="missing.png" style="position:absolute;left:10px;top:900px;width:100px;height:100px">
+<div data-enter="wobble">x</div>
+</body></html>

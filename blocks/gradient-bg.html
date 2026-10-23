@@ -20,7 +20,8 @@ usage: <mw-include src="blocks/gradient-bg.html" c1="#6d5dfc" c2="#00c2ff" c3="#
     { c: c3, x: 0.45, y: 0.95, ax: 0.16, ay: -0.22, p: 20, r: 0.66 },
   ];
   const hex = (c, a) => { const h = c.trim().replace('#', ''); const n = parseInt(h.length === 3 ? [...h].map((x) => x + x).join('') : h.slice(0, 6), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; };
-  mw.onFrame((t) => {
+  mw.onFrame(root, (t, f) => {
+    t = f.time; // drift on global time so it continues smoothly across scenes
     g.globalCompositeOperation = 'source-over';
     g.fillStyle = base; g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = 'screen';

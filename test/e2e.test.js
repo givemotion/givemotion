@@ -1,0 +1,139 @@
+// End-to-end tests. They need Chrome (or chrome-headless-shell) and ffmpeg; they skip otherwise.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, copyFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { findChrome } from '../src/browser.js';
+import { ffmpegInfo, probe } from '../src/ffmpeg.js';
+import { render, stills, check, snapshot, inspect } from '../src/api.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(HERE, '..');
+const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
+const tmp = () => mkdtempSync(join(tmpdir(), 'mw-test-'));
+const md5 = (f) => createHash('md5').update(readFileSync(f)).digest('hex');
+const quiet = { quiet: true, log: () => {} };
+
+function comp(dir, name, body, attrs = 'data-width="640" data-height="360" data-fps="30"') {
+  const f = join(dir, name);
+  writeFileSync(f, `<!doctype html><html ${attrs}><head><style>body{background:#111;color:#fff;font-family:sans-serif}</style></head><body>${body}</body></html>`);
+  return f;
+}
+
+test('timeline: sequences, gaps, transitions, nested clips', { skip }, async () => {
+  const d = tmp();
+  const f = comp(d, 'seq.html', `
+    <main data-sequence data-transition="fade 0.5">
+      <section class="scene" data-duration="2"><p data-start="0.5" data-duration="1">a</p></section>
+      <section class="scene" data-duration="3" data-transition="slide-left 1"></section>
+      <section class="scene" data-duration="2"></section>
+    </main>`);
+  const info = await inspect(f);
+  // 2 + 3 + 2 - 1 (slide overlap) - 0.5 (fade overlap)
+  assert.equal(info.duration, 5.5);
+  const starts = info.clips.map((c) => c.start);
+  assert.deepEqual(starts, [0, 0.5, 1, 3.5]);
+  assert.equal(info.issues.filter((i) => i.severity === 'error').length, 0);
+});
+
+test('time formats and errors are reported with fixes', { skip }, async () => {
+  const d = tmp();
+  const f = comp(d, 't.html', `<div data-start="15f" data-duration="500ms">x</div><div data-start="banana">y</div><div data-enter="wobble">z</div>`, 'data-width="640" data-height="360" data-duration="2"');
+  const info = await inspect(f);
+  assert.equal(info.clips[0].start, 0.5);
+  assert.equal(info.clips[0].end, 1);
+  const codes = info.issues.map((i) => i.code);
+  assert.ok(codes.includes('bad-time'));
+  assert.ok(codes.includes('bad-enter'));
+  assert.ok(info.issues.every((i) => i.severity !== 'error' || i.fix));
+});
+
+test('render mp4: duration, size, frame count', { skip }, async () => {
+  const d = tmp();
+  const f = comp(d, 'r.html', `<h1 style="animation:fade-up .5s both">Hi</h1>`, 'data-width="640" data-height="360" data-fps="24" data-duration="1.5"');
+  const out = join(d, 'r.mp4');
+  const s = await render(f, { output: out, ...quiet });
+  assert.equal(s.frames, 36);
+  const p = probe(out);
+  assert.equal(p.width, 640);
+  assert.ok(Math.abs(p.duration - 1.5) < 0.05);
+});
+
+test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF canvas, transitions, WAAPI)', { skip }, async () => {
+  const d = tmp();
+  copyFileSync(join(HERE, 'fixtures', 'stateful.html'), join(d, 'stateful.html'));
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(join(d, 'stateful.html'), { output: a, format: 'png', workers: 1, ...quiet });
+  await render(join(d, 'stateful.html'), { output: b, format: 'png', workers: 3, ...quiet });
+  const fa = readdirSync(a).sort(), fb = readdirSync(b).sort();
+  assert.equal(fa.length, 120);
+  assert.deepEqual(fa, fb);
+  const diff = fa.filter((x) => md5(join(a, x)) !== md5(join(b, x)));
+  assert.deepEqual(diff, []);
+});
+
+test('video frames are exact and <video> keeps its CSS', { skip }, async () => {
+  const d = tmp();
+  mkdirSync(join(d, 'media'));
+  copyFileSync(join(HERE, 'fixtures', 'media', 'clip.mp4'), join(d, 'media', 'clip.mp4'));
+  const f = comp(d, 'v.html', `<video src="media/clip.mp4" data-start="0.5" data-from="2" style="position:absolute;left:0;top:0;width:640px;height:360px;object-fit:fill"></video>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"');
+  const r = await stills(f, [0.5, 1.5]);
+  assert.equal(r.buffers.length, 2);
+  assert.ok(r.buffers[0].length > 1000);
+  assert.notEqual(md5Buf(r.buffers[0]), md5Buf(r.buffers[1]));
+  const out = join(d, 'v.mp4');
+  const s = await render(f, { output: out, ...quiet });
+  const p = probe(out);
+  assert.ok(p.hasAudio, 'video audio is mixed in');
+  assert.equal(s.pageErrors.length, 0);
+});
+const md5Buf = (b) => createHash('md5').update(b).digest('hex');
+
+test('check finds the classic layout problems', { skip }, async () => {
+  const rep = await check(join(HERE, 'fixtures', 'bad.html'));
+  const codes = new Set(rep.issues.map((i) => i.code));
+  for (const c of ['text-clipped', 'text-offscreen', 'low-contrast', 'tiny-text', 'text-overlap', 'text-overflows-box', 'image-broken', 'bad-enter']) assert.ok(codes.has(c), 'missing ' + c);
+  assert.equal(rep.ok, false);
+});
+
+test('snapshot writes a contact sheet', { skip }, async () => {
+  const d = tmp();
+  const f = comp(d, 's.html', `<main data-sequence><section class="scene" data-duration="1"><h1>A</h1></section><section class="scene" data-duration="1"><h1>B</h1></section></main>`);
+  const r = await snapshot(f, { output: join(d, 'snaps') });
+  assert.ok(existsSync(r.sheet));
+  assert.ok(r.times.length >= 2);
+});
+
+test('transparent ProRes keeps alpha', { skip: skip || (!ffmpegInfo()?.encoders.prores_ks && 'no prores') }, async () => {
+  const d = tmp();
+  const f = comp(d, 'a.html', `<div style="position:absolute;left:100px;top:100px;width:100px;height:100px;background:red"></div>`, 'data-width="320" data-height="240" data-duration="0.5"');
+  writeFileSync(f, readFileSync(f, 'utf8').replace('background:#111;', 'background:transparent;'));
+  const out = join(d, 'a.mov');
+  await render(f, { output: out, transparent: true, ...quiet });
+  assert.ok(probe(out).hasVideo);
+});
+
+test('every block renders without errors', { skip }, async () => {
+  const d = tmp();
+  const blocks = readdirSync(join(ROOT, 'blocks')).filter((b) => b.endsWith('.html'));
+  const body = blocks.map((b, i) => `<section class="scene" data-duration="1"><mw-include src="blocks/${b}"></mw-include></section>`).join('\n');
+  mkdirSync(join(d, 'blocks'));
+  for (const b of blocks) copyFileSync(join(ROOT, 'blocks', b), join(d, 'blocks', b));
+  writeFileSync(join(d, 'cap.json'), '[{"word":"hi","start":0,"end":0.5}]');
+  const html = body.replace('src="blocks/captions.html"', 'src="blocks/captions.html" file="cap.json"');
+  const f = comp(d, 'blocks.html', `<main data-sequence>${html}</main>`, 'data-width="1280" data-height="720"');
+  const info = await inspect(f);
+  assert.deepEqual(info.issues.filter((i) => i.severity === 'error'), []);
+  assert.deepEqual(info.pageErrors, []);
+  assert.equal(info.duration, blocks.length);
+});
+
+test('examples pass check', { skip }, async () => {
+  for (const ex of ['product-promo', 'data-story', 'vertical-short', 'code-explainer', 'generative', 'personalized', 'bench']) {
+    const rep = await check(join(ROOT, 'examples', ex, 'index.html'));
+    assert.equal(rep.errors, 0, `${ex}: ${JSON.stringify(rep.issues.filter((i) => i.severity === 'error'))}`);
+  }
+});

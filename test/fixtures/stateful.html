@@ -1,0 +1,30 @@
+<!doctype html>
+<html data-width="1280" data-height="720" data-fps="30" data-duration="4">
+<head><style>
+body{background:#0b1020;color:#fff;font-family:Inter}
+.box{position:absolute;left:60px;top:60px;width:120px;height:120px;background:#f43f5e;border-radius:20px;transition:translate 1s var(--ease-out-back)}
+.box.go{translate:400px 0}
+canvas{position:absolute;right:60px;top:60px;width:400px;height:300px}
+.waapi{position:absolute;left:60px;top:260px;width:120px;height:120px;background:#22c55e;border-radius:60px}
+pre{position:absolute;left:60px;top:420px;font:32px/1.4 "DejaVu Sans Mono",monospace;margin:0;color:#e2e8f0}
+.k{color:#c084fc}.s{color:#86efac}
+.name{position:absolute;right:60px;bottom:60px;font-size:48px}
+.late{position:absolute;left:600px;top:420px;font-size:44px;animation:fade-up .8s var(--ease-out-expo) .3s both}
+</style></head><body>
+<div class="box" id="box"></div>
+<canvas id="c" width="400" height="300"></canvas>
+<div class="waapi" id="w"></div>
+<pre data-type="24" data-type-caret data-type-delay="0.5"><span class="k">const</span> hello = <span class="s">"world"</span>;
+<span class="k">await</span> render(hello);</pre>
+<div class="name">Hi, <span data-bind="user.name">?</span></div>
+<div class="late" data-start="2">Appears at 2s</div>
+<script type="application/json" id="mw-data">{"user":{"name":"Ada"}}</script>
+<script>
+setTimeout(() => document.getElementById('box').classList.add('go'), 1000);
+document.getElementById('w').animate([{translate:'0 0'},{translate:'500px 0'}], {duration: 2000, delay: 500, fill:'both', easing:'ease-in-out'});
+const c = document.getElementById('c').getContext('2d');
+let x = 0;
+function loop(ts){ x += 4; c.fillStyle='#1e293b'; c.fillRect(0,0,400,300); c.fillStyle='#38bdf8'; c.beginPath(); c.arc(x%400, 150 + Math.sin(ts/300)*80, 30, 0, 7); c.fill(); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+</script>
+</body></html>

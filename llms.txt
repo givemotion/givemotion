@@ -1,0 +1,10 @@
+# motionwright
+
+> HTML in, video out. A deterministic renderer that turns an HTML/CSS/JS page into MP4/WebM/ProRes/GIF, built for AI agents. MIT licensed, zero dependencies (needs Chrome + ffmpeg).
+
+- [Agent reference (SKILL.md)](skills/motionwright/SKILL.md): composition format, timing attributes, motion presets, JS API, media, blocks, checks. Read this first.
+- [README](README.md): overview, commands, performance, how it works.
+- [Blocks](blocks/): copyable HTML building blocks; each file's header lists params and usage.
+- [Examples](examples/): complete compositions.
+
+Core loop: write HTML → `npx motionwright check file.html` → `npx motionwright snapshot file.html` (look at snapshots/sheet.png) → `npx motionwright render file.html -o out/video.mp4`.

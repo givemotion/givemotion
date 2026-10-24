@@ -32,6 +32,61 @@ second. Do not reformat files you are not changing.
 
 ---
 
+## N7. Natural, real-world motion (Leo's request; start here)
+Videos still move like software: every move eases from a dead stop to a dead stop, consecutive moves and camera shots
+brake to zero between them, a `follow` shot locks rigidly onto its target, and everything uses the same bezier
+curves (`out-expo` entrances, `in-out-cubic` camera, `power1.out` tweens). The tools for more natural motion exist
+but are opt-in, and agents don't use them: in round 8, `data-parallax` 0 of 18 videos, `--motion-blur` 0 of 18,
+springs/bouncy 5 of 18. **The lever is defaults, not new options.** Make natural motion the default, keep one switch
+to get today's motion back (`<html data-motion="classic">` or similar), and keep every frame a pure function of time
+(1 worker == N workers, byte for byte). In priority order:
+
+1. **Motion blur on by default, adaptive.** Real cameras blur fast motion; at 30 fps without it fast moves strobe.
+   Today `--motion-blur 8` renders every frame 8 times, so nobody uses it. The runtime knows what moves and how fast
+   (timeline values, camera, travel; or the difference between two sub-frame captures): take extra sub-frame samples
+   only for frames where something moves faster than ~N px/frame, scaled by speed (2-8 samples). Measure the cost on
+   the round-8 compositions first; this decides the default. (`src/render.js` capture loop, `src/runtime/*`.)
+2. **A camera that moves like an operator** (`src/runtime/motion.js`, Camera):
+   - consecutive shots blend with continuous velocity (a spline through the shot keys; ease only at the start and end
+     of a run of moves), so the camera does not stop dead between shots;
+   - `follow` with lag and inertia (the camera trails the target and settles), computed as a smoothing of the target's
+     path over the last ~0.3-0.6 s, sampled at fixed sub-steps from the time alone (no frame-to-frame state);
+   - a tiny seeded "breathing" drift on held shots (on by default, very small), and a slight overshoot-and-settle on
+     fast zooms.
+3. **Physical easing as the default** (`src/runtime/runtime.js` easing, `motion.js` Timeline):
+   - entrances and moves get mass: critically damped or slightly underdamped springs (pure functions of time) instead
+     of fixed beziers, unless an ease is given;
+   - when no duration is given, duration scales with distance and size (bigger moves take a bit longer, not linearly);
+   - back-to-back tweens on the same property carry their velocity through instead of stopping between them.
+4. **Arcs and follow-through:** `mw.fly` and x/y moves travel on a slight arc by default (`arc: 0` to turn off); things
+   that land settle (a small overshoot or squash); staggers get a small seeded variation in timing so a row of cards
+   does not move like a machine.
+5. **Depth by default:** in camera worlds, background layers get mild automatic parallax; shadows grow and soften when
+   an element lifts or scales up; optional depth blur on far layers during camera moves.
+6. **`check` warnings for robotic motion:** a camera that stops dead between consecutive shots; fast moves without
+   blur (displacement per frame over a threshold); one easing curve used for everything; long straight-line moves.
+
+**How to measure it** (the 2 fps contact sheets the judges use cannot show smoothness):
+- Re-render the 18 round-8 compositions (`bench/agents/runs/r8/*/video.html` if still present, else make new ones)
+  with old and new defaults, and have blind judges compare short clips or 10 fps strips of the key moves: "which
+  feels more natural / more like real motion design".
+- Add a smoothness number to `analyze` or `inspect`: stop-and-go count between moves, jerk (change of acceleration)
+  of the camera and of moving elements, motion-blur coverage of fast frames.
+- Render time before/after (motion blur is the expensive part).
+Files: `src/render.js`, `src/runtime/motion.js`, `src/runtime/runtime.js`, `src/check.js`, `src/analyze.js`, SKILL.md
+(a short "motion principles" paragraph: anticipation, follow-through, arcs, ease out on entrances, ease in on exits).
+
+## N8. Token cost for agents (measure and lower it)
+context (median ~2.6M vs ~1.7M tokens processed, almost all cached), from the agent docs kept in context every turn,
+the `check`/`snapshot` output and contact-sheet images, and ~15% more turns. At list prices that is roughly 10-20%
+more per video (cache reads are cheap; this is an estimate, not a bill). They also made fewer visible errors, and
+renders cost half the CPU time. Ideas, measured with `bench/agents` (tokens per video at the same quality):
+- `SKILL.md` is ~54 KB (~13.5k tokens) and growing: a short core (~15 KB: the composition format, the top tools, the
+  check loop) plus topic files read on demand (camera, charts, hand-drawn, audio, blocks), linked from the core.
+- terser `check` output (one line per issue, details on request), smaller snapshot sheets by default, `snapshot --times`
+  recipes so agents look at fewer images.
+- count tokens per maker in `round.js results` (the agent transcripts have the usage) so every round reports it.
+
 ## N6. Open items from round 8 (each one came up in 2+ friction logs or judge notes)
 - ~~Live line chart~~ done (`task/live-chart`): `mw.chart.line` in `src/runtime/chart.js` (head element, `data-point` callouts, `data-chart-text`, holds, segment colors, `rescale`, `overview`, `timeOf`/`valueAt`/`pointAt`); `line-chart` block built on it; SKILL recipe. Not yet tried by a fresh data-story maker.
 - Done: **`mw.connect` labels**: `label: { at, side, offset }` placed on the geometric line, box clears the line; `from: 'top 0.25'`, corners, `fromAt`/`toAt` (`src/runtime/sketch.js`).

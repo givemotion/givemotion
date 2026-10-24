@@ -8,7 +8,7 @@ scored all six videos together from 2 fps sheets.
 |---|---|---|
 | baseline | 2 | the engine before this work (no sketch tools, no hand font) |
 | new | 2 | `data-sketch` / `mw.sketch`, built-in `Caveat`, `write` preset, `mw.connect`, check fixes (first version) |
-| other | 2 | another framework 4.0.538, installed and ready; free to add npm packages (both added roughjs) |
+| other | 2 | another code-to-video framework (React), installed and ready; free to add npm packages (both added a rough-drawing library) |
 
 ## Results
 
@@ -18,16 +18,16 @@ scored all six videos together from 2 fps sheets.
 | new | 8.0 | 7.2 | 6.8 | 6.7 | 6.8 | 4.0 | 157-170 lines (10-12 KB) | 11-14 min | 33-47 s (35-44 s after the encoder fix) |
 | other | 8.2 | 7.0 | 6.5 | 5.7 | 6.3 | 4.3 | 589-614 lines (20-22 KB) | 12-13 min | 66-67 s |
 
-All videos 31-34 s, 1920x1080, 30 fps. Per video (overall): baseline 8.0 and 7.0, new 7.0 and 6.7, another framework 7.3 and 5.3.
+All videos 31-34 s, 1920x1080, 30 fps. Per video (overall): baseline 8.0 and 7.0, new 7.0 and 6.7, the other framework 7.3 and 5.3.
 One baseline video won all three judges' first place; the spread between two runs of the same setup (up to 2 points for
-another framework) is as large as the spread between setups, so with 2 runs each the quality ranking is weak evidence.
+the other framework) is as large as the spread between setups, so with 2 runs each the quality ranking is weak evidence.
 
 What is clear:
 - **Less code, no home-made rough-shape kit.** Baseline agents wrote 60-90 lines of their own rough-stroke code each;
-  the new runs wrote none (`data-sketch` on plain SVG shapes) and had half the code. The another framework agents wrote ~600 lines:
+  the new runs wrote none (`data-sketch` on plain SVG shapes) and had half the code. The other framework's agents wrote ~600 lines:
   roughjs wrapping, their own draw-on, their own camera, their own font loading.
-- **Render speed:** for the same kind of video motionwright rendered in 31-47 s, another framework in 66-67 s on the same machine.
-- **another framework friction:** both runs lost a render to Google Fonts timing out in headless Chrome, and both had to build a
+- **Render speed:** for the same kind of video motionwright rendered in 31-47 s, the other framework in 66-67 s on the same machine.
+- **Friction in the other framework:** both runs lost a render to Google Fonts timing out in headless Chrome, and both had to build a
   camera over a big canvas and hand-drawn draw-on themselves. motionwright has both built in.
 - **Why the new runs did not score higher:** judges called their ink "thin, low-contrast, too light and uniform" and their
   overview labels tiny. Both runs copied the docs' example `stroke-width="3"`; in the final pull-back (world at ~half size)
@@ -57,13 +57,13 @@ From the new-engine friction logs (fixed after the round, not yet tested by agen
 
 ## Round 2 (r6): 3 more runs with the fixed tools
 
-Judged together with the 2 baseline and 2 another framework videos (7 per judge, 3 judges):
+Judged together with the 2 baseline and 2 other-framework videos (7 per judge, 3 judges):
 
 | group | runs | overall | avg rank (of 7) |
 |---|---|---|---|
 | baseline | 2 | **8.2** | 1.7 |
 | new tools (r6) | 3 | 6.2 (7.0, 6.3, 5.3) | 4.9 |
-| another framework | 2 | 6.2 | 5.0 |
+| other framework | 2 | 6.2 | 5.0 |
 
 All three makers hit the same new bugs, now fixed: round-cap **dots** where shapes were waiting to be drawn (a
 zero-length dash still paints its caps), connector labels parked at the top-left while an end was hidden, script

@@ -27,6 +27,7 @@ Look (for AI review)
   snapshot [file] -o dir        Key moments as PNGs + one contact sheet (sheet.png)
   inspect [file]                Timeline as JSON: size, fps, duration, clips, media
   audio <file>                  Tempo, beats, bar starts and big hits of a sound file
+  captions <file.json|.srt>     How the captions block will page the words (--words 3)
   analyze <video.mp4>           Report on any video: cuts, shot lengths, transitions,
                                 camera, pacing, colors, beat sync, contact sheets
 
@@ -84,6 +85,7 @@ const CMD_HELP = {
   --max 12          Max automatic moments (default 12; one per scene when settled)
   --sheet-only      Only write sheet.png
   --cols 2          Columns in the sheet (fewer = bigger pictures)
+  --grid            Draw thirds, the center and the safe zone (data-safe-zone / --safe-zone) over the pictures
   --data f.json / --props '{…}'   Data for {{data.…}} (default: data.json next to the HTML)
   --transparent     Show a checkerboard behind (auto-detected when the page has no background)
   --json            Machine-readable output`,
@@ -91,6 +93,8 @@ const CMD_HELP = {
   --at 7.5          Check one moment only (fast, after a fix)
   --from 6 --to 9   Check part of the video
   --fast            Fewer samples (quicker, may miss short problems)
+  --safe-zone shorts   Warn about text where the app covers vertical video (shorts | reels | tiktok, or "top,right,bottom,left" px);
+                    or put data-safe-zone="shorts" on <html>
   --data f.json / --props '{…}'   Data for {{data.…}} (default: data.json next to the HTML)
   The report starts with a motion strip: how much of the picture changes, one mark per half second.
   Moving or fading text is skipped automatically; problems must last ~0.25s to count.
@@ -107,6 +111,7 @@ const CMD_HELP = {
   --every 0.5       Seconds between pictures on sheet.png (default: fits ~48 pictures)
   --no-sheets       Only the report (faster)
   --no-audio        Skip the music analysis`,
+  captions: 'motionwright captions captions.json|captions.srt [--words 5] [--json]\n  Prints the caption pages the captions block will show (times and words), so you can pick --words before rendering.',
   audio: 'motionwright audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
   inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment (screen box, opacity, transform, visible), and which clips are on screen with their local time.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).\n  --data f.json / --props \'{…}\'   Data for {{data.…}}',
   dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
@@ -116,7 +121,7 @@ const CMD_HELP = {
   bench: 'motionwright bench [file.html] [--workers n] [--json]',
 };
 
-const BOOLS = ['json', 'sheets', 'audio', 'cache', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
+const BOOLS = ['json', 'sheets', 'audio', 'cache', 'grid', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -134,6 +139,7 @@ async function main() {
     case 'bundle': case 'export': return cmdBundle(args);
     case 'audio': case 'beats': return cmdAudio(args);
     case 'analyze': case 'analyse': return cmdAnalyze(args);
+    case 'captions': return cmdCaptions(args);
     case 'dev': case 'preview': case 'studio': return cmdDev(args);
     case 'init': return cmdInit(args);
     case 'blocks': return cmdBlocks(args);
@@ -218,7 +224,7 @@ async function cmdSnapshot(args) {
   const { snapshot } = await import('./check.js');
   try {
     const progress = args.json ? null : (i, n) => { if (n > 8 && (i === 1 || i % 10 === 0 || i === n)) process.stderr.write(`  frame ${i}/${n}\n`); };
-    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times, every: args.every, from: args.from, to: args.to, transitions: args.transitions, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, cols: args.cols ? +args.cols : undefined, onProgress: progress });
+    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times, every: args.every, from: args.from, to: args.to, transitions: args.transitions, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, grid: args.grid, safeZone: args.safeZone, cols: args.cols ? +args.cols : undefined, onProgress: progress });
     if (args.json) console.log(JSON.stringify(r, null, 2));
     else {
       console.log(`sheet: ${shortPath(r.sheet)}`);
@@ -232,7 +238,7 @@ async function cmdSnapshot(args) {
 async function cmdCheck(args) {
   const { check, formatReport } = await import('./check.js');
   try {
-    const rep = await check(inputOf(args), { ...commonOpts(args), transparent: args.transparent, contrastSamples: args.samples ? +args.samples : undefined, at: args.at, from: args.from, to: args.to, fast: args.fast });
+    const rep = await check(inputOf(args), { ...commonOpts(args), transparent: args.transparent, contrastSamples: args.samples ? +args.samples : undefined, at: args.at, from: args.from, to: args.to, fast: args.fast, safeZone: args.safeZone });
     if (args.json) console.log(JSON.stringify(rep, null, 2));
     else console.log(formatReport(rep, { file: inputOf(args) }));
     if (!rep.ok) process.exitCode = 1;
@@ -258,7 +264,9 @@ async function cmdInspect(args) {
         console.log(args.json ? JSON.stringify(rows, null, 2) : ['t       x       y       w       h       opacity', ...rows.filter(Boolean).map((r) => [r.t, r.x, r.y, r.w, r.h, r.opacity].map((v) => String(v).padEnd(8)).join(''))].join('\n'));
         return;
       }
+      const nLog = await ctx.page.evaluate('mw.__logCount ? mw.__logCount() : 0');
       await ctx.page.seek(+args.at);
+      const logs = await ctx.page.evaluate(`mw.__logs ? mw.__logs(${nLog}) : []`);
       const r = await ctx.page.evaluate(`(() => [...document.querySelectorAll(${JSON.stringify(sel)})].slice(0, 40).map((e) => {
         const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
         let op = 1, shown = true; for (let c = e; c && c.nodeType === 1; c = c.parentElement) { const s2 = getComputedStyle(c); op *= +s2.opacity; if (s2.display === 'none' || s2.visibility === 'hidden') shown = false; }
@@ -268,7 +276,7 @@ async function cmdInspect(args) {
       // Which clips are on screen, and what their own clock says (data-enter delays, burst `at`, scoped onFrame use it)
       const T = +args.at, r3 = (x) => Math.round(x * 1000) / 1000;
       const clips = (ctx.info.clips || []).filter((c) => T >= c.start && T < c.end).map((c) => ({ selector: c.selector, start: r3(c.start), end: r3(c.end), local: r3(T - c.start) }));
-      console.log(JSON.stringify({ time: T, clips, elements: r }, null, 2));
+      console.log(JSON.stringify({ time: T, clips, elements: r, ...(logs.length ? { logs } : {}) }, null, 2));
     } catch (e) { fail(e, args); } finally { await ctx.page.close(); await ctx.server.close(); }
     return;
   }
@@ -286,6 +294,26 @@ async function cmdAudio(args) {
     const r = await analyzeAudio(f, { fps: args.fps ? +args.fps : 30, chrome: args.chrome });
     console.log(args.json ? JSON.stringify(r, null, 2) : formatAudio(r));
   } catch (e) { fail(e, args); }
+}
+
+async function cmdCaptions(args) {
+  const f = args._[0];
+  if (!f) return fail(new Error('Usage: motionwright captions captions.json [--words 5]'), args);
+  const file = resolve(f);
+  if (!existsSync(file)) return fail(new Error(`Not found: ${file}`), args);
+  // a tiny page next to the file with the captions block in it; the block itself does the paging
+  const page = join(dirname(file), `.mw-captions-${process.pid}.html`);
+  const words = parseInt(args.words || '5', 10);
+  writeFileSync(page, `<!doctype html><html data-width="1080" data-height="1920" data-duration="1"><body><mw-include src="${join(PKG_ROOT, 'blocks', 'captions.html').split('\\').join('/')}" file="${basename(file)}" words="${words}"></mw-include></body></html>`);
+  const { openComposition } = await import('./render.js');
+  let ctx;
+  try {
+    ctx = await openComposition(page, { ...commonOpts(args), mode: 'render' });
+    const pages = await ctx.page.evaluate(`(document.querySelector('.mwb-cap') || {}).__mwPages || []`);
+    if (args.json) return console.log(JSON.stringify(pages.map((p) => ({ start: p.start, end: p.end, text: p.words.map((w) => w.word).join(' ') })), null, 2));
+    console.log(`${pages.length} caption pages with words="${words}":`);
+    for (const p of pages) console.log(`  ${p.start.toFixed(2).padStart(6)}–${p.end.toFixed(2).padEnd(6)} ${p.words.map((w) => w.word).join(' ')}`);
+  } catch (e) { fail(e, args); } finally { if (ctx) { await ctx.page.close(); await ctx.server.close(); } try { (await import('node:fs')).rmSync(page, { force: true }); } catch {} }
 }
 
 async function cmdAnalyze(args) {

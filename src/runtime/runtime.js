@@ -1343,6 +1343,7 @@
   // or a Promise when media must load.
   // ---------------------------------------------------------------------------
   let lastT = null;
+  const logs = [];
   let frameIndex = 0;
   function seek(T) {
     if (!initialized) init();
@@ -1513,6 +1514,10 @@
     lerp: (a, b, p) => a + (b - a) * p,
     // random('dot-3') → the same number in [0,1) every time for that seed (strings or numbers).
     // random() → next value of the page's seeded Math.random. rng(seed) → a generator function.
+    // mw.log(...): like console.log, but check and inspect print it with the video time it happened at
+    log: (...a) => { logs.push({ t: round(now), msg: a.map((x) => { if (typeof x === 'string') return x; try { return JSON.stringify(x); } catch (e) { return String(x); } }).join(' ').slice(0, 500) }); if (logs.length > 5000) logs.splice(0, 1000); },
+    __logs: (since = 0) => logs.slice(since),
+    __logCount: () => logs.length,
     random: (seed) => (seed === undefined || seed === null ? Math.random() : makeRandom(hashSeed(seed))()),
     rng: (seed) => makeRandom(hashSeed(seed ?? 1)),
     ready, seek, inspect,

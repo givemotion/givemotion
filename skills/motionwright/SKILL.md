@@ -14,7 +14,7 @@ A composition is one HTML file. Every frame is that page at a moment in time. CS
 3. `npx motionwright snapshot video.html` — **open `snapshots/sheet.png` (next to the HTML file) and look at it** (`-o review2` writes to another folder so you can compare). It shows the key moment of every scene. Fix anything that looks wrong, cramped, cut off, or ugly. Repeat 2–3.
 4. `npx motionwright render video.html -o out/video.mp4`
 
-Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose; `snapshot --from 3.2 --to 3.8 --every 1f` gives a frame-by-frame strip of one move; `snapshot --transitions` shows the start, middle and end of every scene change; `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment (and which clips are on screen with their local time, the clock that `data-enter` delays and `at` options count in), and `inspect --at 2 --to 3 --el "#logo"` prints its position, size and opacity frame by frame (check easing and speed without watching). Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
+Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose; `snapshot --from 3.2 --to 3.8 --every 1f` gives a frame-by-frame strip of one move; `snapshot --transitions` shows the start, middle and end of every scene change; `snapshot --grid` draws thirds, the center and the safe zone over the pictures; `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment (and which clips are on screen with their local time, the clock that `data-enter` delays and `at` options count in), and `inspect --at 2 --to 3 --el "#logo"` prints its position, size and opacity frame by frame (check easing and speed without watching). Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
 
 ## Minimal composition
 
@@ -109,7 +109,7 @@ mw.to('#logo', { rotate: 360, duration: 2, delay: 0.5, repeat: -1, ease: 'none' 
 - Props: `x` `y` `z` `xPercent` `yPercent` `rotate` `rotateX` `rotateY` `scale` `scaleX` `scaleY` `skewX` `skewY` `transformPerspective` (written to `transform`), any CSS property (`backgroundColor`, `clipPath`, `filter`, `borderRadius`, `--css-var` …; colors blend in OKLab), `autoAlpha`, `attr: {cx: 50}`, `morph`, `draw`, `text` (type a new string), `textContent` (count). Options: `duration` (0.5) `ease` (`power1.out`) `delay` `stagger` (number, `{each, from: 'center'|'end'|'edges'|'random'|index, amount}`, or a function `(i, el) => seconds`) `repeat` `yoyo` `repeatDelay` `keyframes` `onUpdate(progress, el)`.
 - `mw.timeline(scope, { repeat: -1, yoyo: true, delay: 1, global: true })` (global = times from the start of the video).
 - The timeline uses `transform`, added on top of the element's own CSS transform (so `translate(-50%,-50%)` centering is kept). `data-enter`/`data-exit` use `translate`/`scale`, and `data-camera` adds on top, so all of them combine on one element.
-- `from()` and `fromTo()` show their start values from the beginning of the clip until the tween starts (useful to keep things hidden until they enter); pass `immediateRender: false` to stop that. `tl.set(el, {…}, time)` sets values instantly. When tweens overlap on the same property, the one that started last (in video time) wins, also across different timelines. The element's own CSS `transform` (e.g. `translate(-50%, -50%)` centering) is kept and the tween is added on top.
+- `from()` and `fromTo()` show their start values from the beginning of the clip until the tween starts (useful to keep things hidden until they enter); pass `immediateRender: false` to stop that. `hideBefore: true` on any tween keeps the element hidden (`visibility`) until that tween starts, without touching its other styles. `tl.set(el, {…}, time)` sets values instantly. When tweens overlap on the same property, the one that started last (in video time) wins, also across different timelines. The element's own CSS `transform` (e.g. `translate(-50%, -50%)` centering) is kept and the tween is added on top.
 - SVG shapes scale and rotate around their own center unless you set `transform-origin`. A timeline transform replaces the SVG `transform="…"` attribute, so put the position on a parent `<g transform="translate(…)">` and animate the child (a gauge needle: `<g transform="translate(400 300)"><path id="needle" style="transform-origin: 0 0" …/></g>`). `draw` uses the stroke dashes itself, so it replaces your own `stroke-dasharray`; for a dotted line that draws on, draw a solid copy as a mask or reveal the dotted line with a `clip-path`.
 - Plain objects work too (for canvas/three.js): `const s = { r: 0 }; mw.to(s, { r: 100, duration: 2 }); mw.onFrame(() => draw(s.r));`
 
@@ -180,6 +180,7 @@ mw.wait(promise)   // hold rendering until it resolves (fetch JSON, load a model
 mw.onLayout('#scene2', (local) => { /* runs after all animations are placed: measure with getBoundingClientRect, follow or aim at elements */ });
 mw.color.mix('#ff0', 'oklch(60% .2 260)', 0.5), mw.mapRange(v, 0, 1, 10, 50), mw.wrap(v, 0, 360)
 mw.random('dot-7')  // the same number in [0,1) for that seed, every frame and every render; mw.rng(seed) → generator
+mw.log('pkg at', x)  // like console.log, but `check` and `inspect --at` print it with the video time (repeats are grouped)
 ```
 
 Rules for seekable JS:
@@ -227,7 +228,7 @@ The most common failure is a video that looks like a slideshow or a website: a c
 ## Making it look good
 
 - Layout for 1920×1080: keep text ≥ 96px from the edges. Titles 96–160px, body ≥ 36px, captions ≥ 56px. Max ~10 words on screen at once.
-- Vertical 1080×1920 (Shorts/Reels/TikTok): the same pixel sizes work (the short side is 1080). Keep the top 220px and bottom 380px free of key text (app buttons and titles cover them) and 60px at the sides. Titles 90–140px, captions 56–72px, max ~6 words per line.
+- Vertical 1080×1920 (Shorts/Reels/TikTok): the same pixel sizes work (the short side is 1080). Keep the top 220px and bottom 380px free of key text (app buttons and titles cover them) and 60px at the sides. Put `data-safe-zone="shorts"` (or `reels`, `tiktok`) on `<html>` and `check` warns about text in those edges (`unsafe-zone`), and `snapshot --grid` draws the zone. Preview how captions will page: `npx motionwright captions captions.json --words 3`. Titles 90–140px, captions 56–72px, max ~6 words per line.
 - One idea per scene, 2.5–5s each. Let things hold ≥ 1s after they land before the next change.
 - Enter with ease-out (`out-expo`, `out-back`, `spring`), exit with ease-in, and keep exits shorter than entrances. Stagger 40–90ms between items.
 - Animate `opacity`, `translate`, `scale`, `rotate`, `filter`, `clip-path`. Avoid animating `width`/`height`/`top`/`left` (slower, jittery).
@@ -264,6 +265,7 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `text-clipped` | Text cut by an `overflow:hidden` box. Make it fit or let it wrap. |
 | `text-overflows-box` | Text spills out of its card/background. Add padding/width or shorten. |
 | `text-overlap` | Two texts on top of each other while settled. Move one or change timing. |
+| `unsafe-zone` | Text where the app's buttons and titles cover vertical video (with `data-safe-zone` or `check --safe-zone shorts`). Move it inward, or `data-check="safe-ok"`. |
 | `still` | Little changes on screen for 2.5 s or more: nothing enters, leaves or moves, and a slow float or a faint glow does not count. Viewers read it as the video stalling. Cut the hold, start the next beat sooner, or end earlier. |
 | `tiny-text` | Hard to read in a video. Use ≥ 24px at 1080p. |
 | `low-contrast` | Text blends into what is behind it. Targets: 4.5:1 normal text, 3:1 large text (≥ 32px, or bold ≥ 24px), 1.6:1 for text with a `text-shadow` or outline. ✖ below two thirds of the target. Fix the color, or add a backing or shadow. |

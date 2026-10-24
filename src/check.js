@@ -14,8 +14,13 @@ async function autoTransparent(ctx, opts) {
 // ---------------------------------------------------------------------------
 // Page-side analysis (stringified and evaluated in the composition page)
 // ---------------------------------------------------------------------------
-const PAGE_ANALYZE = String.raw`((dt) => {
+const PAGE_ANALYZE = String.raw`((dt, opt) => {
   const W = mw.width, H = mw.height, PX = mw.px;
+  // Safe zone for vertical social video (app buttons and titles cover the edges), in px at 1080p
+  const ZONES = { shorts: [220, 60, 380, 60], reels: [220, 60, 380, 60], tiktok: [220, 120, 380, 60] };
+  const zname = (opt && opt.safeZone) || document.documentElement.getAttribute('data-safe-zone');
+  let zone = null;
+  if (zname && zname !== 'none' && zname !== 'off') { const z = ZONES[zname] || String(zname).split(/[\s,]+/).map(Number); if (z.length === 4 && z.every((v) => isFinite(v))) zone = { left: z[3] * PX, top: z[0] * PX, right: W - z[1] * PX, bottom: H - z[2] * PX, name: ZONES[zname] ? zname : 'custom' }; }
   const out = [];
   const ignored = (el) => !!el.closest('[data-check="ignore"],[aria-hidden="true"],[data-mw-internal]');
   const isTextEl = (el) => {
@@ -230,6 +235,11 @@ const PAGE_ANALYZE = String.raw`((dt) => {
       if (/^(absolute|fixed)$/.test(acs.position)) escapes = true;
       anc = anc.parentElement;
     }
+    // 3b. Text where app buttons and titles will cover it (vertical social video)
+    if (zone && t.op >= 0.5 && !el.closest('[data-check~="crop-ok"],[data-check~="safe-ok"]')) {
+      const inSafe = area(inter(inter(tu, frame), zone)) / Math.max(1, area(inter(tu, frame)));
+      if (inSafe < 0.85) out.push({ severity: 'warning', code: 'unsafe-zone', selector: sel(el), text: snippet(el), message: 'Text sits where the app covers the video (' + zone.name + ' safe zone: ' + Math.round(zone.top / PX) + ' px top, ' + Math.round((H - zone.bottom) / PX) + ' px bottom, ' + Math.round(zone.left / PX) + '/' + Math.round((W - zone.right) / PX) + ' px sides at 1080p).', minSpan: 0.3, fix: 'Move it toward the middle of the frame. If it does not matter when covered, add data-check="safe-ok".' });
+    }
     // 4. Tiny text (visual size, after transforms)
     const fs = parseFloat(cs.fontSize);
     const lineH = t.rs.reduce((m, r) => Math.max(m, r.height), 0);
@@ -401,7 +411,7 @@ export async function check(input, opts = {}) {
     const change = []; // [t, fraction of the picture that changed since the previous grid]
     for (const t of times) {
       await ctx.page.seek(t);
-      const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT})`);
+      const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT}, ${JSON.stringify({ safeZone: opts.safeZone || null })})`);
       prevT = t;
       if (opts.at != null && Math.abs(t - +opts.at) > 0.5 / fps) continue; // warm-up samples only feed motion detection
       perSample.push({ t, issues: a.issues });
@@ -430,6 +440,7 @@ export async function check(input, opts = {}) {
       push(list.filter((i) => opts.at != null || nb.has(key(i)) || i.code === 'image-broken'), t);
     }
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
+    const logs = groupLogs(await ctx.page.evaluate('window.mw && mw.__logs ? mw.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
     if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second is an empty frame. The first frame is the thumbnail and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
     motion = change.length ? { every: 0.5, from: change[0][0] - 0.5, values: change.map(([, f, b]) => Math.round((b ? Math.max(f, 0.06) : f) * 1000) / 1000) } : null;
@@ -448,11 +459,22 @@ export async function check(input, opts = {}) {
     if (merged.some((i) => i.code === 'script-error')) for (const i of merged) if (i.code === 'still' || i.code === 'empty-start') i.message += ' This may only be because of the script error: fix that first.';
     const errors = merged.filter((i) => i.severity === 'error').length;
     const warnings = merged.filter((i) => i.severity === 'warning').length;
-    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), motion, logs: ctx.page.logs || [] };
+    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), motion, logs };
   } finally {
     await ctx.page.close();
     await ctx.server.close();
   }
+}
+
+/** mw.log() lines: the same message at neighbouring times becomes one line with a time range and a count. */
+export function groupLogs(list) {
+  const out = [];
+  for (const l of list || []) {
+    const last = out[out.length - 1];
+    if (last && last.msg === l.msg && l.t - last.until <= 0.6) { last.until = l.t; last.count++; }
+    else out.push({ time: l.t, until: l.t, count: 1, msg: l.msg });
+  }
+  return out;
 }
 
 /** Long stretches where (almost) nothing on screen changes: viewers read these as the video stalling. */
@@ -557,6 +579,10 @@ export function formatReport(rep, { file } = {}) {
   const i = rep.info;
   lines.push(`${file ? basename(file) + ': ' : ''}${i.width}x${i.height} ${i.fps}fps ${i.duration.toFixed(2)}s, ${i.clips} timed elements`);
   if (rep.motion) lines.push(...motionStrip(rep.motion));
+  if (rep.logs && rep.logs.length) {
+    for (const l of rep.logs.slice(0, 30)) lines.push(`log ${l.time.toFixed(2)}s${l.until > l.time ? '–' + l.until.toFixed(2) + 's' : ''}${l.count > 1 ? ' (' + l.count + 'x)' : ''}  ${l.msg}`);
+    if (rep.logs.length > 30) lines.push(`log … ${rep.logs.length - 30} more (--json for all)`);
+  }
   if (!rep.issues.length) { lines.push('✓ No problems found.'); return lines.join('\n'); }
   for (const x of rep.issues) {
     const rg = (r) => (r[0] === r[1] ? `${r[0].toFixed(2)}s` : `${r[0].toFixed(2)}–${r[1].toFixed(2)}s`);
@@ -611,6 +637,15 @@ export async function snapshot(input, opts = {}) {
       thumbs.push({ t, data: thumb.toString('base64'), mime: opts.transparent ? 'png' : 'jpeg', frame: Math.round(t * fps), scene: sceneAt(info, t) });
     }
     const sheet = join(dir, 'sheet.png');
+    // --grid: thirds, the center and the safe zone (if any) drawn over every picture, to judge placement
+    let overlay = '';
+    if (opts.grid) {
+      const W = info.width, H = info.height, PX = Math.min(W, H) / 1080;
+      const zn = opts.safeZone || await ctx.page.evaluate(`document.documentElement.getAttribute('data-safe-zone')`).catch(() => null);
+      const Z = { shorts: [220, 60, 380, 60], reels: [220, 60, 380, 60], tiktok: [220, 120, 380, 60] }[zn] || (zn && String(zn).split(/[\s,]+/).map(Number).length === 4 ? String(zn).split(/[\s,]+/).map(Number) : null);
+      const ln = (x1, y1, x2, y2, c) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${2 * PX}" vector-effect="non-scaling-stroke"/>`;
+      overlay = `<svg class="ov" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${ln(W / 3, 0, W / 3, H, '#0ff8')}${ln((2 * W) / 3, 0, (2 * W) / 3, H, '#0ff8')}${ln(0, H / 3, W, H / 3, '#0ff8')}${ln(0, (2 * H) / 3, W, (2 * H) / 3, '#0ff8')}${ln(W / 2 - 30 * PX, H / 2, W / 2 + 30 * PX, H / 2, '#f0f')}${ln(W / 2, H / 2 - 30 * PX, W / 2, H / 2 + 30 * PX, '#f0f')}${Z ? `<rect x="${Z[3] * PX}" y="${Z[0] * PX}" width="${W - (Z[1] + Z[3]) * PX}" height="${H - (Z[0] + Z[2]) * PX}" fill="none" stroke="#ff0" stroke-width="2" stroke-dasharray="8 6" vector-effect="non-scaling-stroke"/>` : ''}</svg>`;
+    }
     const cols = opts.cols || (times.length <= 4 ? 2 : times.length <= 9 ? 3 : 4);
     const cellW = Math.round(Math.min(640, 1920 / cols));
     const cellH = Math.round((cellW * info.height) / info.width);
@@ -621,9 +656,9 @@ export async function snapshot(input, opts = {}) {
       html,body{margin:0;background:#111;font:14px/1.2 Inter,Helvetica,Arial,sans-serif;color:#ddd;width:${sheetW}px;height:${sheetH}px;overflow:hidden}
       header{height:40px;display:flex;align-items:center;padding:0 12px;color:#aaa}
       .g{display:grid;grid-template-columns:repeat(${cols},${cellW}px);gap:12px;padding:0 12px 12px}
-      figure{margin:0} img{display:block;width:${cellW}px;height:${cellH}px;outline:1px solid #333;background:repeating-conic-gradient(#3a3a3a 0% 25%,#2a2a2a 0% 50%) 50%/24px 24px}
+      figure{margin:0;position:relative} .ov{position:absolute;left:0;top:0;width:${cellW}px;height:${cellH}px;pointer-events:none} img{display:block;width:${cellW}px;height:${cellH}px;outline:1px solid #333;background:repeating-conic-gradient(#3a3a3a 0% 25%,#2a2a2a 0% 50%) 50%/24px 24px}
       figcaption{height:34px;display:flex;align-items:center;gap:8px;color:#eee} b{color:#fff} span{color:#999}
-    </style></head><body><header>${escapeHtml(basename(ctx.file))} · ${info.width}x${info.height} · ${info.fps}fps · ${info.duration.toFixed(2)}s</header><div class="g">${thumbs.map((x) => `<figure><img src="data:image/${x.mime};base64,${x.data}"><figcaption><b>${x.t.toFixed(2)}s</b><span>frame ${x.frame}${x.scene ? ' · ' + escapeHtml(x.scene) : ''}</span></figcaption></figure>`).join('')}</div></body></html>`;
+    </style></head><body><header>${escapeHtml(basename(ctx.file))} · ${info.width}x${info.height} · ${info.fps}fps · ${info.duration.toFixed(2)}s</header><div class="g">${thumbs.map((x) => `<figure><img src="data:image/${x.mime};base64,${x.data}">${overlay}<figcaption><b>${x.t.toFixed(2)}s</b><span>frame ${x.frame}${x.scene ? ' · ' + escapeHtml(x.scene) : ''}</span></figcaption></figure>`).join('')}</div></body></html>`;
     const png = await renderHtmlToPng(ctx.page, html, sheetW, sheetH);
     writeFileSync(sheet, png);
     const problems = [...info.issues.filter((i) => i.severity === 'error'), ...ctx.page.errors];

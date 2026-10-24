@@ -70,6 +70,7 @@ usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>
       words = (Array.isArray(j) ? j : j.words || j.segments?.flatMap((s) => s.words || []) || []).map((w) => ({ word: String(w.word ?? w.text ?? '').trim(), start: +(w.start ?? w.t0 ?? 0), end: +(w.end ?? w.t1 ?? 0) })).filter((w) => w.word);
     }
     pages = build(words);
+    root.__mwPages = pages; // read by `motionwright captions` (paging preview)
   }));
   let shown = -1;
   mw.onFrame(root, (t) => {

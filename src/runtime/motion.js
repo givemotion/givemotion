@@ -282,7 +282,7 @@
   const TF = { x: 'px', y: 'px', z: 'px', xPercent: '%', yPercent: '%', rotate: 'deg', rotateX: 'deg', rotateY: 'deg', skewX: 'deg', skewY: 'deg', scale: '', scaleX: '', scaleY: '' };
   const ALIAS = { rotation: 'rotate', rotationX: 'rotateX', rotationY: 'rotateY', rotationZ: 'rotate', rotateZ: 'rotate', translateX: 'x', translateY: 'y', translateZ: 'z' };
   const UNITLESS = new Set(['opacity', 'zIndex', 'fontWeight', 'lineHeight', 'flexGrow', 'flexShrink', 'order', 'zoom', 'fillOpacity', 'strokeOpacity', 'stopOpacity', 'scale', 'aspectRatio', 'columnCount', 'orphans', 'widows', 'strokeMiterlimit']);
-  const RESERVED = new Set(['duration', 'delay', 'ease', 'stagger', 'repeat', 'yoyo', 'repeatDelay', 'onUpdate', 'onStart', 'onComplete', 'immediateRender', 'overwrite', 'id', 'paused', 'keyframes', 'yoyoEase', 'lazy', 'callbackScope', 'data', 'runBackwards', 'startAt', 'inherit']);
+  const RESERVED = new Set(['hideBefore', 'duration', 'delay', 'ease', 'stagger', 'repeat', 'yoyo', 'repeatDelay', 'onUpdate', 'onStart', 'onComplete', 'immediateRender', 'overwrite', 'id', 'paused', 'keyframes', 'yoyoEase', 'lazy', 'callbackScope', 'data', 'runBackwards', 'startAt', 'inherit']);
   const tlList = [];
   const sharedTracks = new Map(); // element -> write state when several timelines animate it
   let tlSeq = 0;
@@ -502,6 +502,11 @@
           const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: mw.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, seq: this.items.length };
           for (const k of keys) it.props[k] = { from: fromProps && k in fromProps ? evalVal(fromProps[k], i, el, targets, rnd) : undefined, to: toProps && k in toProps ? evalVal(toProps[k], i, el, targets, rnd) : undefined };
           this.items.push(it);
+          // hideBefore: hidden (visibility) until this tween starts, then shown; nothing else changes
+          if (timing.hideBefore) {
+            this.items.push({ el, i, n: targets.length, type: 'to', start: -1e6, dur: 0, rep: 0, rd: 0, yoyo: false, ease: mw.easing('linear'), props: { visibility: { from: undefined, to: 'hidden' } }, onUpdate: null, immediate: false, seq: this.items.length });
+            this.items.push({ el, i, n: targets.length, type: 'to', start: s, dur: 0, rep: 0, rd: 0, yoyo: false, ease: mw.easing('linear'), props: { visibility: { from: undefined, to: 'visible' } }, onUpdate: null, immediate: false, seq: this.items.length });
+          }
           const end = s + (rep === Infinity ? dur : dur * (rep + 1) + rd * rep);
           last = Math.max(last, end);
         });

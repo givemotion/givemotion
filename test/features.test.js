@@ -120,3 +120,19 @@ test('render keeps parts: editing one scene redoes only its parts, and the resul
   const r3 = await render(f, { output: out, redo: '0s-1s', ...quiet });
   assert.equal(r3.parts.rendered, 1);
 });
+
+test('sketch: data-sketch shapes are rough, seeded and keep their id; mw.connect follows a moving element', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="3" style="position:absolute;inset:0"><svg viewBox="0 0 640 360" style="position:absolute;inset:0" data-sketch>
+    <rect id="r" x="20" y="20" width="200" height="100" fill="#fd0" stroke="#000" stroke-width="3"/></svg>
+    <div id="a" style="position:absolute;left:20px;top:200px;width:80px;height:40px;background:#333"></div>
+    <div id="b" style="position:absolute;left:400px;top:200px;width:80px;height:40px;background:#333"></div></div>
+    <script>mw.timeline().to('#b', { y: 100, duration: 1, ease: 'linear' }, 0); mw.connect('#a', '#b', { head: 'none' });</script>`));
+  const v = await evalAt(f, 1.5, `(() => { const r = document.getElementById('r'); const p = document.querySelector('.mw-connect path').getAttribute('d').match(/-?[\\d.]+/g).map(Number);
+    return { tag: r.tagName, paths: r.querySelectorAll('path').length, same: mw.sketch.rect(0, 0, 100, 50, { seed: 3 }) === mw.sketch.rect(0, 0, 100, 50, { seed: 3 }), differ: mw.sketch.rect(0, 0, 100, 50, { seed: 3 }) !== mw.sketch.rect(0, 0, 100, 50, { seed: 4 }), end: p.slice(-2) }; })()`);
+  assert.equal(v.tag, 'g');
+  assert.equal(v.paths, 2, 'outline + hatching');
+  assert.ok(v.same && v.differ);
+  // the line ends on the left edge of #b (moved down by 100px) minus the gap (10px at 1080p = 3.3px here)
+  assert.ok(Math.abs(v.end[0] - 396.8) < 2 && Math.abs(v.end[1] - 308.6) < 2, 'end ' + v.end);
+});

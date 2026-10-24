@@ -96,6 +96,15 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     texts.push({ el, rs, u, op, moving: inAnim(el) || speedMoving });
   }
   window.__mwPrevBoxes = next;
+  // Is a camera world moving right now? Labels the camera passes over on its way to the next shot are not framing mistakes.
+  const prevCam = window.__mwPrevCam || new Map(), nextCam = new Map(), camMoving = new Set();
+  for (const wEl of document.querySelectorAll('[data-mw-camera-world]')) {
+    const r = wEl.getBoundingClientRect(), c = { x: r.left, y: r.top, s: r.width / (wEl.offsetWidth || r.width || 1) };
+    nextCam.set(wEl, c);
+    const p = prevCam.get(wEl);
+    if (p && dt > 0 && (Math.hypot(c.x - p.x, c.y - p.y) / dt > 60 * PX || Math.abs(Math.log(c.s / p.s)) / dt > 0.03)) camMoving.add(wEl);
+  }
+  window.__mwPrevCam = nextCam;
   // Visible part of the text: inside the frame and inside every clipping ancestor (overflow or clip-path inset).
   const clipBoxOf = (el) => {
     let r = { left: -1e9, top: -1e9, right: 1e9, bottom: 1e9 }, by = null, masked = false;
@@ -176,7 +185,8 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     const frame = { left: 0, top: 0, right: W, bottom: H };
     const cb = clipBoxOf(el);
     const shown = inter(inter(tu, frame), cb.r);
-    t.hidden = area(shown) < 4 || cb.masked && t.moving;
+    // a sliver (a clip-path wipe that has not started, a label just past the edge) is not "shown"
+    t.hidden = area(shown) < Math.max(4, 0.03 * area(tu)) || cb.masked && t.moving;
     const cov = t.hidden ? { n: 0, hits: 0 } : coverOf(t);
     t.covered = cov.n > 0 && cov.hits === cov.n;
     if (t.moving || t.hidden || t.covered) continue;
@@ -192,7 +202,8 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     // In a camera world, text passing by the edge is fine, but a label that is mostly in view and cut is still worth a look.
     const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
     const cropMeant = !!el.closest('[data-check~="crop-ok"]');
-    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
+    const camWorld = el.closest('[data-mw-camera-world]');
+    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5 && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
     if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
     else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
@@ -335,6 +346,11 @@ function keyTimes(info, max = 12) {
     add(c.start + Math.max(Math.min(d * 0.85, d - 0.75), Math.min(d * 0.5, 1)));
     // long clips (one long scene driven by code) also get evenly spaced moments
     if (d > 4.5) { const n = Math.min(8, Math.floor(d / 1.2)); for (let k = 1; k <= n; k++) add(c.start + (d * k) / (n + 1)); }
+  }
+  // one long camera scene: each shot once the camera has arrived (and before it leaves)
+  for (const c of info.cameraShots || []) {
+    const end = c.next ?? dur;
+    if (end - c.arrive > 0.25) add(Math.min(c.arrive + Math.max(0.3, (end - c.arrive) * 0.6), end - 0.1));
   }
   add(Math.min(0.5, dur / 2));
   add(lastT);

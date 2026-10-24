@@ -38,7 +38,12 @@ export function bundle(input, opts = {}) {
   for (const f of files) while (!(f + sep).startsWith(base + sep) && dirname(base) !== base) base = dirname(base);
   const rt = readRuntime();
   const config = { mode: 'preview', data: opts.data ?? null, bundled: true };
-  const tags = `<style data-mw-preset>${rt.css}</style><script>window.__MW_CONFIG=${JSON.stringify(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
+  // built-in fonts: inlined when the page uses them (a bundle has no motionwright server)
+  const css = rt.css.replace(/url\(\/__mw\/fonts\/([\w.-]+)\)/g, (m, name) => {
+    const f = join(HERE, 'runtime', 'fonts', name);
+    return /caveat/i.test(html) && existsSync(f) ? `url(data:font/woff2;base64,${readFileSync(f).toString('base64')})` : 'url(about:blank)';
+  });
+  const tags = `<style data-mw-preset>${css}</style><script>window.__MW_CONFIG=${JSON.stringify(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
   const head = /<head\b[^>]*>/i.exec(html);
   html = head ? html.slice(0, head.index + head[0].length) + tags + html.slice(head.index + head[0].length) : tags + html;
   const pageRel = relative(base, file).split(sep).join('/').replace(/\.html?$/i, '') + '.html';

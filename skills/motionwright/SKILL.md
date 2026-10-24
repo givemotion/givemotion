@@ -73,7 +73,9 @@ No script tag or import is needed: the runtime and a preset stylesheet are injec
 
 Classes the engine uses: `.scene` (full-frame layer), `.mw-word` / `.mw-char` (made by `data-split`), `.mw-caret`; everything else is yours.
 
-Presets (motion is named by direction of travel): `fade` `fade-up` `fade-down` `fade-left` `fade-right` `rise` (up + unblur) `scale` `pop` (overshoot) `zoom` (from big) `blur` `slide-up/down/left/right` (by own size) `wipe-right/left/up/down` `iris` `draw` (SVG strokes) `none`, and for text and objects: `mask-up` `mask-down` `mask-left` `mask-right` (slides out from behind an invisible edge: the classic kinetic-type reveal, best with `data-split`) `flip-up` `drop` (falls in and bounces) `swing` `stretch` `tilt` `spin-in` `elastic` `grow` `grow-x` `grow-y` (bars, lines) `typewriter` (use with `data-split="chars"`). Each has good default timing.
+Presets (motion is named by direction of travel): `fade` `fade-up` `fade-down` `fade-left` `fade-right` `rise` (up + unblur) `scale` `pop` (overshoot) `zoom` (from big) `blur` `slide-up/down/left/right` (by own size) `wipe-right/left/up/down` `iris` `draw` (SVG strokes) `none`, and for text and objects: `mask-up` `mask-down` `mask-left` `mask-right` (slides out from behind an invisible edge: the classic kinetic-type reveal, best with `data-split`) `flip-up` `drop` (falls in and bounces) `swing` `stretch` `tilt` `spin-in` `elastic` `grow` `grow-x` `grow-y` (bars, lines) `typewriter` (use with `data-split="chars"`) `write` (handwriting: the text appears left to right at pen speed; with `data-split="lines"` and `data-stagger` each line is written after the other). Each has good default timing.
+
+**Something appears later inside a long scene** (one camera world, one whiteboard): the delay in `data-enter` counts from the start of the element's clip, so `data-enter="write 0.8 11.9"` writes a label 11.9 s into the scene and keeps it hidden until then. No extra clip needed.
 Easings: `linear` `ease` `in/out/in-out-` + `sine` `quad` `cubic` `quart` `quint` `expo` `circ` `back` `elastic` `bounce`, springs `spring` `bouncy` `snappy` `gentle`, `steps(4)`, `cubic-bezier(…)`. GSAP names also work: `power2.out`, `back.out(1.7)`, `elastic.out(1,0.3)`, `sine.inOut`, `none`.
 
 Enter/exit use the `translate`, `scale`, `opacity`, `filter`, `clip-path` properties, so they combine with your own `transform`. Do not also animate `opacity` on the same element in your CSS; wrap it instead.
@@ -128,11 +130,30 @@ mw.camera('#world')                                        // times are seconds 
   .shake(3.2, { duration: 0.35, amount: 14 });             // impact
 </script>
 ```
-Shot options: `fit` | `follow` | `center` (selector, list or `{x,y,w,h}`), `zoom` (with `fit` it multiplies: `1.05` = a bit closer), `padding` (screen px on each side of the framed elements, default 60), `offset: [x, y]` (moves where the camera looks, in world px: `+x` looks further right, so the subject slides left), `rotate`, `duration` (blend time from the previous shot), `ease`, `minZoom`, `maxZoom`. Shot times count from the start of the world's clip; `mw.camera('#world', { global: true })` uses video time instead. `mw.timing('#scene2').start` gives any clip's start time.
+Shot options: `fit` | `follow` | `center` (selector, list or `{x,y,w,h}`), `zoom` (with `fit` it multiplies: `1.05` = a bit closer), `padding` (screen px on each side of the framed elements, default 60), `offset: [x, y]` (moves where the camera looks, in world px: `+x` looks further right, so the subject slides left), `rotate`, `duration` (blend time from the previous shot), `ease`, `minZoom`, `maxZoom`. A shot's time is when the camera **starts** moving to it; it arrives `duration` later (so a last shot at 28 s with `duration: 2` is framed at 30 s). With `follow`, `zoom` is the world scale itself (1 = world px are screen px); with `fit` it multiplies the fitted scale. Shot times count from the start of the world's clip; `mw.camera('#world', { global: true })` uses video time instead. `mw.timing('#scene2').start` gives any clip's start time.
 
 ## Moving along a path
 
 `mw.path.travel('#pkg', '#route', { stops: [[1, 0], [3.2, 0.5], [4.2, 0.5], [6.5, 1]], rotate: true, ease: 'in-out-cubic' })` moves an element along an SVG path: each stop is `[seconds in the clip, progress 0..1]`, a repeated progress is a hold (a stop on the way). `rotate: true` turns it to face the direction of travel. The element can be HTML (a `<div>`, an `<img>`) or an SVG shape or `<g>` (it is centered on the path either way). `.progress(t)` gives the same answer at load time as during the video, so you can plan other moments from it. The returned object has `.progress(t)` so other things can follow it, e.g. draw the route behind it: `mw.onFrame('#world', t => route.style.strokeDasharray = trip.progress(t) + ' 2')` (with `pathLength="1"` on the path).
+
+## Arrows between elements
+
+`mw.connect('#browser', '#server', { curve: 0.2, draw: [2, 0.8] })` draws a line or arrow from the edge of one element to the edge of the other and keeps it attached every frame, while they move or the camera zooms. Options: `head` (`'end'` default, `'start'`, `'both'`, `'none'`), `curve` (bend, a share of the length; negative bends the other way), `sketch: true` (hand-drawn), `draw: [start, duration]` (draws it on; seconds in the clip of the element that holds both), `color`, `width` (px), `gap` (px between arrow and element, default 10), `dash: '8 10'`, `behind: true` (under the elements), `in: '#world'` (which element holds the arrow). `mw.rect('#el', '#world')` gives an element's box `{x, y, w, h, cx, cy}` in the world's own coordinates (camera zoom and pan do not change it), for placing your own SVG next to it.
+
+## Hand-drawn (whiteboard, Excalidraw-style)
+
+Add `data-sketch` to an SVG shape (`rect` `circle` `ellipse` `line` `polyline` `polygon` `path`), or to an `<svg>` / `<g>` to sketch every shape inside: each becomes rough, slightly wobbly strokes drawn twice by a quick hand, the same in every frame. A `fill` becomes hatching in that color (`data-sketch-fill="cross"` cross-hatch, `"solid"` a flat fill, `"none"`). Options: `data-sketch="1.5"` (roughness, default 1), `data-sketch-seed`, `data-sketch-gap` (hatch spacing), `data-sketch-angle`, `data-sketch-passes="1"`. The shape keeps its id, classes and `data-enter`, so `data-enter="draw 1.2 3"` draws it on (outline and hatching together).
+
+```html
+<svg viewBox="0 0 1920 1080" data-sketch style="position:absolute;inset:0">
+  <rect x="160" y="300" width="420" height="260" fill="#ffd43b" stroke="#1e1e1e" stroke-width="3" data-enter="draw 1.2 0.5"/>
+  <circle cx="900" cy="430" r="140" fill="#74c0fc" stroke="#1e1e1e" stroke-width="3" data-enter="draw 1 1.5"/>
+</svg>
+<h2 style="font-family: Caveat; font-size: 72px" data-enter="write 1 2.5">the server</h2>
+```
+- **`Caveat`** (a handwriting font, weights 400-700) is built in: `font-family: Caveat`. No file or download needed.
+- Path data for your own SVG (dynamic shapes, `onFrame`): `mw.sketch.rect(x, y, w, h)` `.line(x1, y1, x2, y2)` `.circle(cx, cy, r)` `.ellipse(cx, cy, rx, ry)` `.polygon(points)` `.polyline(points)` `.path(d)` (any path, redrawn by hand) `.arrow(x1, y1, x2, y2, { curve: 0.2, head: 22, heads: 'both' })` `.hachure(shape, { gap, angle, cross })` (shape = path data, points or `{x, y, w, h}`) `.underline(x1, y, x2, { loops: 2 })`. Options for all: `roughness`, `seed` (same seed = same drawing), `passes` (1-3). Put the result in a `<path d>` with `fill: none` and a stroke; `draw` draws it on.
+- Use a light paper background (`#fbfaf6`), dark ink (`#1e1e1e`), 2-4 px strokes and one or two accent colors. Keep everything on one big world and move a `mw.camera` over it; earlier drawings stay, and a last shot that fits everything shows the whole diagram.
 
 ## Shapes and path morphs
 
@@ -180,7 +201,7 @@ Rules for seekable JS:
 - **Plan cuts on the beat first**: `npx motionwright audio music.mp3` prints the tempo, every beat, bar starts (downbeats), the biggest hits (best moments for a logo or a big cut) and quiet gaps. Beats sit on the kick drum.
 - **React to sound**: `const music = mw.audio('#music')` (or a file path like `'music.mp3'`; call it once at the top of your script). In `onFrame(t => …)`: `music.level(t)` (0..1 loudness), `music.bass(t)` `music.mid(t)` `music.treble(t)`, `music.bands(t, 16)` (spectrum), `music.wave(t, 128)` (waveform), `music.beat(t, 0.25)` (1 on each beat, fading to 0: great for pulses), `music.beats` / `music.downbeats` / `music.onsets` (times in the video, to cut on the beat), `music.bpm`. To build a timeline from beats at load time: `mw.wait(music.ready.then(() => { const b = music.beats; mw.timeline().to('#logo', { scale: 1.2, duration: 0.2 }, b[4]); }))`. Beat lists only cover the part of the song that plays in the video.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack; `--muted` renders without audio.
-- Paths are relative to the HTML file. Use local fonts (`@font-face` with a file) for identical results on every machine.
+- Paths are relative to the HTML file. Use local fonts (`@font-face` with a file next to the HTML) for identical results on every machine; `Caveat` (handwriting) is built in. Web fonts (a Google Fonts `<link>`) also load and the render waits for them, but they need the network on every render.
 
 ## Templates and blocks
 

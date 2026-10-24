@@ -1471,6 +1471,11 @@
     if (type === 'to') tl.to(t, a, 0); else if (type === 'from') tl.from(t, a, 0); else if (type === 'fromTo') tl.fromTo(t, a, b, 0); else tl.set(t, a, 0);
     return tl;
   }
+  // camera shots in video time (inspect lists them; snapshot shows each shot once the camera has arrived)
+  mw.__cameraShots = () => cameras.flatMap((c) => {
+    const base = c.opts.global || !c.world ? 0 : mw.timing(c.world).start;
+    return c.shots.map((s, i) => ({ world: c.world ? mw.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null }));
+  });
   Object.assign(mw, {
     timeline: (scope, opts) => new Timeline(scope, opts),
     camera: (world, opts) => new Camera(world, opts),

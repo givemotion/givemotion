@@ -687,6 +687,8 @@
     'flip-in': () => [{ transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0 }, { transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0.5 }, { opacity: 1, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 1 }],
     'dip-in': () => [{ opacity: 0, filter: 'brightness(0)', offset: 0 }, { opacity: 0, filter: 'brightness(0)', offset: 0.5 }, { opacity: 1, filter: 'brightness(0)', offset: 0.5001 }, { opacity: 1, filter: 'brightness(1)', offset: 1 }],
     'draw': () => [{ strokeDasharray: '1 1', strokeDashoffset: 1 }, { strokeDasharray: '1 1', strokeDashoffset: 0 }],
+    // handwriting: the text appears left to right at pen speed (pairs with a hand font and data-split="lines")
+    'write': () => [{ clipPath: 'inset(-40% 100% -40% -4%)' }, { clipPath: 'inset(-40% -4% -40% -4%)' }],
     // Text and object entrances
     'mask-up': () => [{ translate: '0 100%', clipPath: 'inset(-30% -10% 100% -10%)' }, { translate: '0 0', clipPath: MASK_OUT }],
     'mask-down': () => [{ translate: '0 -100%', clipPath: 'inset(100% -10% -18% -10%)' }, { translate: '0 0', clipPath: MASK_OUT }],
@@ -711,7 +713,7 @@
     'spin-in': { ease: 'out-back', dur: 0.8 }, 'grow': { ease: 'out-back', dur: 0.6 }, 'grow-x': { ease: 'out-expo', dur: 0.9 }, 'grow-y': { ease: 'out-expo', dur: 0.9 },
     'mask-up': { ease: 'out-expo', dur: 0.8 }, 'mask-down': { ease: 'out-expo', dur: 0.8 }, 'mask-left': { ease: 'out-expo', dur: 0.8 }, 'mask-right': { ease: 'out-expo', dur: 0.8 },
     'flip-up': { ease: 'out-back', dur: 0.8 }, 'stretch': { ease: 'out-expo', dur: 0.8 }, 'tilt': { ease: 'out-expo', dur: 0.8 },
-    'typewriter': { ease: 'steps(1)', dur: 0.02 },
+    'typewriter': { ease: 'steps(1)', dur: 0.02 }, 'write': { ease: 'in-out-sine', dur: 0.8 }, 'draw': { ease: 'in-out-sine', dur: 1 },
   };
   // Exit motion keeps going in the named direction (fade-up exit moves up).
   const EXIT_PRESETS = {
@@ -790,7 +792,9 @@
         const extra = stagger != null ? stagger * i : 0;
         if (en) {
           const nm = String(en).trim().split(/\s+/)[0];
-          const m = parseMotion(en, el, 'data-enter', (PRESET_DEFAULTS[nm] || {}).dur ?? 0.6, (PRESET_DEFAULTS[nm] || {}).ease || 'out-expo');
+          // write: as long as a hand needs for the text (about 22 letters a second) unless a duration is given
+          const defDur = nm === 'write' ? Math.max(0.35, Math.min(3, (tg.textContent || '').trim().length / 22)) : (PRESET_DEFAULTS[nm] || {}).dur ?? 0.6;
+          const m = parseMotion(en, el, 'data-enter', defDur, (PRESET_DEFAULTS[nm] || {}).ease || 'out-expo');
           if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).filter((k) => !/^(zoom-near|flip-in|dip-in|clock|diagonal)$/.test(k)).join(', ')); }
           else {
             if (m.name === 'draw') prepDraw(tg);
@@ -998,6 +1002,9 @@
         ty.last = n;
       }
       if (typing) ty.el.setAttribute('data-mw-typing', ''); else ty.el.removeAttribute('data-mw-typing');
+      // no caret before typing starts (a stray blinking bar on an empty line looks like a mistake)
+      const wait = lt < 0;
+      if (wait !== ty.el.hasAttribute('data-mw-type-wait')) { changed = true; if (wait) ty.el.setAttribute('data-mw-type-wait', ''); else ty.el.removeAttribute('data-mw-type-wait'); }
     }
     return changed;
   }
@@ -1451,6 +1458,7 @@
       frames: Math.max(1, Math.round(comp.duration * comp.fps)),
       clips: clips.map((c) => ({ selector: selectorOf(c.el), start: round(c.start), end: round(isFinite(c.end) ? c.end : comp.duration), scene: !!(c.el.classList.contains('scene') || (c.el.parentElement && c.el.parentElement.hasAttribute('data-sequence'))) })),
       transitions: transitionList.slice(),
+      cameraShots: mw.__cameraShots ? mw.__cameraShots().map((c) => ({ ...c, start: round(c.start), arrive: round(c.arrive), next: c.next == null ? null : round(c.next) })) : [],
       media: media(),
       usesRAF: usedRAF, frameCallbacks: frameFns.length,
       issues: issues.slice(),

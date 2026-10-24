@@ -2,7 +2,7 @@
 // expands <mw-include>, and serves video frames decoded by ffmpeg.
 import http from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync, mkdirSync, readdirSync, watch } from 'node:fs';
-import { join, extname, resolve, dirname, sep, normalize } from 'node:path';
+import { join, extname, resolve, dirname, sep, normalize, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -23,7 +23,7 @@ const MIME = {
 };
 
 export function readRuntime() {
-  return { js: ['runtime.js', 'motion.js', 'audio.js'].filter((f) => existsSync(join(RUNTIME_DIR, f))).map((f) => readFileSync(join(RUNTIME_DIR, f), 'utf8')).join('\n;\n'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
+  return { js: ['runtime.js', 'motion.js', 'sketch.js', 'audio.js'].filter((f) => existsSync(join(RUNTIME_DIR, f))).map((f) => readFileSync(join(RUNTIME_DIR, f), 'utf8')).join('\n;\n'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
 }
 
 /** Expand <mw-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */
@@ -163,6 +163,12 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       const u = new URL(req.url, 'http://localhost');
       let path = decodeURIComponent(u.pathname);
       if (path === '/__mw/runtime.js') return send(res, 200, MIME['.js'], runtime().js);
+      if (path.startsWith('/__mw/fonts/')) {
+        const f = join(RUNTIME_DIR, 'fonts', basename(path));
+        if (!/\.woff2?$/.test(f) || !existsSync(f)) return send(res, 404, 'text/plain', 'no such font');
+        res.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=31536000, immutable' });
+        return createReadStream(f).pipe(res);
+      }
       if (path === '/__mw/player.js') return send(res, 200, MIME['.js'], readFileSync(join(HERE, 'player', 'mw-player.js'), 'utf8'));
       if (path === '/__mw/preset.css') return send(res, 200, MIME['.css'], runtime().css);
       if (path === '/__mw/events') {

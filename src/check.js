@@ -392,7 +392,10 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     let solid = false;
     if (e instanceof SVGElement) solid = !/^(svg|g|text|tspan|use|foreignObject)$/i.test(e.tagName) && cs.fill !== 'none' && (/^url\(/.test(cs.fill) || cssAlpha(cs.fill) * parseFloat(cs.fillOpacity) >= 0.85);
     else {
-      solid = /^(IMG|VIDEO|CANVAS)$/.test(e.tagName) || bgSolid(cs, false);
+      // (a full-frame canvas over everything is an effect layer (particles, grain), not a backing)
+      if (e.tagName === 'CANVAS') { const r = e.getBoundingClientRect(); solid = r.width * r.height <= 0.5 * W * H; }
+      else if (/^(IMG|VIDEO)$/.test(e.tagName)) solid = true;
+      else solid = bgSolid(cs, false);
       // a backing drawn by ::before / ::after (judged where it overlaps the element's own box)
       if (!solid && x != null) for (const pe of ['::before', '::after']) {
         const ps = getComputedStyle(e, pe);

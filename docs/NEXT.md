@@ -49,10 +49,24 @@ Agents place every label in world px by hand, apart from the shape it names; mov
 - Also: `data-sketch-mark-padding`; `mw.connect` returning a path that `mw.path.travel` can follow.
 - Files: `src/runtime/sketch.js` (or `motion.js`), SKILL.md.
 
-## N3. Partial re-render inside one long scene
-Parts are fingerprinted per top-level scene, so a whiteboard video (one long scene) re-renders fully after any edit.
-Finer prints (nested clips with their own times, or per-element "first visible at" times) would help. Must stay
-byte-identical to a full render (test in `test/features.test.js`). Files: `src/render.js`.
+## N3. Partial re-render inside one long scene (first version done; follow-ups)
+Done: inside a top-level clip, "late" elements get their own print plus the time T before which they cannot change a
+pixel, so an edit to something that appears at 40 s keeps 0-40 s (`src/parts.js`, called from `dependencyPrints` in
+`src/render.js`; tests "render keeps parts inside one long scene" in `test/features.test.js`). Late = a nested clip
+(display:none before its start), or an element held at opacity 0 / visibility hidden by its own delayed entrance that
+is out of the flow (absolute/fixed) or an SVG shape; and nothing names it (no script string, selector, attribute or
+url(#id); no named SVG group around it), no CSS sibling/:has()/counter/anchor rules, no script walks the page. Every
+print also covers the live HTML after the runtime set it up, which also fixes an older hole: a sketched shape added in
+one scene moved the seeds of the shapes in later scenes, and those parts were wrongly reused. Reveal presets (`write`,
+`draw`, wipes, `iris`, masks, `grow`) now hide fully before they start (they showed a sliver before).
+Follow-ups:
+- CSS animations the runtime has not taken over at load (`animation: pop-in … both` in a later scene) do not count as
+  hiding (their state at load depends on Chrome's clock). Could be read from the keyframes and the clip start instead.
+- `data-split` + `data-stagger` text (each piece has its own entrance) is not late; nor is anything inside a block whose
+  script uses `document`/`window` (cursor, lottie), and any script that walks the page (`children`, `getBBox`,
+  `scrollWidth`, text reads) turns the rule off (`render` result: `parts.lateOff` says why). Blocks could declare their
+  scope instead.
+- An edit that changes what `fit: 'content'` measures redoes everything (correct, but a shot list could be finer).
 
 ## N4. Render speed
 See `docs/experiments/2026-10-t7-speed.md`. Next: fewer/smaller composited layers in blocks and examples (static
@@ -70,3 +84,7 @@ Files: `src/analyze.js`.
 - `text-covered` skips dimmed text (opacity < 0.5) and transitions; a moving element fully covering a settled label for
   ~1 s is not reported (fully covered text is treated as hidden). (`src/check.js`)
 - A camera `float` makes labels at the frame edge flicker in and out of `text-offscreen` (agents add `crop-ok`).
+- Determinism: after the camera zoom has animated (e.g. a `fit` shot whose target pops in), a worker that starts on a
+  still frame draws one box edge a pixel row differently from the worker that rendered the zoom (which reuses its
+  earlier capture for the unchanged frame). Seen with 1 vs 3 workers at a shot start (frame 60), also before N3. Repro: the `longScene` page in `test/features.test.js` with `fit: ['#a', '#b']` shots and `pop` on `#b`.
+  Likely Chrome's raster scale heuristics for layers whose scale changed. (`src/browser.js`)

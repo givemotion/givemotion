@@ -7,6 +7,7 @@ import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage } from './browser.js';
 import { startServer } from './server.js';
 import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, mixAudio, probe, qualitySettings } from './ffmpeg.js';
+import { pagePrints } from './parts.js';
 
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
 
@@ -190,7 +191,7 @@ export async function render(input, opts = {}) {
     if (useParts) {
       const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
       const dir = keepParts ? join(dirname(out), '.mw-parts', basename(out)) : join(tmp, 'parts');
-      const settings = hashOf(JSON.stringify({ v: 1, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
+      const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
       const old = keepParts ? readJson(join(dir, 'parts.json')) : null;
       const redo = opts.redo ? parseRange(opts.redo, fps, totalFrames) : null;
@@ -198,7 +199,9 @@ export async function render(input, opts = {}) {
       for (let a = 0, i = 0; a < totalFrames; a += segF, i++) {
         const b = Math.min(totalFrames, a + segF);
         const t0s = (a - 1) / fps, t1s = b / fps; // one frame of margin for motion blur
-        const used = deps.clips.filter((c) => c.end > t0s && c.start < t1s).map((c) => [c.fp, c.start, c.end]);
+        // a clip's late elements count once they can show (with margin for the motion blur shutter)
+        const tLate = (b + 1 + Math.max(1, shutter)) / fps;
+        const used = deps.clips.filter((c) => c.end > t0s && c.start < t1s).map((c) => [c.fp, c.start, c.end, c.units.map((u, k) => (u.t < tLate ? [k, u.fp, u.t, u.end] : null)).filter(Boolean)]);
         const fp = hashOf(JSON.stringify([settings, deps.shared, a, b, used]));
         const file = join(dir, `part-${String(i).padStart(5, '0')}.${plan.segExt}`);
         const prev = old && old.settings === settings && old.parts[i];
@@ -206,7 +209,11 @@ export async function render(input, opts = {}) {
         list.push({ i, a, b, fp, file, keep });
       }
       const why = !old ? 'first render' : old.settings !== settings ? 'settings, data or engine changed' : old.shared !== deps.shared ? 'shared code, styles or files changed' : null;
-      const changedClips = old && old.settings === settings && old.shared === deps.shared ? deps.clips.filter((c) => !(old.clips || []).some((o) => o.fp === c.fp && o.start === c.start && o.end === c.end)).map((c) => c.name) : [];
+      const same = (o, c) => o.fp === c.fp && o.start === c.start && o.end === c.end;
+      const changedClips = old && old.settings === settings && old.shared === deps.shared ? deps.clips.flatMap((c) => {
+        const o = (old.clips || []).find((x) => same(x, c));
+        return !o ? [c.name] : c.units.filter((u, k) => { const x = o.units && o.units[k]; return !(x && x.fp === u.fp && x.t === u.t && x.end === u.end); }).map((u) => u.name);
+      }) : [];
       parts = { dir, settings, deps, list, why, changedClips, redo };
       ranges = list.filter((p) => !p.keep).map((p) => ({ a: p.a, b: p.b, file: p.file }));
       mkdirSync(dir, { recursive: true });
@@ -318,7 +325,7 @@ export async function render(input, opts = {}) {
     const summary = {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
       seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode,
-      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir } : null,
+      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
       bytes: format === 'png' ? null : statSync(out).size,
       warnings: comp.issues.filter((i) => i.severity !== 'error'),
       pageErrors: dedupe(pageErrors),
@@ -371,40 +378,11 @@ function splitRanges(ranges, workers, useParts, tmp, plan) {
 }
 
 /**
- * What each part of the video depends on. The page's own HTML is split into its top-level clips (scenes and other timed
- * elements: each one only shows during its time) and everything else (shared: the page around the scenes, every
- * script and style, and every file the page loaded). A part's fingerprint uses the shared print plus the clips on screen
- * during that part, with their times, so editing one scene only redoes the parts where that scene is visible.
+ * What each part of the video depends on: a shared print (the page around the scenes, every script, style and loaded
+ * file) and one print per top-level clip, with the clip's late elements (src/parts.js) and the time each can first show.
  */
 async function dependencyPrints(ctx) {
-  const r = await ctx.page.evaluate(`(async () => {
-    const out = { clips: [], shared: '', resources: [] };
-    out.resources = performance.getEntriesByType('resource').map((e) => e.name);
-    let src = null;
-    try { const res = await fetch(location.pathname + '?raw=1'); if (res.ok && /html/.test(res.headers.get('content-type') || '')) src = await res.text(); } catch (e) {}
-    if (!src) { out.shared = document.documentElement.outerHTML; return out; }
-    const doc = new DOMParser().parseFromString(src, 'text/html');
-    const timed = (e) => e.hasAttribute('data-start') || e.hasAttribute('data-duration') || e.hasAttribute('data-end') || (e.parentElement && e.parentElement.hasAttribute('data-sequence'));
-    const code = [];
-    for (const e of doc.querySelectorAll('script, style')) code.push(e.outerHTML);
-    const tops = [];
-    const walk = (el, path) => { [...el.children].forEach((c, i) => { if (c.tagName === 'SCRIPT' || c.tagName === 'STYLE') return; if (timed(c)) tops.push({ el: c, path: path.concat(i) }); else walk(c, path.concat(i)); }); };
-    walk(doc.body, []);
-    for (const t of tops) {
-      // the same element in the live page (same place, same tag and id); if it moved, the whole page counts as shared
-      let live = document.body;
-      for (const i of t.path) live = live && live.children[i];
-      if (!live || live.tagName !== t.el.tagName || (live.id || '') !== (t.el.id || '')) { out.shared = src; out.clips = []; out.resources.sort(); return out; }
-      const tm = mw.timing(live);
-      const copy = t.el.cloneNode(true);
-      for (const s of copy.querySelectorAll('script, style')) s.remove();
-      out.clips.push({ html: copy.outerHTML, start: tm.start, end: tm.end, name: mw.__selector(live) });
-    }
-    for (const t of tops) t.el.replaceWith(doc.createElement('mw-clip'));
-    out.shared = doc.documentElement.outerHTML + '\\n' + code.join('\\n');
-    out.resources.sort();
-    return out;
-  })()`);
+  const r = await ctx.page.evaluate(`(${pagePrints.toString()})()`);
   // files the page loaded (stylesheets, scripts, images, fonts, data, video frames, audio), by content
   const files = new Set();
   const origin = new URL(ctx.url).origin;
@@ -421,7 +399,8 @@ async function dependencyPrints(ctx) {
     const f = join(ctx.root, p);
     try { const st = statSync(f); return p + ':' + (st.size > 64 * 1024 * 1024 ? st.size + '-' + st.mtimeMs : hashOf(readFileSync(f))); } catch { return p + ':missing'; }
   });
-  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), clips: r.clips.map((c) => ({ fp: hashOf(c.html), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name })) };
+  const units = (c) => c.units.map((u) => ({ fp: hashOf(u.print), t: +u.t.toFixed(6), end: u.end == null ? null : +u.end.toFixed(6), name: u.name }));
+  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), clips: r.clips.map((c) => ({ fp: hashOf(c.print), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name, units: units(c) })), fine: r.fine };
 }
 
 /** Only the soundtrack: `render comp.html -o sound.mp3` (also .wav .m4a .ogg .flac) */

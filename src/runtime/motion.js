@@ -1525,6 +1525,8 @@
     if (type === 'to') tl.to(t, a, 0); else if (type === 'from') tl.from(t, a, 0); else if (type === 'fromTo') tl.fromTo(t, a, b, 0); else tl.set(t, a, 0);
     return tl;
   }
+  // what fit: 'content' measured at load, per camera that uses it (render fingerprints it; null = not measured yet)
+  mw.__cameraContent = () => cameras.filter((c) => c.shots.some((sh) => (sh.fit ?? sh.follow ?? sh.center) === 'content')).map((c) => c._contentBox || null);
   // camera shots in video time (inspect lists them; snapshot shows each shot once the camera has arrived)
   mw.__cameraShots = () => cameras.flatMap((c) => {
     const base = c.opts.global || !c.world ? 0 : mw.timing(c.world).start;

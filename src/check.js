@@ -146,12 +146,14 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     t.hidden = area(shown) < 4 || cb.masked && t.moving;
     t.covered = !t.hidden && covered(t);
     if (t.moving || t.hidden || t.covered) continue;
+    // Inside a camera world (or data-check="crop-ok"), being cut by the frame edge is framing, not a mistake.
+    const cropOk = !!el.closest('[data-mw-camera-world],[data-check~="crop-ok"]');
     // 1. Text partly outside the frame (fully outside = not shown, which is fine)
     const outX = Math.max(0, -tu.left) + Math.max(0, tu.right - W);
     const outY = Math.max(0, -tu.top) + Math.max(0, tu.bottom - H);
-    if (outX > 2 || outY > 2) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
+    if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
-    else if (cb.by && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
+    else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
       reportedBox.add(cb.by);
       out.push({ severity: 'error', code: 'text-clipped', selector: sel(el), text: snippet(el), message: 'Text is partly cut off by ' + sel(cb.by) + ' (overflow: hidden).', fix: 'Make the text smaller, let it wrap, or make the container bigger.' });
     }
@@ -217,6 +219,10 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;
     return { sel: sel(t.el), text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, backed, large: t.fontPx >= 32 * PX || (t.bold && t.fontPx >= 24 * PX) };
   });
+  // where each issue's element sits: its scene and when that scene starts (for scene-local times)
+  for (const i of out) {
+    try { const e = i.selector && document.querySelector(i.selector); const sc = e && (e.closest('.scene') || e.closest('[data-start],[data-duration]')); if (sc) { i.scene = sel(sc); i.sceneStart = mw.timing(sc).start; } } catch (er) {}
+  }
   return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length };
 })`;
 
@@ -286,7 +292,7 @@ function keyTimes(info, max = 12) {
     // ~85% through the clip: entrances are done, exits/transitions have not started yet
     add(c.start + Math.max(Math.min(d * 0.85, d - 0.75), Math.min(d * 0.5, 1)));
     // long clips (one long scene driven by code) also get evenly spaced moments
-    if (d > 4.5) { const n = Math.min(6, Math.floor(d / 2.2)); for (let k = 1; k <= n; k++) add(c.start + (d * k) / (n + 1)); }
+    if (d > 4.5) { const n = Math.min(8, Math.floor(d / 1.2)); for (let k = 1; k <= n; k++) add(c.start + (d * k) / (n + 1)); }
   }
   add(Math.min(0.5, dur / 2));
   add(lastT);
@@ -406,7 +412,8 @@ export function formatReport(rep, { file } = {}) {
   if (!rep.issues.length) { lines.push('✓ No problems found.'); return lines.join('\n'); }
   for (const x of rep.issues) {
     const rg = (r) => (r[0] === r[1] ? `${r[0].toFixed(2)}s` : `${r[0].toFixed(2)}–${r[1].toFixed(2)}s`);
-    const when = x.time == null ? '' : x.ranges ? ' at ' + x.ranges.slice(0, 4).map(rg).join(', ') + (x.ranges.length > 4 ? ` (+${x.ranges.length - 4} more)` : '') : ` at ${x.time.toFixed(2)}s`;
+    let when = x.time == null ? '' : x.ranges ? ' at ' + x.ranges.slice(0, 4).map(rg).join(', ') + (x.ranges.length > 4 ? ` (+${x.ranges.length - 4} more)` : '') : ` at ${x.time.toFixed(2)}s`;
+    if (x.time != null && x.scene && x.sceneStart > 0) when += ` (${(x.time - x.sceneStart).toFixed(2)}s into ${x.scene})`;
     lines.push(`${x.severity === 'error' ? '✖' : x.severity === 'warning' ? '⚠' : 'ℹ'} [${x.code}]${when}${x.selector ? '  ' + x.selector : ''}${x.text ? '  "' + x.text + '"' : ''}`);
     lines.push(`    ${x.message}`);
     if (x.fix) lines.push(`    fix: ${x.fix}`);
@@ -433,7 +440,7 @@ export async function snapshot(input, opts = {}) {
     else if (opts.transitions) {
       // start, middle and end of every scene transition, plus each scene's first frame
       times = [];
-      for (const c of info.clips) { times.push(c.start, c.start + 1 / fps); }
+      for (const c of info.clips) if (c.scene) times.push(c.start);
       for (const tr of info.transitions || []) times.push(tr.start, (tr.start + tr.end) / 2, tr.end);
       times = times.filter((t) => t >= from && t <= to);
     }

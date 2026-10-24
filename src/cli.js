@@ -91,7 +91,7 @@ const CMD_HELP = {
   Exit code 1 when there are errors. Warnings do not fail.`,
   bundle: 'motionwright bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), mw-player.js and player.html.\n  Embed: <script src="mw-player.js"></script> <mw-player src="index.html" controls autoplay loop muted></mw-player>',
   audio: 'motionwright audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
-  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment: screen box, opacity, transform, visible.',
+  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment: screen box, opacity, transform, visible.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).',
   dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
   init: 'motionwright init [dir] [--force]',
   add: 'motionwright add <block> [more…] [--dir blocks]',
@@ -228,8 +228,19 @@ async function cmdInspect(args) {
     const { openComposition } = await import('./render.js');
     const ctx = await openComposition(inputOf(args), { ...commonOpts(args), mode: 'render' });
     try {
-      await ctx.page.seek(+args.at);
       const sel = args.el || args.selector || '[data-start],[data-duration],[data-morph],h1,h2,h3';
+      if (args.to != null) {
+        // a strip of values over time for one element: x, y, size, opacity per frame
+        const fps = ctx.info.fps, step = args.every ? (String(args.every).endsWith('f') ? parseFloat(args.every) / fps : +args.every) : 1 / fps;
+        const rows = [];
+        for (let t = +args.at; t <= +args.to + 1e-9 && rows.length < 400; t += step) {
+          await ctx.page.seek(Math.round(t * fps) / fps);
+          rows.push(await ctx.page.evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const b = e.getBoundingClientRect(); let op = 1; for (let c = e; c && c.nodeType === 1; c = c.parentElement) op *= +getComputedStyle(c).opacity; const r1 = (x) => Math.round(x * 10) / 10; return { t: ${Math.round(t * 1000) / 1000}, x: r1(b.left), y: r1(b.top), w: r1(b.width), h: r1(b.height), opacity: Math.round(op * 1000) / 1000 }; })()`));
+        }
+        console.log(args.json ? JSON.stringify(rows, null, 2) : ['t       x       y       w       h       opacity', ...rows.filter(Boolean).map((r) => [r.t, r.x, r.y, r.w, r.h, r.opacity].map((v) => String(v).padEnd(8)).join(''))].join('\n'));
+        return;
+      }
+      await ctx.page.seek(+args.at);
       const r = await ctx.page.evaluate(`(() => [...document.querySelectorAll(${JSON.stringify(sel)})].slice(0, 40).map((e) => {
         const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
         let op = 1, shown = true; for (let c = e; c && c.nodeType === 1; c = c.parentElement) { const s2 = getComputedStyle(c); op *= +s2.opacity; if (s2.display === 'none' || s2.visibility === 'hidden') shown = false; }

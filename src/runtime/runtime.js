@@ -834,13 +834,13 @@
           if (!p) continue;
           if (/^\s+$/.test(p)) { frag.appendChild(document.createTextNode(p)); continue; }
           const w = document.createElement('span');
-          w.className = 'word';
+          w.className = 'mw-word';
           w.style.setProperty('--i', String(wi));
           w.style.setProperty('--wi', String(wi++));
           if (mode === 'chars') {
             for (const ch of Array.from(p)) {
               const c = document.createElement('span');
-              c.className = 'char';
+              c.className = 'mw-char';
               c.textContent = ch;
               c.style.setProperty('--i', String(ci));
               c.style.setProperty('--ci', String(ci++));
@@ -1425,7 +1425,7 @@
     return {
       width: comp.width, height: comp.height, fps: comp.fps, duration: comp.duration, background: comp.background,
       frames: Math.max(1, Math.round(comp.duration * comp.fps)),
-      clips: clips.map((c) => ({ selector: selectorOf(c.el), start: round(c.start), end: round(isFinite(c.end) ? c.end : comp.duration) })),
+      clips: clips.map((c) => ({ selector: selectorOf(c.el), start: round(c.start), end: round(isFinite(c.end) ? c.end : comp.duration), scene: !!(c.el.classList.contains('scene') || (c.el.parentElement && c.el.parentElement.hasAttribute('data-sequence'))) })),
       transitions: transitionList.slice(),
       media: media(),
       usesRAF: usedRAF, frameCallbacks: frameFns.length,

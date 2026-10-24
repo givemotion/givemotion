@@ -893,6 +893,7 @@
       if (!this._m || !this._m[0].isConnected) {
         const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; w.appendChild(d); return d; };
         this._m = [mk(0), mk(1000)];
+        w.setAttribute('data-mw-camera-world', '');
         if (getComputedStyle(w).position === 'static') w.style.position = 'relative';
         w.style.transformOrigin = '0 0';
       }
@@ -1029,6 +1030,86 @@
       return st[st.length - 1][1];
     };
     return tr;
+  }
+
+  // ---------------------------------------------------------------------------
+  // mw.burst(target, { at, kind, x, y, count, colors, … }): confetti, sparks, dust or bubbles
+  // thrown from a point at a moment. Pure physics of time: seekable, same in every render.
+  // ---------------------------------------------------------------------------
+  const bursts = [];
+  const BURST_KINDS = {
+    confetti: { count: 160, speed: 1000, spread: 360, angle: -90, gravity: 1100, drag: 1.8, duration: 2.8, size: 17, shape: 'paper' },
+    sparks: { count: 70, speed: 1300, spread: 360, angle: -90, gravity: 500, drag: 3.2, duration: 0.9, size: 4, shape: 'streak' },
+    dust: { count: 60, speed: 260, spread: 360, angle: -90, gravity: -40, drag: 1.2, duration: 2.2, size: 6, shape: 'dot' },
+    bubbles: { count: 40, speed: 380, spread: 120, angle: -90, gravity: -120, drag: 0.8, duration: 2.4, size: 16, shape: 'ring' },
+  };
+  function burst(target, opts = {}) {
+    const b = { target, opts, canvas: null };
+    bursts.push(b);
+    if (initDone) setupBurst(b);
+    return b;
+  }
+  function setupBurst(b) {
+    const el = typeof b.target === 'string' ? document.querySelector(b.target) : b.target;
+    if (!el) { I.report('error', 'burst-no-target', `mw.burst: "${b.target}" matched nothing.`, null); return; }
+    const o = Object.assign({ kind: 'confetti', at: 0, x: '50%', y: '50%', colors: ['#ff5c8a', '#ffd166', '#06d6a0', '#118ab2', '#a78bfa', '#ffffff'], seed: bursts.indexOf(b) + 1 }, BURST_KINDS[b.opts.kind || 'confetti'] || BURST_KINDS.confetti, b.opts);
+    const W = el.clientWidth || I.comp.width, H = el.clientHeight || I.comp.height;
+    const cv = document.createElement('canvas');
+    cv.setAttribute('data-mw-internal', '');
+    cv.width = Math.ceil(W); cv.height = Math.ceil(H);
+    cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:' + (o.zIndex ?? 30);
+    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
+    el.appendChild(cv);
+    const px = PX();
+    const pos = (v, size) => (typeof v === 'string' && v.endsWith('%') ? (parseFloat(v) / 100) * size : (+v || 0) * px);
+    const rnd = I.makeRandom(1 + o.seed * 7919);
+    const parts = [];
+    for (let i = 0; i < o.count; i++) {
+      const ang = ((o.angle + (rnd() - 0.5) * o.spread) * Math.PI) / 180;
+      const sp = o.speed * px * (0.12 + Math.pow(rnd(), 0.8) * 0.95);
+      parts.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: rnd() * 6.28, spin: (rnd() - 0.5) * 14, flip: rnd() * 6.28, flipS: 4 + rnd() * 8, size: o.size * px * (0.6 + rnd() * 0.8), color: o.colors[Math.floor(rnd() * o.colors.length)], life: o.duration * (0.7 + rnd() * 0.3), delay: rnd() * (o.stagger || 0.06), wob: rnd() * 6.28 });
+    }
+    b.canvas = cv; b.o = o; b.parts = parts; b.x0 = pos(o.x, W); b.y0 = pos(o.y, H); b.el = el; b.last = null;
+  }
+  function drawBursts(T) {
+    let changed = false;
+    for (const b of bursts) {
+      if (!b.canvas) continue;
+      const t = I.mapT(b.el, T) - I.clipStartOf(b.el) - b.o.at;
+      const key = t < 0 || t > b.o.duration * 1.05 + 0.1 ? 'off' : Math.round(t * 1000);
+      if (key === b.last) continue;
+      b.last = key; changed = true;
+      const g = b.canvas.getContext('2d');
+      g.clearRect(0, 0, b.canvas.width, b.canvas.height);
+      if (key === 'off') continue;
+      const { gravity, drag, shape } = b.o;
+      const px = PX();
+      for (const p of b.parts) {
+        const lt = t - p.delay;
+        if (lt < 0 || lt > p.life) continue;
+        // velocity decays with drag k: x = v(1-e^-kt)/k ; gravity falls at terminal-ish speed
+        const e = Math.exp(-drag * lt), k = drag || 1e-6;
+        const x = b.x0 + (p.vx * (1 - e)) / k + Math.sin(lt * 3 + p.wob) * (shape === 'paper' ? 18 * px * Math.min(1, lt) : 0);
+        const y = b.y0 + (p.vy * (1 - e)) / k + (gravity * px / k) * (lt - (1 - e) / k);
+        const fade = Math.min(1, (p.life - lt) / (p.life * 0.25));
+        g.globalAlpha = Math.max(0, fade);
+        g.fillStyle = g.strokeStyle = p.color;
+        if (shape === 'paper') {
+          g.save(); g.translate(x, y); g.rotate(p.rot + p.spin * lt); g.scale(1, Math.cos(p.flip + p.flipS * lt));
+          g.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6); g.restore();
+        } else if (shape === 'streak') {
+          const vx = p.vx * e, vy = p.vy * e + gravity * px * (1 - e) / k;
+          const L = Math.min(40 * px, Math.hypot(vx, vy) * 0.03);
+          const a = Math.atan2(vy, vx);
+          g.lineWidth = p.size * 0.6; g.lineCap = 'round';
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x - Math.cos(a) * L, y - Math.sin(a) * L); g.stroke();
+        } else if (shape === 'ring') {
+          g.lineWidth = Math.max(1, p.size * 0.12); g.beginPath(); g.arc(x, y, p.size / 2, 0, 6.283); g.stroke();
+        } else { g.beginPath(); g.arc(x, y, p.size / 2, 0, 6.283); g.fill(); }
+      }
+      g.globalAlpha = 1;
+    }
+    return changed;
   }
 
   function updateCameras(T) { let ch = false; for (const c of cameras) if (c._apply(T)) ch = true; return ch; }
@@ -1216,13 +1297,14 @@
   // Hook into the runtime
   // ---------------------------------------------------------------------------
   I.hooks.preinit.push(setupFit);
-  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
+  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); for (const b of bursts) if (!b.canvas) setupBurst(b); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
   I.hooks.post.push(updateCameras);
   I.hooks.post.push(updateMorphs);
   I.hooks.seek.push((T) => {
     let changed = updateScramble(T);
     if (animImgs.length && updateAnimatedImages(T)) changed = true;
+    if (bursts.length && drawBursts(T)) changed = true;
     for (const tl of tlList) if (tl._apply(T)) changed = true;
     return changed;
   });
@@ -1238,6 +1320,7 @@
   Object.assign(mw, {
     timeline: (scope, opts) => new Timeline(scope, opts),
     camera: (world, opts) => new Camera(world, opts),
+    burst,
     to: (t, v) => tween('to', t, v),
     from: (t, v) => tween('from', t, v),
     fromTo: (t, a, b) => tween('fromTo', t, a, b),

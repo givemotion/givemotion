@@ -7,7 +7,7 @@ body{position:relative;-webkit-font-smoothing:antialiased;text-rendering:geometr
 .scene{position:absolute;inset:0;overflow:hidden;isolation:isolate}
 .mw-caret{display:inline-block;width:.08em;height:1em;margin-left:.04em;vertical-align:-.12em;background:currentColor;animation:blink 1s steps(1,end) infinite}
 [data-mw-typing] .mw-caret{animation:none}
-.word,.char{display:inline-block;white-space:pre}
+.mw-word,.mw-char{display:inline-block;white-space:pre}
 
 :root{
   /* Classic curves */

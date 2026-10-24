@@ -253,7 +253,9 @@
       beatAt(n) { const b = h.beats; return b[Math.max(0, Math.min(b.length - 1, n))] ?? 0; },
       _toComp(list) {
         if (!h.el) return list.map((t) => t + (opts.start || 0));
-        const c = I.nearestClip(h.el); const start = c ? c.start : 0, end = c ? c.end : I.comp.duration;
+        // Before the video timeline is built (e.g. right after `await music.ready`), clip times are not
+        // known yet: assume the audio starts at 0 and keep every beat.
+        const c = I.nearestClip(h.el); const start = c ? c.start : 0, end = c ? c.end : (I.initialized && I.comp.duration ? I.comp.duration : Infinity);
         const from = I.parseTime(h.el.getAttribute('data-from'), h.el, 'data-from') || 0, rate = parseFloat(h.el.getAttribute('data-rate') || '1') || 1;
         return list.map((t) => start + (t - from) / rate).filter((t) => t >= start && t < end);
       },

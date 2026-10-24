@@ -20,7 +20,13 @@ export async function analyzeAudio(file, opts = {}) {
       // loud and quiet parts (per second)
       const per = Math.round(d.fps), loud = [];
       for (let s = 0; s * per < d.frames; s++) { let m = 0, c = 0; for (let f = s * per; f < Math.min(d.frames, (s + 1) * per); f++) { m += d.level[f]; c++; } loud.push(Math.round((m / c) * 100) / 100); }
-      return { file: ${JSON.stringify(basename(file))}, duration: r3(d.duration), bpm: d.bpm, beatSeconds: d.beats.length > 1 ? r3(d.beats[1] - d.beats[0]) : null,
+      // loudness every 0.25s → quiet gaps (good for a breath before a hit) and the biggest hits
+      const q = Math.max(1, Math.round(d.fps / 4)), env = [];
+      for (let f = 0; f < d.frames; f += q) { let m = 0, c = 0; for (let k = f; k < Math.min(d.frames, f + q); k++) { m += d.level[k]; c++; } env.push(m / c); }
+      const mean = env.reduce((a, b) => a + b, 0) / env.length, gaps = [];
+      for (let i = 0; i < env.length; i++) { if (env[i] < mean * 0.45) { const st = i; while (i + 1 < env.length && env[i + 1] < mean * 0.45) i++; if (i - st >= 0) gaps.push([r3(st * 0.25), r3((i + 1) * 0.25)]); } }
+      const hits = d.onsets.slice().sort((a, b) => b.strength * (0.3 + (b.bass || 0)) - a.strength * (0.3 + (a.bass || 0))).slice(0, 8).map((o) => o.time).sort((a, b) => a - b);
+      return { file: ${JSON.stringify(basename(file))}, duration: r3(d.duration), bpm: d.bpm, quietGaps: gaps, biggestHits: hits, beatSeconds: d.beats.length > 1 ? r3(d.beats[1] - d.beats[0]) : null,
         firstBeat: d.beats[0] ?? null, beats: d.beats, downbeats: d.downbeats, onsets: d.onsets.map((o) => o.time), onsetDetail: d.onsets, strongOnsets: d.onsets.filter((o) => o.strength > 0.5).map((o) => o.time), loudnessPerSecond: loud };
     })()`);
   } finally {
@@ -38,6 +44,8 @@ export function formatAudio(r) {
     `beats:      ${list(r.beats)}`,
     `downbeats:  ${list(r.downbeats)}   (bar starts: good places to cut)`,
     `big hits:   ${list(r.strongOnsets)}`,
+    `biggest hits (best moments for a logo or a cut): ${r.biggestHits.map((x) => x.toFixed(2) + 's').join(' ')}`,
+    `quiet gaps (a breath before a drop): ${r.quietGaps.length ? r.quietGaps.map(([a, b]) => a.toFixed(2) + '-' + b.toFixed(2) + 's').join(', ') : 'none'}`,
     `loudness per second (0-1): ${r.loudnessPerSecond.join(' ')}`,
     `In a composition: const music = mw.audio('${r.file}'); music.beats / music.downbeats / music.beat(t)`,
   ].join('\n');

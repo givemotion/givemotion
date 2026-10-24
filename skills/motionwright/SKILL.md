@@ -14,7 +14,7 @@ A composition is one HTML file. Every frame is that page at a moment in time. CS
 3. `npx motionwright snapshot video.html` — **open `snapshots/sheet.png` (next to the HTML file) and look at it.** It shows the key moment of every scene. Fix anything that looks wrong, cramped, cut off, or ugly. Repeat 2–3.
 4. `npx motionwright render video.html -o out/video.mp4`
 
-Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose; `snapshot --from 3.2 --to 3.8 --every 1f` gives a frame-by-frame strip of one move; `snapshot --transitions` shows the start, middle and end of every scene change; `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment. Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
+Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose; `snapshot --from 3.2 --to 3.8 --every 1f` gives a frame-by-frame strip of one move; `snapshot --transitions` shows the start, middle and end of every scene change; `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment, and `inspect --at 2 --to 3 --el "#logo"` prints its position, size and opacity frame by frame (check easing and speed without watching). Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
 
 ## Minimal composition
 
@@ -62,7 +62,7 @@ No script tag or import is needed: the runtime and a preset stylesheet are injec
 | `data-enter="<preset> [dur] [delay] [easing]"` | Animate in at the start of the element's clip. Defaults: `.6s`, `out-expo`. |
 | `data-exit="<preset> [dur] [delay] [easing]"` | Animate out so it finishes at the clip end (delay counts back from the end). |
 | `data-stagger="0.08"` | Apply enter/exit to each child (or each split piece) with increasing delay. |
-| `data-split="words\|chars\|lines"` | Wrap pieces in `.word` / `.char` spans with `--i` (index) and `--n` (count) for your own CSS. |
+| `data-split="words\|chars\|lines"` | Wrap pieces in `.mw-word` / `.mw-char` spans with `--i` (index) and `--n` (count) for your own CSS. |
 | `data-count="0 1250"` | Count up. Also `data-count-duration` (1.6), `-delay`, `-prefix`, `-suffix`, `-decimals`, `-ease`, `-group="false"`. |
 | `data-type="30"` | Typewriter at 30 chars/sec, keeps inner markup. Also `data-type-delay`, `data-type-caret`. |
 | `data-scramble="1.2"` | Text decodes from random glyphs, left to right, over 1.2s. Also `data-scramble-delay`, `data-scramble-chars`. |
@@ -70,6 +70,8 @@ No script tag or import is needed: the runtime and a preset stylesheet are injec
 | `data-morph="logo"` | Shared element for `data-transition="morph"` (see Timing). |
 | `data-fit` | Shrink the text until it fits its box (give the box a width/height). `data-fit="grow"` makes one line exactly fill the box width (great for big kinetic lines; `data-fit-max="300"` caps the size). |
 | `data-loop="2"` `data-freeze="1.5"` `data-speed="0.5"` | On a clip: its content repeats every 2s / stops at 1.5s / plays at half speed (CSS animations, timeline, counters, video, onFrame). |
+
+Classes the engine uses: `.scene` (full-frame layer), `.mw-word` / `.mw-char` (made by `data-split`), `.mw-caret`; everything else is yours.
 
 Presets (motion is named by direction of travel): `fade` `fade-up` `fade-down` `fade-left` `fade-right` `rise` (up + unblur) `scale` `pop` (overshoot) `zoom` (from big) `blur` `slide-up/down/left/right` (by own size) `wipe-right/left/up/down` `iris` `draw` (SVG strokes) `none`, and for text and objects: `mask-up` `mask-down` `mask-left` `mask-right` (slides out from behind an invisible edge: the classic kinetic-type reveal, best with `data-split`) `flip-up` `drop` (falls in and bounces) `swing` `stretch` `tilt` `spin-in` `elastic` `grow` `grow-x` `grow-y` (bars, lines) `typewriter` (use with `data-split="chars"`). Each has good default timing.
 Easings: `linear` `ease` `in/out/in-out-` + `sine` `quad` `cubic` `quart` `quint` `expo` `circ` `back` `elastic` `bounce`, springs `spring` `bouncy` `snappy` `gentle`, `steps(4)`, `cubic-bezier(…)`. GSAP names also work: `power2.out`, `back.out(1.7)`, `elastic.out(1,0.3)`, `sine.inOut`, `none`.
@@ -82,7 +84,7 @@ Enter/exit use the `translate`, `scale`, `opacity`, `filter`, `clip-path` proper
   Example: `animation: pop-in .5s var(--ease-out-back) .3s both;`
 - Easing variables: `--ease-out-expo` `--ease-out-back` `--ease-in-out-cubic` `--ease-spring` `--ease-bouncy` `--ease-snappy` `--ease-gentle` and the usual `--ease-in/out/in-out-{quad,cubic,quart,expo,back}`.
 - `var(--px)` = 1px when the **short side** of the frame is 1080px (1920×1080, 1080×1920 and 1080×1080 all have `--px` = 1px; 4K has 2px). `calc(var(--px) * 48)` scales with the video. In JS: `mw.px`. `var(--stage-w)` / `var(--stage-h)` = frame size. Block sizes ("px at 1080p") use the same unit.
-- Stagger with split text: `.title .word { animation: fade-up .5s var(--ease-out-expo) calc(var(--i) * 60ms) both; }`
+- Stagger with split text: `.title .mw-word { animation: fade-up .5s var(--ease-out-expo) calc(var(--i) * 60ms) both; }`
 - SVG line drawing: `<path pathLength="1" style="stroke-dasharray:1; animation: draw 1.2s var(--ease-in-out-cubic) both">`.
 
 ## Timeline: precise choreography (GSAP-style API, built in)
@@ -91,7 +93,7 @@ For anything with more than a few moving parts, use `mw.timeline`. It is the GSA
 
 ```js
 mw.timeline('#scene2')                                     // scope: selectors are looked up inside it
-  .from('.title .word', { y: 120, opacity: 0, rotate: 8, stagger: 0.06, duration: 0.8, ease: 'expo.out' })
+  .from('.title .mw-word', { y: 120, opacity: 0, rotate: 8, stagger: 0.06, duration: 0.8, ease: 'expo.out' })
   .to('.card', { x: 400, scale: 1.2, duration: 1, ease: 'power3.inOut' }, '+=0.3')
   .fromTo('.bar', { scaleY: 0 }, { scaleY: 1, stagger: { each: 0.08, from: 'center' } }, '<')
   .to('#blob', { morph: mw.shape.star(5, 120), duration: 1.2 }, 2)   // shape morph
@@ -145,7 +147,8 @@ mw.onFrame((t, info) => { box.style.rotate = `${t * 90}deg`; });        // t = s
 mw.onFrame('#scene2', (local, info) => { /* local time while that clip is on screen */ });
 mw.interpolate(t, [0, 1, 2], [0, 300, 0], { easing: 'out-cubic' });     // numbers or colors; clamps by default
 mw.spring(t, { from: 0, to: 1, stiffness: 170, damping: 26, delay: 0.2 });
-mw.noise(t), mw.lerp(a, b, p), mw.clamp(v), mw.ease.outExpo(p)
+mw.noise(t) /* smooth, 0..1 */, mw.lerp(a, b, p), mw.clamp(v), mw.ease.outExpo(p)
+mw.burst('#scene3', { at: 2.1, kind: 'confetti', x: '50%', y: '60%' })  // also 'sparks', 'dust', 'bubbles'; count, colors, speed, gravity, size
 mw.data            // JSON passed with --data / --props, or <script type="application/json" id="mw-data">
 mw.width, mw.height, mw.fps, mw.duration
 mw.wait(promise)   // hold rendering until it resolves (fetch JSON, load a model…)
@@ -170,8 +173,8 @@ Rules for seekable JS:
 ```
 - Video is decoded frame-exact by ffmpeg (any codec); style the `<video>` element with CSS as usual. `data-from` = where to start in the source. `muted` drops its audio.
 - Audio is mixed by ffmpeg: `data-start`, `data-duration`, `data-from`, `data-rate`, `data-volume`, `data-fade-in`, `data-fade-out`, `loop`. Volume curve: `data-volume="0:0 1:0.8 9:0.8 10:0"` (seconds in the clip : volume). `data-duck="0.25"` lowers music to 25% while any other sound plays (voice-over, video with sound).
-- **Plan cuts on the beat first**: `npx motionwright audio music.mp3` prints the tempo, every beat, bar starts (downbeats) and big hits. Beats sit on the kick drum.
-- **React to sound**: `const music = mw.audio('#music')` (or a file path like `'music.mp3'`; call it once at the top of your script). In `onFrame(t => …)`: `music.level(t)` (0..1 loudness), `music.bass(t)` `music.mid(t)` `music.treble(t)`, `music.bands(t, 16)` (spectrum), `music.wave(t, 128)` (waveform), `music.beat(t, 0.25)` (1 on each beat, fading to 0: great for pulses), `music.beats` / `music.downbeats` / `music.onsets` (times in the video, to cut on the beat), `music.bpm`, `await music.ready` (data loaded). Beat lists only cover the part of the song that plays in the video.
+- **Plan cuts on the beat first**: `npx motionwright audio music.mp3` prints the tempo, every beat, bar starts (downbeats), the biggest hits (best moments for a logo or a big cut) and quiet gaps. Beats sit on the kick drum.
+- **React to sound**: `const music = mw.audio('#music')` (or a file path like `'music.mp3'`; call it once at the top of your script). In `onFrame(t => …)`: `music.level(t)` (0..1 loudness), `music.bass(t)` `music.mid(t)` `music.treble(t)`, `music.bands(t, 16)` (spectrum), `music.wave(t, 128)` (waveform), `music.beat(t, 0.25)` (1 on each beat, fading to 0: great for pulses), `music.beats` / `music.downbeats` / `music.onsets` (times in the video, to cut on the beat), `music.bpm`. To build a timeline from beats at load time: `mw.wait(music.ready.then(() => { const b = music.beats; mw.timeline().to('#logo', { scale: 1.2, duration: 0.2 }, b[4]); }))`. Beat lists only cover the part of the song that plays in the video.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack; `--muted` renders without audio.
 - Paths are relative to the HTML file. Use local fonts (`@font-face` with a file) for identical results on every machine.
 
@@ -241,5 +244,7 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `camera-no-world`, `travel-no-element` | A selector given to `mw.camera` / `mw.path.travel` matched nothing. |
 | `load-timeout` | Something given to `mw.wait()` never finished. |
 | `script-error`, `console-error` | Your JS threw; the message has the stack. |
+
+Inside a `mw.camera` world, text cut by the frame edge is treated as framing, not a mistake (add `data-check="crop-ok"` to your own camera layers for the same). Times in the report also say how far into the scene the problem is.
 
 How check decides: it compares frames, so anything moving or fading (CSS, timeline, React, onFrame, a camera follow) is skipped while it moves, and a problem must last ~0.25s to count. Text that is fully hidden (outside the frame, behind a mask, waiting to slide in) or covered by something solid is not judged. Mark decorative copies (echoes, ghosts, outlines) with `data-check="ignore"`. Re-check one moment fast with `check --at 7.5`, or part of the video with `--from 6 --to 9`. Problems list every time range they happen in.

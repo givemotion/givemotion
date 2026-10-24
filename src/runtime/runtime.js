@@ -369,6 +369,10 @@
     'iris': { enter: 'iris', ease: 'in-out-cubic' },
     'fade-up': { enter: 'fade-up', exit: 'fade-up' },
     'morph': { enter: 'fade', ease: 'in-out-cubic', morph: true },
+    // a solid colour band sweeps across; the new scene is revealed behind it (its centre crosses the frame centre
+    // halfway through, so with data-cut-align="middle" that moment sits on the cut)
+    'band': { enter: 'band-right', ease: 'in-out-sine' }, 'band-right': { enter: 'band-right', ease: 'in-out-sine' },
+    'band-left': { enter: 'band-left', ease: 'in-out-sine' }, 'band-up': { enter: 'band-up', ease: 'in-out-sine' }, 'band-down': { enter: 'band-down', ease: 'in-out-sine' },
   };
   let clips = []; // {el, start, end, parent}
   let morphPairs = []; // shared-element transitions: {from, to, dur, ease}
@@ -382,14 +386,30 @@
     const p = el.parentElement;
     return !!(p && p.hasAttribute('data-sequence'));
   }
+  // Band options in a data-transition / data-enter value: a colour (#hex, rgb(...) without spaces, var(--x), a named
+  // colour), the band width as a % of the frame side it travels along, and the slant of its edges in deg.
+  const isBand = (name) => /^band(-|$)/.test(name || '');
+  function bandOpts(toks) {
+    const out = { rest: [], color: null, width: null, angle: null };
+    for (const t of toks) {
+      if (/^-?(\d+\.?\d*|\.\d+)%$/.test(t)) out.width = parseFloat(t);
+      else if (/^-?(\d+\.?\d*|\.\d+)deg$/.test(t)) out.angle = parseFloat(t);
+      else if (!isEasingName(t) && (/^#[0-9a-f]{3,8}$/i.test(t) || /^(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|var)\(.*\)$/i.test(t) || (/^[a-z]+$/i.test(t) && CSS.supports('color', t)))) out.color = t;
+      else out.rest.push(t);
+    }
+    return out;
+  }
+  function bandTail(b) { return b ? (b.color ? ' ' + b.color : '') + (b.width != null ? ' ' + b.width + '%' : '') + (b.angle != null ? ' ' + b.angle + 'deg' : '') : ''; }
   function parseTransition(v) {
     if (!v) return null;
-    const toks = v.trim().split(/\s+/);
+    let toks = v.trim().split(/\s+/);
     const name = toks[0];
+    let band = null;
+    if (isBand(name)) { band = bandOpts(toks.slice(1)); toks = [name, ...band.rest]; }
     let dur = 0.6;
     for (const t of toks.slice(1)) { if (isEasingName(t)) continue; const n = parseTime(t, null, 'data-transition'); if (n != null) dur = n; }
     if (!TRANSITIONS[name]) { report('error', 'bad-transition', `Unknown transition "${name}".`, null, 'Use one of: ' + Object.keys(TRANSITIONS).join(', ')); return null; }
-    return { name, dur, ease: toks.find(isEasingName) || null };
+    return { name, dur, ease: toks.find(isEasingName) || null, band };
   }
 
   let transitionList = [];
@@ -549,7 +569,7 @@
         if (!t) return;
         const def = TRANSITIONS[t.name];
         const ez = t.ease || def.ease;
-        const tail = `${t.dur}s${ez ? ' ' + ez : ''}`;
+        const tail = `${t.dur}s${ez ? ' ' + ez : ''}${bandTail(t.band)}`;
         if (def.morph) morphPairs.push({ from: kids[i - 1], to: k, dur: t.dur, ease: ez || 'in-out-cubic' });
         const kc = clipOf.get(k);
         if (kc) transitionList.push({ name: t.name, start: round(kc.start), end: round(kc.start + t.dur) });
@@ -812,6 +832,7 @@
     'mask-up': { ease: 'out-expo', dur: 0.8 }, 'mask-down': { ease: 'out-expo', dur: 0.8 }, 'mask-left': { ease: 'out-expo', dur: 0.8 }, 'mask-right': { ease: 'out-expo', dur: 0.8 },
     'flip-up': { ease: 'out-back', dur: 0.8 }, 'stretch': { ease: 'out-expo', dur: 0.8 }, 'tilt': { ease: 'out-expo', dur: 0.8 },
     'typewriter': { ease: 'steps(1)', dur: 0.02 }, 'write': { ease: 'in-out-sine', dur: 0.8 }, 'draw': { ease: 'in-out-sine', dur: 1 },
+    'band': { ease: 'in-out-sine', dur: 0.6 }, 'band-right': { ease: 'in-out-sine', dur: 0.6 }, 'band-left': { ease: 'in-out-sine', dur: 0.6 }, 'band-up': { ease: 'in-out-sine', dur: 0.6 }, 'band-down': { ease: 'in-out-sine', dur: 0.6 },
   };
   // Exit motion keeps going in the named direction (fade-up exit moves up).
   const EXIT_PRESETS = {
@@ -987,8 +1008,9 @@
     return changed;
   }
   function parseMotion(v, el, attr, defDur, defEase) {
-    const toks = String(v).trim().split(/\s+/).filter(Boolean);
+    let toks = String(v).trim().split(/\s+/).filter(Boolean);
     const out = { name: toks[0] || 'fade', dur: defDur, delay: 0, ease: defEase, durSet: false, easeSet: false };
+    if (isBand(out.name)) { out.band = bandOpts(toks.slice(1)); toks = [out.name, ...out.band.rest]; }
     const nums = [];
     for (const t of toks.slice(1)) {
       if (isEasingName(t)) { out.ease = t; out.easeSet = true; }
@@ -1050,7 +1072,8 @@
           }
           // a stagger's pieces also differ a little in duration (never longer than asked)
           if (jrnd) m.dur = Math.round(m.dur * (1 - 0.07 * jrnd()) * 1000) / 1000;
-          if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).filter((k) => !/^(zoom-near|flip-in|dip-in|clock|diagonal)$/.test(k)).join(', ')); }
+          if (isBand(m.name)) bandEnter(tg, m, m.delay + extra + (el.__gmEnterAt || 0), cStart);
+          else if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).filter((k) => !/^(zoom-near|flip-in|dip-in|clock|diagonal)$/.test(k)).join(', ')); }
           else {
             if (m.name === 'draw') prepDraw(tg);
             if (m.name === 'clock') prepClock(tg);
@@ -1080,6 +1103,44 @@
         }
       });
     }
+  }
+  // band-right / -left / -up / -down: a solid band (width w, a share of the side it travels along) sweeps across the
+  // element; behind it the element is revealed. Two paused animations with the same timing: the element's clip-path
+  // (everything behind the band's front edge) and a ::after (or ::before) that paints the band itself on top.
+  // The band's centre is at the element's centre at progress 0.5, so a symmetric easing puts that moment halfway.
+  function bandEnter(tg, m, delay, cStart) {
+    if (!(tg instanceof HTMLElement)) { report('warning', 'bad-enter', `data-enter "${m.name}" needs an HTML element (an SVG element has no ::after to paint the band).`, tg); return; }
+    const b = m.band || {};
+    const dir = m.name === 'band' ? 'right' : m.name.slice(5);
+    const cs = getComputedStyle(tg);
+    if (cs.position === 'static') tg.style.position = 'relative';
+    // the band paints with ::after unless the page already uses this element's ::after for something
+    const used = (p) => { const c = getComputedStyle(tg, p).content; return c && c !== 'none' && c !== 'normal'; };
+    const pseudo = used('::after') && !used('::before') ? 'before' : 'after';
+    tg.setAttribute('data-gm-band', pseudo);
+    if (b.color) tg.style.setProperty('--gm-band-color', b.color);
+    const sz = restSizes([tg]).get(tg) || { w: comp.width, h: comp.height };
+    const W = sz.w || comp.width, H = sz.h || comp.height;
+    const horiz = dir === 'right' || dir === 'left';
+    const along = horiz ? W : H, cross = horiz ? H : W;
+    const ang = Math.max(-75, Math.min(75, b.angle || 0));
+    const s = (Math.tan((ang * Math.PI) / 180) * cross) / along; // how far the edge leans across the element, as a share of `along`
+    const as = Math.abs(s);
+    // width: a share of the side it travels along; 100% or more also adds the lean, so it covers everything at the middle
+    const wp = Math.max(0, b.width != null ? b.width : 35) / 100, w = wp >= 1 ? wp + as : wp;
+    const L0 = -as / 2, L1 = 1 + as / 2 + w; // front edge: from just before the start to where the whole band is past the end
+    const r = (n) => Math.round(n * 1e6) / 1e4; // share → % with 4 decimals
+    const pt = (a, c) => (dir === 'right' ? `${r(a)}% ${r(c)}%` : dir === 'left' ? `${r(1 - a)}% ${r(c)}%` : dir === 'down' ? `${r(c)}% ${r(a)}%` : `${r(c)}% ${r(1 - a)}%`);
+    const far = -1 - as;
+    const reveal = (L) => `polygon(${pt(far, 0)}, ${pt(L + s / 2, 0)}, ${pt(L - s / 2, 1)}, ${pt(far, 1)})`;
+    const band = (L) => `polygon(${pt(L - w + s / 2, 0)}, ${pt(L + s / 2, 0)}, ${pt(L - s / 2, 1)}, ${pt(L - w - s / 2, 1)})`;
+    // Driven from the clock with inline styles (one sampler, so the band's front edge and the reveal edge never drift
+    // apart): the element's clip-path, and --gm-band-clip that the ::after's clip-path reads. (A paused animation on
+    // a pseudo-element stops applying once its element has been display:none, as a scene is before its turn.)
+    const sample = kfSampler([{ clipPath: reveal(L0), '--gm-band-clip': band(L0), visibility: 'hidden' }, { clipPath: reveal(L1), '--gm-band-clip': band(L1) }]);
+    const orig = {};
+    for (const p of sample.props) { const k = kebabCss(p); orig[p] = [tg.style.getPropertyValue(k), tg.style.getPropertyPriority(k)]; }
+    driven.push({ el: tg, sample, fn: easing(m.ease), dur: m.dur, delay, origin: cStart, enter: true, orig, last: null });
   }
   let clockReg = false;
   function prepClock(el) {

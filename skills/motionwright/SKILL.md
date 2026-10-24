@@ -280,6 +280,8 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `empty-frame` | Almost nothing on screen for a second or more in the middle of the video (a camera crossing empty space between parts, a gap between scenes, a zoom so far out that everything is a speck). |
 | `still` | Little changes on screen for 2.5 s or more: nothing enters, leaves or moves, and a slow float or a faint glow does not count. Viewers read it as the video stalling. Cut the hold, start the next beat sooner, or end earlier. |
 | `tiny-text` | Hard to read in a video. Use ≥ 24px at 1080p. |
+| `text-covered` | Part of a settled label is hidden behind something drawn on top of it. Move one, or raise the label (z-index / later in the HTML). |
+| `camera-late` | A camera shot arrives (its time + duration) after its scene starts its exit transition, so it is never seen at rest. Start it earlier or shorten it. |
 | `low-contrast` | Text blends into what is behind it. Targets: 4.5:1 normal text, 3:1 large text (≥ 32px, or bold ≥ 24px), 1.6:1 for text with a `text-shadow` or outline. ✖ below two thirds of the target. Fix the color, or add a backing or shadow. |
 | `image-broken`, `http-404`, `video-frame` | A file path is wrong (paths are relative to the HTML file). |
 | `bad-time`, `bad-enter`, `bad-transition`, `sequence-missing-duration`, `no-duration` | Fix the attribute as the message says. |

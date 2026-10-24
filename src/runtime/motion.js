@@ -1576,6 +1576,20 @@
   I.hooks.preinit.push(setupFit);
   I.hooks.init.push(() => { for (const c of cameras) if (c.world && c.shots.some((sh) => sh.fit === 'content' || sh.center === 'content')) { try { c._box('content', c._markers()); } catch (e) {} } });
   I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); for (const b of bursts) if (!b.canvas) setupBurst(b); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
+  // A camera shot that only arrives after its scene has started to leave (or ended) is never seen at rest.
+  I.hooks.init.push(() => {
+    for (const cm of cameras) {
+      const w = cm.world, c = w && I.nearestClip(w);
+      if (!c || cm.opts.global || !isFinite(c.end)) continue;
+      const out = I.transitions().find((tr) => tr.start > c.start + 1e-6 && tr.start < c.end - 1e-6 && tr.end >= c.end - 0.02);
+      const leave = out ? out.start : c.end;
+      cm.shots.forEach((sh, i) => {
+        if (!i) return;
+        const arrive = c.start + sh.at + (sh.duration || 0);
+        if (arrive > leave + 1e-6) I.report('warning', 'camera-late', `Camera shot ${i + 1} (at ${sh.at}s) arrives at ${(arrive - c.start).toFixed(2)}s of its scene, but the scene ${out ? 'starts its exit transition' : 'ends'} at ${(leave - c.start).toFixed(2)}s, so it is never seen at rest.`, w, 'Start the shot earlier or make it shorter (a shot arrives at its time + duration), or make the scene longer.');
+      });
+    }
+  });
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
   I.hooks.post.push(updateCameras);
   I.hooks.post.push(updateMorphs);

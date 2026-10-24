@@ -339,9 +339,13 @@ export async function analyzeVideo(input, opts = {}) {
     if (blend < 0.35) return 'fade';
     return 'other';
   };
+  // the moment the picture is half way from the old shot to the new one
+  // (by the average color difference: the thresholded distance jumps to "all new" too early in a fade)
+  const mad = (i, j) => { const a = all[i], b = all[j]; let s2 = 0; for (let k = 0; k < a.length; k++) s2 += Math.abs(a[k] - b[k]); return s2; };
+  const halfway = (S, E) => { for (let f = S + 1; f < E; f++) if (mad(S, f) >= mad(f, E)) return f; return (S + E + 1) / 2; };
   const transitions = transitionsRaw.map((t) => t.type === 'cut'
     ? { type: 'cut', start: r3(t.frame / fps), end: r3(t.frame / fps), at: r3(t.frame / fps) }
-    : { type: classify(t.S, t.E), start: r3((t.S + 1) / fps), end: r3(t.E / fps), at: r3((t.S + 1 + t.E) / 2 / fps) }).sort((a, b) => a.start - b.start);
+    : { type: classify(t.S, t.E), start: r3((t.S + 1) / fps), end: r3(t.E / fps), at: r3(halfway(t.S, t.E) / fps) }).sort((a, b) => a.start - b.start);
 
   // 5. Shots between transitions
   const shots = [];

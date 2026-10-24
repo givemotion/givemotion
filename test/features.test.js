@@ -136,3 +136,20 @@ test('sketch: data-sketch shapes are rough, seeded and keep their id; mw.connect
   // the line ends on the left edge of #b (moved down by 100px) minus the gap (10px at 1080p = 3.3px here)
   assert.ok(Math.abs(v.end[0] - 396.8) < 2 && Math.abs(v.end[1] - 308.6) < 2, 'end ' + v.end);
 });
+
+test('analyze: finds a hard cut and a fade with their times, and the colors', { skip }, async () => {
+  const { analyzeVideo } = await import('../src/analyze.js');
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence><section class="scene" data-duration="1.5" style="background:#1b2a6b"></section><section class="scene" data-duration="1.5" style="background:#c0392b"></section><section class="scene" data-duration="1.5" data-transition="fade 0.5" style="background:#16a085"></section></main>`));
+  const out = join(d, 'v.mp4');
+  await render(f, { output: out, ...quiet });
+  const r = await analyzeVideo(out, { output: join(d, 'an'), sheets: false, audio: false });
+  assert.equal(r.transitions.length, 2, JSON.stringify(r.transitions));
+  assert.equal(r.transitions[0].type, 'cut');
+  assert.ok(Math.abs(r.transitions[0].at - 1.5) < 0.05, 'cut at ' + r.transitions[0].at);
+  assert.equal(r.transitions[1].type, 'fade');
+  // the fade runs 2.5-3.0 s with the default out-expo easing, so it is visually half done early in that window
+  assert.ok(r.transitions[1].at >= 2.45 && r.transitions[1].at <= 2.8, 'fade at ' + r.transitions[1].at);
+  assert.equal(r.shots.length, 3);
+  assert.equal(r.colors.theme, 'dark');
+});

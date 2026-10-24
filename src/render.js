@@ -6,7 +6,7 @@ import { join, resolve, dirname, basename, extname, relative, isAbsolute } from 
 import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage, CACHE_DIR } from './browser.js';
 import { startServer } from './server.js';
-import { requireFfmpeg, encoderPlan, openSegmentWriter, openBlender, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
+import { requireFfmpeg, encoderPlan, openSegmentWriter, openBlender, run as runFfmpeg, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
 import { pagePrints } from './parts.js';
 
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
@@ -287,34 +287,61 @@ export async function render(input, opts = {}) {
     if (process.env.GIVEMOTION_PROFILE) log(`  setup ${Date.now() - t0}ms`);
     const setDurations = Object.keys(media.durations).length ? `(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()` : null;
     const reopen = async (page) => { await page.open(ctx.url, ctx.config); if (setDurations) await page.evaluate(setDurations); };
-    // Auto blur: how far things move at every frame to render, measured on the first page while the others start
-    // (seeks and box reads, no captures; about 0.3 ms a frame)
-    const steps = new Map(); // f -> px moved on screen from frame f-1 to f
-    const probing = auto && todoFrames ? (async () => {
-      const q0 = Date.now();
-      if (setDurations) await ctx.page.evaluate(setDurations);
-      const need = new Set();
-      for (const r of ranges) for (let f = r.a - 1; f <= r.b; f++) need.add(f);
-      const frames = [...need].sort((x, y) => x - y);
-      for (let i = 0; i < frames.length;) {
-        let j = i + 1;
-        while (j < frames.length && frames[j] === frames[j - 1] + 1) j++;
-        const run = frames.slice(i, j);
-        const d = await ctx.page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(run.map((f) => Math.max(0, f / fps)))}, ${shutter})`, { timeoutMs: Math.max(60000, run.length * 1000) });
-        run.slice(1).forEach((f, k) => steps.set(f, d[k]));
-        i = j;
-      }
-      // pages driven by requestAnimationFrame or timers cannot seek back: start this one again
-      if (await ctx.page.evaluate('gm.__stateful()')) await reopen(ctx.page);
-      blurStats.probeMs = Date.now() - q0;
-    })() : null;
     // Start other workers in parallel
     const extra = todoFrames ? await Promise.all(Array.from({ length: nWorkers - 1 }, () => newWorker(ctx, opts))) : [];
     pages.push(...extra);
-    if (probing) await probing;
     if (setDurations) await Promise.all(pages.map((p) => p.evaluate(setDurations)));
+    // Auto blur: how far things move at every frame to render (seeks and box reads, no captures; about 0.3 ms a frame
+    // for a DOM page), measured in pieces spread over all pages
+    const steps = new Map(); // f -> px moved on screen from frame f-1 to f
+    if (auto && todoFrames) {
+      const q0 = Date.now();
+      const need = new Set();
+      for (const r of ranges) for (let f = r.a - 1; f <= r.b; f++) need.add(f);
+      const frames = [...need].sort((x, y) => x - y);
+      const per = Math.max(30, Math.ceil(frames.length / pages.length));
+      const pieces = [];
+      for (let i = 0; i < frames.length;) {
+        let j = i + 1;
+        while (j < frames.length && frames[j] === frames[j - 1] + 1 && j - i < per) j++;
+        pieces.push(frames.slice(i, j));
+        // the next piece starts on this one's last frame (to measure the step into its first frame)
+        i = j < frames.length && frames[j] === frames[j - 1] + 1 ? j - 1 : j;
+      }
+      await Promise.all(pages.map(async (page, k) => {
+        for (let i = k; i < pieces.length; i += pages.length) {
+          const run = pieces[i];
+          const d = await page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(run.map((f) => Math.max(0, f / fps)))}, ${shutter})`, { timeoutMs: Math.max(60000, run.length * 1000) });
+          run.slice(1).forEach((f, n) => steps.set(f, d[n]));
+        }
+        // pages driven by requestAnimationFrame or timers cannot seek back: start them again
+        if (await page.evaluate('gm.__stateful()')) await reopen(page);
+      }));
+      blurStats.probeMs = Date.now() - q0;
+    }
     const framePlan = (f) => autoBlurPlan(Math.max(steps.get(f) || 0, steps.get(f + 1) || 0) / blurStats.ref, shutter);
-    const queue = auto ? ranges.map((r) => { let cost = 1; for (let f = r.a; f < r.b; f++) { const pl = framePlan(f); cost += pl ? pl.n : 1; } return { ...r, cost }; }).sort((x, y) => y.cost - x.cost || x.a - y.a) : null;
+    // A part with blur is cut into pieces (of 10 frames or more) (rendered by any worker, then joined into the part without
+    // re-encoding), so one busy part does not keep everyone waiting. How a part is cut depends only on its own frames.
+    const costOf = (a, b) => { let c = 1; for (let f = a; f < b; f++) { const pl = framePlan(f); c += pl ? pl.n : 1; } return c; };
+    const queue = auto ? ranges.flatMap((r) => {
+      const k = useParts ? Math.min(Math.max(1, Math.floor((r.b - r.a) / 10)), 1 + Math.floor((costOf(r.a, r.b) - 1 - (r.b - r.a)) / 12)) : 1; // one more piece per 12 extra samples
+      if (k === 1) return [{ ...r, cost: costOf(r.a, r.b) }];
+      const whole = { file: r.file, left: k, pieces: [] };
+      return Array.from({ length: k }, (_, i) => {
+        const a = r.a + Math.round((i * (r.b - r.a)) / k), b = r.a + Math.round(((i + 1) * (r.b - r.a)) / k);
+        const file = join(tmp, `${basename(r.file)}.piece${i}.${plan.segExt}`);
+        whole.pieces.push(file);
+        return { a, b, file, whole, cost: costOf(a, b) };
+      });
+    }).sort((x, y) => y.cost - x.cost || x.a - y.a) : null;
+    const joinPieces = async (whole) => {
+      const list = join(tmp, basename(whole.file) + '.pieces.txt'), tmpWhole = whole.file + '.tmp.' + plan.segExt;
+      writeFileSync(list, whole.pieces.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n'));
+      await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', list, '-map', '0', '-c', 'copy', tmpWhole]);
+      renameSync(tmpWhole, whole.file);
+      rmSync(list, { force: true });
+      for (const f of whole.pieces) rmSync(f, { force: true });
+    };
 
     let done = 0, reused = 0;
     let lastLog = 0;
@@ -394,7 +421,7 @@ export async function render(input, opts = {}) {
       let frames = 0;
       try {
       for (let r; (r = next());) {
-        const { a, b, file } = r;
+        const { a, b, file, whole } = r;
         frames += b - a;
         const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
         const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
@@ -425,7 +452,7 @@ export async function render(input, opts = {}) {
               progress();
             }
           }
-          if (writer) { open.push(writer); ending.push(writer.end().then(() => { renameSync(tmpFile, file); open.splice(open.indexOf(writer), 1); })); }
+          if (writer) { open.push(writer); ending.push(writer.end().then(async () => { renameSync(tmpFile, file); open.splice(open.indexOf(writer), 1); if (whole && --whole.left === 0) await joinPieces(whole); })); }
           // do not let more than two parts queue up behind the encoder
           if (ending.length > 2) { const q1 = Date.now(); await ending[ending.length - 3]; prof.end += Date.now() - q1; }
         } catch (e) {

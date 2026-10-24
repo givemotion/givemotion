@@ -296,7 +296,8 @@
     if (t instanceof Element || t === window || !(Symbol.iterator in Object(t)) || typeof t.length !== 'number') return [t];
     return [...t].flatMap((x) => toArray(x, scope));
   }
-  function staggerOffsets(st, n, rnd) {
+  function staggerOffsets(st, n, rnd, targets) {
+    if (typeof st === 'function') return new Array(n).fill(0).map((_, i) => +st(i, targets && targets[i], targets) || 0);
     if (st == null || n <= 1) return new Array(n).fill(0);
     const o = typeof st === 'object' ? st : { each: st };
     const each = o.amount != null ? o.amount / Math.max(1, n - 1) : (o.each || 0);
@@ -490,7 +491,7 @@
         const dur = Math.max(0, +timing.duration || 0);
         const rep = timing.repeat === -1 ? Infinity : Math.max(0, timing.repeat | 0);
         const rd = +timing.repeatDelay || 0;
-        const offs = staggerOffsets(timing.stagger, targets.length, this.rnd);
+        const offs = staggerOffsets(timing.stagger, targets.length, this.rnd, targets);
         const fromProps = op.a ? flattenProps(op.a) : null, toProps = op.b ? flattenProps(op.b) : null;
         const keys = Object.keys(Object.assign({}, fromProps || {}, toProps || {}));
         let last = start;
@@ -745,21 +746,30 @@
             kf = [{ transform: `translate(${(-v[0] / 2) * px}px, ${(-v[1] / 2) * px}px) scale(${s})` }, { transform: `translate(${(v[0] / 2) * px}px, ${(v[1] / 2) * px}px) scale(${s})` }];
             break;
           }
-          case 'rotate': case 'tilt': { const a = amount ?? 3; kf = [{ transform: `rotate(${-a / 2}deg) scale(${1 + a * 0.012})` }, { transform: `rotate(${a / 2}deg) scale(${1 + a * 0.012})` }]; break; }
+          case 'rotate': case 'tilt': {
+            // enlarge just enough that the tilted frame still covers every corner (tall or wide)
+            const a = amount ?? 3, th = ((a / 2) * Math.PI) / 180, W = I.comp.width, H = I.comp.height;
+            const sc = Math.cos(th) + (Math.max(W, H) / Math.min(W, H)) * Math.sin(th) + 0.004;
+            kf = [{ transform: `rotate(${-a / 2}deg) scale(${r4(sc)})` }, { transform: `rotate(${a / 2}deg) scale(${r4(sc)})` }]; break;
+          }
           case 'orbit': { const a = amount ?? 8; kf = [{ transform: `perspective(${2000 * px}px) rotateY(${-a / 2}deg) rotateX(${a / 6}deg) scale(1.06)` }, { transform: `perspective(${2000 * px}px) rotateY(${a / 2}deg) rotateX(${-a / 6}deg) scale(1.06)` }]; break; }
           case 'float': case 'drift': case 'handheld': case 'shake': {
+            // amount is in px (at 1080p): how far the view wanders. shake rises and dies away inside its window.
             const isShake = name === 'shake';
-            const a = (amount ?? 1) * (isShake ? 9 : name === 'handheld' ? 7 : 14) * px;
+            const a = (amount ?? (isShake ? 12 : name === 'handheld' ? 7 : 14)) * px;
             const freq = isShake ? 9 : name === 'handheld' ? 0.9 : 0.25;
             const step = isShake ? 1 / I.comp.fps : 1 / 10;
             const n = Math.max(2, Math.ceil(dur / step) + 1);
             const seed = (el.__mwSeed = (el.__mwSeed || 0) + 1) * 17 + name.length;
-            const s = 1 + (2 * a) / short + 0.01;
+            const s = isShake ? 1 + (2 * a) / short : 1 + (2 * a) / short + 0.01;
             kf = [];
             for (let i = 0; i < n; i++) {
-              const t = Math.min(dur, i * step) * freq;
+              const u = Math.min(dur, i * step);
+              const t = u * freq;
+              const env = isShake ? Math.sin(Math.min(1, u / dur) * Math.PI) * (1 - 0.4 * (u / dur)) : 1;
               const nx = mw.noise(t, seed) * 2 - 1, ny = mw.noise(t + 31.7, seed + 3) * 2 - 1, nr = mw.noise(t + 77.1, seed + 9) * 2 - 1;
-              kf.push({ transform: `translate(${r4(nx * a)}px, ${r4(ny * a)}px) rotate(${r4(nr * (isShake ? 0.6 : 0.35))}deg) scale(${r4(s)})`, offset: Math.min(1, (i * step) / dur) });
+              const sc = isShake ? 1 + (s - 1) * env : s;
+              kf.push({ transform: `translate(${r4(nx * a * env)}px, ${r4(ny * a * env)}px) rotate(${r4(nr * (isShake ? 0.6 : 0.35) * env)}deg) scale(${r4(sc)})`, offset: Math.min(1, u / dur) });
             }
             kf[kf.length - 1].offset = 1;
             ease = 'linear';
@@ -769,7 +779,7 @@
             I.report('error', 'bad-camera', `Unknown data-camera move "${name}".`, el, 'Use: push, pull, move-left, move-right, move-up, move-down, rotate, orbit, float, handheld, shake.');
         }
         if (!kf) continue;
-        const a = I.real.animate.call(el, kf, { duration: dur * 1000, delay: from * 1000, easing: I.cssEasing(ease), fill: 'both', composite: 'add' });
+        const a = I.real.animate.call(el, kf, { duration: dur * 1000, delay: from * 1000, easing: I.cssEasing(ease), fill: name === 'shake' ? 'none' : 'both', composite: 'add' });
         a.pause();
         // register with the runtime clock
         a.__mwCamera = true;

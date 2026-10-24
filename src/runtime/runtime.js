@@ -384,10 +384,14 @@
           const own = i > 0 ? parseTransition(k.getAttribute('data-transition')) : null;
           const t = i > 0 ? (own || tr) : null;
           trs.push(t);
-          const start = cuts[i] != null ? cuts[i] : end;
+          // data-cut-align: is the cut time the start (default), middle or end of the transition into this child?
+          const align = container.getAttribute('data-cut-align') || 'start';
+          const shift = t ? (align === 'middle' ? t.dur / 2 : align === 'end' ? t.dur : 0) : 0;
+          const start = cuts[i] != null ? Math.max(0, cuts[i] - shift) : end;
           const nextT = i + 1 < kids.length ? (parseTransition(kids[i + 1].getAttribute('data-transition')) || tr) : null;
           let d;
-          if (cuts[i + 1] != null) d = cuts[i + 1] - start + (nextT ? nextT.dur : 0);
+          const nshift = nextT ? (align === 'middle' ? nextT.dur / 2 : align === 'end' ? nextT.dur : 0) : 0;
+          if (cuts[i + 1] != null) d = cuts[i + 1] - nshift - start + (nextT ? nextT.dur : 0);
           else {
             // the last child runs to the end of the video when <html data-duration> is set
             const own = parseTime(k.getAttribute('data-duration'), k, 'data-duration');
@@ -1217,7 +1221,7 @@
       mutated = true;
       if (r.type === 'childList') {
         for (const n of r.addedNodes) if (n.nodeType === 1 && (n.matches(CLIP_SEL) || n.querySelector(CLIP_SEL) || (n.parentElement && n.parentElement.hasAttribute('data-sequence')))) timelineDirty = true;
-      } else if (r.type === 'attributes' && /^data-(start|duration|end|sequence|transition|gap|cuts)$/.test(r.attributeName)) timelineDirty = true;
+      } else if (r.type === 'attributes' && /^data-(start|duration|end|sequence|transition|gap|cuts|cut-align)$/.test(r.attributeName)) timelineDirty = true;
     }
   }
   const mo = new MutationObserver(handleRecords);

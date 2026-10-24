@@ -462,7 +462,9 @@ export async function render(input, opts = {}) {
             // frame, with Chrome's paint state from earlier frames dropped (page.resetPaint).
             last = null;
             await page.seek(a / fps);
+            const q1 = Date.now();
             await page.resetPaint();
+            prof.reset = (prof.reset || 0) + Date.now() - q1;
             for (let f = a; f < b; f++) {
               for (let s = 0; s < blurSamples; s++) {
                 const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
@@ -499,7 +501,7 @@ export async function render(input, opts = {}) {
         await Promise.allSettled(ending);
         throw e;
       }
-      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms${prof.reopen ? `, reload ${prof.reopen}ms` : ''} for ${frames} frames`);
+      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms${prof.reopen ? `, reload ${prof.reopen}ms` : ''}${prof.reset ? `, paint reset ${prof.reset}ms` : ''} for ${frames} frames`);
     }));
     const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);

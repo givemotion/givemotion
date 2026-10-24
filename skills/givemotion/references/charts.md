@@ -4,8 +4,10 @@ Purpose: live line charts (`gm.chart.line`) a camera can follow, the chart block
 
 Contents
 - Live line chart
+- Axis, grid and ticks
 - Pinned callouts and live text
-- Chart JS API and styling
+- Chart JS API
+- Styling and the chart's DOM
 - Layout advice
 - Blocks and counters
 
@@ -41,17 +43,78 @@ gm.camera('#world')
 </script>
 ```
 
+## Axis, grid and ticks
+
+A fixed scale with a labelled grid that draws itself on, no CSS hacks needed:
+
+```js
+gm.chart.line('#growth', {
+  values: gm.data.users, labels: gm.data.months,
+  min: 0, max: 50000,                       // fixed y range (default: 0 or the lowest value, to the highest + 12%)
+  ticks: 10000,                             // a label and grid line every 10,000 from the bottom: 0, 10k ... 50k
+  // ticks: [0, 25000, 50000]               //   or exactly these values
+  tickFormat: v => v / 1000 + 'k',          // label text; 'compact' (10k, 1.5M; the default) or 'full' (same as the value: 12,500)
+  axisLine: true,                           // also draw the vertical axis line
+  axisIntro: 0.8,                           // base line, axis and grid draw on from the origin in 0.8 s, labels fade in
+  delay: 1.2,                               // start the line after the axes are drawn
+});
+```
+
+- `axis`: where the tick labels go: `'left'` (default), `'right'`, `'head 460'` (they ride 460 px right of the head) or `'none'`. `axis: 'none'` draws nothing of the axis: no labels, no grid lines, no base line.
+- `grid: false` hides the horizontal grid lines and keeps the labels; `grid: true` with `axis: 'none'` gives grid lines without labels. `base: false` hides the base line (the bottom of the axis).
+- With `ticks` the bottom value is labelled too (`0`); the automatic ticks leave it out.
+- `axisIntro: { duration: 0.8, at: 0.2, ease: 'out-cubic' }`: `at` is when it starts, in seconds from the chart's start (default 0). The base line draws first, then each grid line from the left, bottom to top; the x labels appear as the base line passes them. Give the line a `delay` longer than the intro.
+- With `rescale: true`, grid lines fade in and out as the axis grows, `ticks` included.
+
 ## Pinned callouts and live text
 
 - `data-point="<point> <side> <gap>"` pins any element inside the chart to a point, or to `head` (it rides the tip). Sides: `top` `bottom` `left` `right` `center`, and the corners `top-left` … `bottom-right` (diagonally away from the point); the gap is px from the dot. A pinned callout enters (`pop` unless it has its own `data-enter`) when the line reaches its point; its `data-enter` delay counts from that moment.
-- `data-chart-text="value"` shows the value at the head (`prefix`, `suffix`, `decimals` or `format: v => …` options), `"label"` the current label, `"change"` the change from the previous point (`+42%`). Outside the chart: `data-chart-text="#growth value"`. Drive every number from the chart so a counter never disagrees with the line (judges caught "MAR 2,217" shown after the line left March).
+- `data-chart-text="value"` shows the value at the head, `"label"` the current label, `"change"` the change from the previous point (`+42%`). Outside the chart: `data-chart-text="#growth value"`. Drive every number from the chart so a counter never disagrees with the line (judges caught "MAR 2,217" shown after the line left March).
+- The number's format is set by chart options (in `gm.chart.line('#growth', { … })`, not on the element): `format: v => Math.round(v).toLocaleString('en-US')`, or `prefix: '$'`, `suffix: ' users'`, `decimals: 0`. The default is the value with thousands commas and as many decimals as the data has.
 
-## Chart JS API and styling
+## Chart JS API
 
-- JS: `chart.valueAt(t)`, `chart.progress(t)` (fractional point index), `chart.timeOf(point)` (plan camera shots, bursts and tweens from it), `chart.pointAt(point)` (`{x, y, value, label, time}` in the chart's own px), `chart.dots[i]`, `chart.head`.
+- `chart.valueAt(t)`, `chart.progress(t)` (fractional point index), `chart.timeOf(point)` (when the line gets there: plan camera shots, bursts and tweens from it), `chart.pointAt(point)` (`{x, y, value, label, time}` in the chart's own px), `chart.dots[i]`, `chart.head`.
+- `chart.headAt(t)`: where the tip is at time `t` (seconds in the chart's clip), on the smooth curve the line draws: `{x, y, value, progress, label}` in the chart's px. `chart.headAt(t, '#world')` gives x, y in the px of that element (camera world px, camera moves not counted). `chart.toPx(point, value, t)` places any value, e.g. a target line at 40,000.
+- Points are a 0-based index, `-1` for the last, `'first'`, `'last'`, `'max'`, `'min'` or a label (`'Mar'`).
 - Timing by hand like a path travel: `stops: [[0.5, 0], [3, 'Mar'], [4.2, 'Mar'], [9, 'last']]`; `ease` (default `in-out-sine`) shapes each run between holds.
-- Style with CSS: `--chart-line` (line color), `.gm-chart-head`, `.gm-chart-dot`, `.gm-chart-label` (`[data-reached]` once the line passed it), `.gm-chart-tick`, `.gm-chart-line`, `.gm-chart-area`. `var(--chart-color)` is the color of the segment the head is on (use it on a rider). Options: `dots: false`, `area: false`, `smooth: false`, `min`, `max`, `padding: [top, right, bottom, left]`.
-- `check` codes: `chart-no-element`, `chart-no-values` (fewer than 2 numbers), `chart-no-size` (the element has no width/height), `chart-bad-point` (a point name is not an index, label, `last` or `max`).
+- A camera that follows the tip but stays inside the chart: move a small proxy element from `headAt` and follow it.
+
+```js
+const cam = document.querySelector('#cam');   // <div id="cam" style="position:absolute;width:2px;height:2px"> in #world
+gm.onFrame((t) => {
+  const h = chart.headAt(t, '#world');
+  cam.style.left = gm.clamp(h.x + 230, 700, 1400) + 'px';   // tip left of center, never past the chart's ends
+  cam.style.top = gm.clamp(h.y, 450, 700) + 'px';
+});
+gm.camera('#world').shot(2.5, { follow: '#cam', zoom: 1.6, duration: 0.5 });
+```
+
+- Other options: `dots: false`, `area: false`, `head: false`, `smooth: false`, `color` (sets `--chart-line`), `headSize: 14` (px at 1080p), `padding: [top, right, bottom, left]` (room for the tick and x labels).
+- `check` codes: `chart-no-element`, `chart-no-values` (fewer than 2 numbers), `chart-no-size` (the element has no width/height), `chart-bad-point` (a point name is not an index, label, `last` or `max`), `chart-bad-option` (`ticks` or `tickFormat` not understood).
+
+## Styling and the chart's DOM
+
+The chart adds these inside its element (style them with CSS; the page's CSS wins over the defaults):
+
+| class | what it is |
+|---|---|
+| `.gm-chart` | the chart element itself |
+| `svg.gm-chart-svg` | the drawing, holding the lines below |
+| `.gm-chart-grid line` | horizontal grid lines (`stroke`, `stroke-opacity`, `stroke-width`) |
+| `.gm-chart-base` | the base line along the bottom |
+| `.gm-chart-axis` | the vertical axis line (only with `axisLine: true`) |
+| `.gm-chart-area` | the fill under the line (a gradient of `--chart-line`; dim it with `opacity`) |
+| `.gm-chart-line` | the line (`stroke-width: 6px` for a thinner one) |
+| `.gm-chart-seg` | a colored segment from `colors` |
+| `.gm-chart-ticks > .gm-chart-tick` | the y labels |
+| `.gm-chart-label` | the x labels (`[data-reached]` once the line passed it) |
+| `.gm-chart-dot` | the dot on each point (`[data-i="2"]`, `[data-reached]`) |
+| `.gm-chart-head` | the glowing dot at the tip |
+
+- Colors: `--chart-line` (line, area, dots, head) can be set anywhere above the chart (`:root`, the scene) or on it. `var(--chart-color)` is the color of the segment the head is on (use it on a rider). `--chart-bg` fills the hollow dots.
+- Resize the head or the dots with CSS `width`/`height` (or `headSize`): they stay centered on the line. To animate their size, use `transform: scale(…)`, not width/height (the size is measured once).
+- Don't hide parts with `display: none` on internal elements: use `axis: 'none'`, `grid: false`, `base: false`, `dots: false`, `head: false`, `area: false`.
 
 ## Layout advice
 
@@ -63,7 +126,7 @@ gm.camera('#world')
 
 ## Blocks and counters
 
-- Without a camera, use the `line-chart` block: the same options as attributes (`holds="Mar:1.2"`, `colors="Mar:#ff4d6d"`, `rescale="true"`, `axis`, `dots`, `endlabel`, `overview`, callouts as inner HTML with `data-point`); `gm.chart.get('#id')` gives its chart (follow it with `follow: '#growth .gm-chart-head'`).
+- Without a camera, use the `line-chart` block: the same options as attributes (`holds="Mar:1.2"`, `colors="Mar:#ff4d6d"`, `rescale="true"`, `axis`, `ticks="10000"`, `grid="false"`, `axisintro="0.8"`, `dots`, `endlabel`, `overview`, callouts as inner HTML with `data-point`); `gm.chart.get('#id')` gives its chart (follow it with `follow: '#growth .gm-chart-head'`).
 - `bar-chart` block: `values`, `labels`, `title`, `prefix`, `suffix`, `max`, `color`, `highlight` (index), `height`. Bars grow one after another and count up. For a bar race or custom bars, use SVG/HTML bars with `grow-y` or a timeline `fromTo` of `scaleY` with `stagger`.
 - `stat` block: one big number that counts up with a label and a `delta` badge.
 - Counters anywhere: `data-count="0 1250"` (`data-count-duration`, `-delay`, `-prefix`, `-suffix`, `-decimals`, `-ease`, `-group="false"`), or a timeline `textContent` tween. Data comes from `gm.data` / `{{data.values}}` (`references/data-templates.md`); an array becomes a comma list, which is what the chart blocks take.

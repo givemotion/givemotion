@@ -898,3 +898,74 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
 });
+
+// live chart (r10)
+test('live chart (r10): axis none draws no lines; grid/ticks/tickFormat/axisLine; :root --chart-line inherits; resized head and dots stay on the line; headAt on the curve', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>:root{--chart-line:#ff0000} #b .gm-chart-head{width:14px;height:14px} #b .gm-chart-dot{width:8px;height:8px}</style>
+    <div id="world" style="position:absolute;left:0;top:0;width:640px;height:360px">
+      <div id="a" style="position:absolute;left:20px;top:10px;width:600px;height:150px"></div>
+      <div id="b" style="position:absolute;left:40px;top:190px;width:560px;height:150px"></div>
+    </div>
+    <script>
+      window.A = gm.chart.line('#a', { values: [1200, 1850, 1700, 2900, 4400], axis: 'none', delay: 0, duration: 2 });
+      window.B = gm.chart.line('#b', { values: [1200, 1850, 1700, 2900, 4400], min: 0, max: 5000, ticks: 1000, tickFormat: (v) => v / 1000 + 'k', axisLine: true, delay: 0, duration: 2, ease: 'linear' });
+    </script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const r = await evalAt(f, 1.3, `(() => {
+    const vis = (e) => !!e && getComputedStyle(e).display !== 'none' && e.getAttribute('visibility') !== 'hidden';
+    const c = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
+    const t = gm.time - gm.timing('#b').start, h = B.headAt(t), hw = B.headAt(t, '#world'), bb = document.querySelector('#b').getBoundingClientRect();
+    return {
+      aLines: [...document.querySelectorAll('#a .gm-chart-grid line, #a .gm-chart-base, #a .gm-chart-axis')].filter(vis).length,
+      aTicks: [...document.querySelectorAll('#a .gm-chart-tick')].filter((e) => e.offsetParent).length,
+      bLines: [...document.querySelectorAll('#b .gm-chart-grid line')].filter(vis).length,
+      bTicks: [...document.querySelectorAll('#b .gm-chart-tick')].filter((e) => e.offsetParent).map((e) => e.textContent),
+      bAxis: vis(document.querySelector('#b .gm-chart-axis')), bBase: vis(document.querySelector('#b .gm-chart-base')),
+      stroke: getComputedStyle(document.querySelector('#a .gm-chart-line')).stroke,
+      head: c('#b .gm-chart-head'), headAt: [bb.left + h.x, bb.top + h.y], world: [Math.round(hw.x - h.x), Math.round(hw.y - h.y)], hv: h.value, v: B.valueAt(t),
+      dot: c('#b .gm-chart-dot[data-i="1"]'), p1: (() => { const p = B.pointAt(1); return [bb.left + p.x, bb.top + p.y]; })(),
+      mid: B.headAt(1.25).y, lin: (B.pointAt(2).y + B.pointAt(3).y) / 2, curve: B.toPx(2.5, B.valueAtIndex(2.5), 1.25).y,
+      issues: gm.inspect().issues.map((i) => i.code) };
+  })()`);
+  const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, what + ': ' + a + ' vs ' + b);
+  assert.equal(r.aLines, 0, "axis: 'none' draws no grid, base or axis line");
+  assert.equal(r.aTicks, 0);
+  assert.deepEqual(r.bTicks, ['0k', '1k', '2k', '3k', '4k', '5k'], 'a step from the bottom, the bottom labelled, with tickFormat');
+  assert.equal(r.bLines, 5, 'grid lines except where the base line is');
+  assert.ok(r.bAxis && r.bBase, 'axisLine and base line drawn');
+  assert.equal(r.stroke, 'rgb(255, 0, 0)', '--chart-line set on :root is inherited');
+  near(r.head[0], r.headAt[0], 0.6, 'resized head centered on the tip (x)'); near(r.head[1], r.headAt[1], 0.6, 'resized head centered on the tip (y)');
+  near(r.dot[0], r.p1[0], 0.6, 'resized dot on its point (x)'); near(r.dot[1], r.p1[1], 0.6, 'resized dot on its point (y)');
+  assert.deepEqual(r.world, [40, 190], "headAt(t, '#world') adds the chart's offset");
+  near(r.hv, r.v, 1e-9, 'headAt value');
+  near(r.mid, r.curve, 0.01, 'headAt follows the drawn curve'); assert.ok(Math.abs(r.mid - r.lin) > 1, 'not the straight line between points');
+  assert.deepEqual(r.issues.filter((x) => /chart|script/.test(x)), []);
+});
+
+test('live chart (r10): axisIntro draws the base and grid on from the left and fades the labels in, as a function of time; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div id="c" style="position:absolute;left:60px;top:20px;width:540px;height:280px"></div>
+    <script>window.C = gm.chart.line('#c', { values: [10, 30, 20, 45], labels: 'Q1,Q2,Q3,Q4', min: 0, max: 50, ticks: [0, 25, 50], axisIntro: { at: 0.2, duration: 1 }, delay: 1.3, duration: 1.2 });</script>`,
+  'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const at = (t) => evalAt(f, t, `(() => {
+    const base = document.querySelector('#c .gm-chart-base'), lines = [...document.querySelectorAll('#c .gm-chart-grid line')];
+    const x2 = (e) => getComputedStyle(e).display === 'none' ? null : +e.getAttribute('x2');
+    return { l: +base.getAttribute('x1'), base: base.getAttribute('visibility') === 'hidden' ? null : x2(base), grid: lines.map(x2),
+      ticks: [...document.querySelectorAll('#c .gm-chart-tick')].map((e) => e.offsetParent ? +getComputedStyle(e).opacity : 0),
+      labels: [...document.querySelectorAll('#c .gm-chart-label')].map((e) => +getComputedStyle(e).opacity) };
+  })()`);
+  const s0 = await at(0.1), s1 = await at(0.5), s2 = await at(2);
+  assert.equal(s0.base, null, 'nothing drawn before the intro');
+  assert.deepEqual(s0.ticks, [0, 0, 0]);
+  assert.ok(s1.base > s1.l && s1.base < s2.base, 'base line partly drawn: ' + s1.base);
+  assert.ok(s1.grid[0] == null || s1.grid[0] < s2.grid[0], 'a grid line starts after the base');
+  assert.ok(s1.labels[0] > 0.5 && s1.labels[3] < 0.5, 'x labels appear as the base line passes them: ' + s1.labels);
+  assert.deepEqual(s2.ticks, [1, 1, 1]); assert.deepEqual(s2.labels, [1, 1, 1, 1]);
+  assert.equal(s2.grid.length, 2, 'no grid line on the base');
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 90);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});

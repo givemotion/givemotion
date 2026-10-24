@@ -29,8 +29,8 @@ Engine: refs/heads/main @ a54e9b675e. Runs set up 2026-10-24T11:00:28.989Z. 3 ju
 - hand-drawn-1 [engine] `fit: '#world'` does nothing
 - hand-drawn-1 [docs] Sketch draw runs the passes one after another
 - hand-drawn-1 [engine] Hand-drawn arrows that a packet can travel along
-- hand-drawn-1 [docs] mw.connect curve sign and path access unclear
-- hand-drawn-1 [docs] Which clock do `mw.path.travel` stops use?
+- hand-drawn-1 [docs] gm.connect curve sign and path access unclear
+- hand-drawn-1 [docs] Which clock do `gm.path.travel` stops use?
 - hand-drawn-1 [docs] Typing caret stays forever
 - hand-drawn-1 [engine] check flags a label during a camera pan
 - hand-drawn-1 [agent] First camera plan was too wide
@@ -38,7 +38,7 @@ Engine: refs/heads/main @ a54e9b675e. Runs set up 2026-10-24T11:00:28.989Z. 3 ju
 - hand-drawn-2 [engine] Solid sketch fills ignore the draw delay
 - hand-drawn-2 [engine] low-contrast false positive on a half-cropped badge
 - hand-drawn-2 [engine] Small camera float creates new edge warnings
-- hand-drawn-2 [docs] mw.connect start/end points and curve direction are not explained
+- hand-drawn-2 [docs] gm.connect start/end points and curve direction are not explained
 - hand-drawn-2 [agent] Labels placed by guess collided with arrows
 - hand-drawn-2 [engine] Re-render reuses nothing and gets slower
 - hand-drawn-2 [docs] Anchors for camera/arrows on SVG shapes

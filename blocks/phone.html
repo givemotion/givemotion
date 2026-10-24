@@ -1,18 +1,18 @@
 <!-- block:
 description: A modern phone frame. Shows an image (image=…) or any HTML between the tags as the screen.
 params: image (path), height (px at 1080p; scales with the short side, default 860), color (frame color, default #111)
-usage: <mw-include src="blocks/phone.html" image="assets/app.png" data-duration="4"></mw-include>
+usage: <gm-include src="blocks/phone.html" image="assets/app.png" data-duration="4"></gm-include>
 -->
-<div class="mwb-phone" style="--ph:{{height|860}};--frame:{{color|#111}}" data-enter="rise 0.9">
-  <div class="mwb-phone__screen"><img class="mwb-phone__img" src="{{image}}" alt="">{{content}}<div class="mwb-phone__island"></div></div>
+<div class="gmb-phone" style="--ph:{{height|860}};--frame:{{color|#111}}" data-enter="rise 0.9">
+  <div class="gmb-phone__screen"><img class="gmb-phone__img" src="{{image}}" alt="">{{content}}<div class="gmb-phone__island"></div></div>
 </div>
 <script>
-(() => { const img = document.currentScript.previousElementSibling.querySelector('.mwb-phone__img'); if (!img.getAttribute('src')) img.remove(); })();
+(() => { const img = document.currentScript.previousElementSibling.querySelector('.gmb-phone__img'); if (!img.getAttribute('src')) img.remove(); })();
 </script>
 <style>
-.mwb-phone{height:calc(var(--px)*var(--ph));aspect-ratio:9/19.5;padding:calc(var(--px)*var(--ph)*.018);border-radius:calc(var(--px)*var(--ph)*.085);background:var(--frame);
+.gmb-phone{height:calc(var(--px)*var(--ph));aspect-ratio:9/19.5;padding:calc(var(--px)*var(--ph)*.018);border-radius:calc(var(--px)*var(--ph)*.085);background:var(--frame);
   box-shadow:0 0 0 calc(var(--px)*2) rgba(255,255,255,.14) inset,0 calc(var(--px)*50) calc(var(--px)*120) rgba(0,0,0,.5)}
-.mwb-phone__screen{position:relative;width:100%;height:100%;border-radius:calc(var(--px)*var(--ph)*.068);overflow:hidden;background:#000}
-.mwb-phone__img{display:block;width:100%;height:100%;object-fit:cover}
-.mwb-phone__island{position:absolute;top:calc(var(--px)*var(--ph)*.014);left:50%;translate:-50% 0;width:31%;height:calc(var(--px)*var(--ph)*.036);border-radius:99px;background:#000}
+.gmb-phone__screen{position:relative;width:100%;height:100%;border-radius:calc(var(--px)*var(--ph)*.068);overflow:hidden;background:#000}
+.gmb-phone__img{display:block;width:100%;height:100%;object-fit:cover}
+.gmb-phone__island{position:absolute;top:calc(var(--px)*var(--ph)*.014);left:50%;translate:-50% 0;width:31%;height:calc(var(--px)*var(--ph)*.036);border-radius:99px;background:#000}
 </style>

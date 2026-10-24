@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// motionwright CLI
+// givemotion CLI
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from 'node:fs';
 import { join, resolve, dirname, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,9 +10,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(HERE, '..');
 const pkg = JSON.parse(readFileSync(join(PKG_ROOT, 'package.json'), 'utf8'));
 
-const HELP = `motionwright ${pkg.version} — HTML in, video out. Built for AI agents.
+const HELP = `givemotion ${pkg.version} — HTML in, video out. Built for AI agents.
 
-Usage: motionwright <command> [options]
+Usage: givemotion <command> [options]
 
 Make
   init [dir]                    New project: index.html + AI skill files
@@ -33,7 +33,7 @@ Look (for AI review)
 
 Share
   bundle [file] -o dir          Standalone page that plays in any browser, plus
-                                <mw-player> to embed it in a website or app
+                                <gm-player> to embed it in a website or app
 
 Build faster
   blocks                        List ready-made blocks (titles, charts, captions…)
@@ -64,7 +64,7 @@ Render options
   --muted                No audio track
   --motion-blur <n>      Real motion blur with n sub-frames (e.g. 8)
   --shutter <0-1>        Motion blur shutter (default 0.5)
-  --data <file.json>     Data for data-bind / mw.data
+  --data <file.json>     Data for data-bind / gm.data
   --props '<json>'       Same, inline
   --seed <n>             Seed for Math.random (default 1)
   --force                Render even if the composition has errors
@@ -72,12 +72,12 @@ Render options
   --capture <m>          auto | beginframe | screenshot
   --chrome <path>        Use a specific Chrome / chrome-headless-shell
 
-Docs: SKILL.md in the package, or \`motionwright skill\` to install it for your agent.`;
+Docs: SKILL.md in the package, or \`givemotion skill\` to install it for your agent.`;
 
 const CMD_HELP = {
-  render: 'motionwright render [file.html] -o out.mp4 [options]\n\nSee "Render options" in `motionwright --help`.',
-  still: 'motionwright still [file.html] -t <seconds> | --frame <n> -o frame.png [--transparent] [--data f.json | --props \'{…}\'] [--json]',
-  snapshot: `motionwright snapshot [file.html] [options]
+  render: 'givemotion render [file.html] -o out.mp4 [options]\n\nSee "Render options" in `givemotion --help`.',
+  still: 'givemotion still [file.html] -t <seconds> | --frame <n> -o frame.png [--transparent] [--data f.json | --props \'{…}\'] [--json]',
+  snapshot: `givemotion snapshot [file.html] [options]
   -o <dir>          Where to write (default: snapshots/ next to the HTML file)
   --times 1,2.5,4   Exact moments (seconds, or frames like 45f) instead of automatic ones
   --every 0.5       One frame every N seconds (or --every 1f for every frame)
@@ -90,7 +90,7 @@ const CMD_HELP = {
   --data f.json / --props '{…}'   Data for {{data.…}} (default: data.json next to the HTML)
   --transparent     Show a checkerboard behind (auto-detected when the page has no background)
   --json            Machine-readable output`,
-  check: `motionwright check [file.html] [--json] [--samples 10] [--transparent]
+  check: `givemotion check [file.html] [--json] [--samples 10] [--transparent]
   --at 7.5          Check one moment only (fast, after a fix)
   --from 6 --to 9   Check part of the video
   --fast            Fewer samples (quicker, may miss short problems)
@@ -101,8 +101,8 @@ const CMD_HELP = {
   Moving or fading text is skipped automatically; problems must last ~0.25s to count.
   Mark decorative copies with data-check="ignore" (or aria-hidden="true"), and text meant to be cut by the frame with data-check="crop-ok".
   Exit code 1 when there are errors. Warnings do not fail.`,
-  bundle: 'motionwright bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), mw-player.js and player.html.\n  Embed: <script src="mw-player.js"></script> <mw-player src="index.html" controls autoplay loop muted></mw-player>',
-  analyze: `motionwright analyze video.mp4 [-o dir] [--compare reference.mp4] [--json]
+  bundle: 'givemotion bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), gm-player.js and player.html.\n  Embed: <script src="gm-player.js"></script> <gm-player src="index.html" controls autoplay loop muted></gm-player>',
+  analyze: `givemotion analyze video.mp4 [-o dir] [--compare reference.mp4] [--json]
   Turns any video (a reference to learn from, or your own render) into a report:
   shots and their lengths, scene changes (cut, fade, dip, wipe-*, push-*, zoom, iris), camera per shot,
   a pacing strip, colors (background, accents), where the detail sits, scene changes on the beat,
@@ -112,14 +112,14 @@ const CMD_HELP = {
   --every 0.5       Seconds between pictures on sheet.png (default: fits ~48 pictures)
   --no-sheets       Only the report (faster)
   --no-audio        Skip the music analysis`,
-  captions: 'motionwright captions captions.json|captions.srt [--words 5] [--json]\n  Prints the caption pages the captions block will show (times and words), so you can pick --words before rendering.',
-  audio: 'motionwright audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
-  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment (screen box, opacity, transform, visible), and which clips are on screen with their local time.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).\n  --data f.json / --props \'{…}\'   Data for {{data.…}}',
-  dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
-  init: 'motionwright init [dir] [--force]',
-  add: 'motionwright add <block> [more…] [--dir blocks]',
-  blocks: 'motionwright blocks [--json]',
-  bench: 'motionwright bench [file.html] [--workers n] [--json]',
+  captions: 'givemotion captions captions.json|captions.srt [--words 5] [--json]\n  Prints the caption pages the captions block will show (times and words), so you can pick --words before rendering.',
+  audio: 'givemotion audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
+  inspect: 'givemotion inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment (screen box, opacity, transform, visible), and which clips are on screen with their local time.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).\n  --data f.json / --props \'{…}\'   Data for {{data.…}}',
+  dev: 'givemotion dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
+  init: 'givemotion init [dir] [--force]',
+  add: 'givemotion add <block> [more…] [--dir blocks]',
+  blocks: 'givemotion blocks [--json]',
+  bench: 'givemotion bench [file.html] [--workers n] [--json]',
 };
 
 const BOOLS = ['json', 'sheets', 'audio', 'cache', 'grid', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
@@ -265,14 +265,14 @@ async function cmdInspect(args) {
         console.log(args.json ? JSON.stringify(rows, null, 2) : ['t       x       y       w       h       opacity', ...rows.filter(Boolean).map((r) => [r.t, r.x, r.y, r.w, r.h, r.opacity].map((v) => String(v).padEnd(8)).join(''))].join('\n'));
         return;
       }
-      const nLog = await ctx.page.evaluate('mw.__logCount ? mw.__logCount() : 0');
+      const nLog = await ctx.page.evaluate('gm.__logCount ? gm.__logCount() : 0');
       await ctx.page.seek(+args.at);
-      const logs = await ctx.page.evaluate(`mw.__logs ? mw.__logs(${nLog}) : []`);
+      const logs = await ctx.page.evaluate(`gm.__logs ? gm.__logs(${nLog}) : []`);
       const r = await ctx.page.evaluate(`(() => [...document.querySelectorAll(${JSON.stringify(sel)})].slice(0, 40).map((e) => {
         const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
         let op = 1, shown = true; for (let c = e; c && c.nodeType === 1; c = c.parentElement) { const s2 = getComputedStyle(c); op *= +s2.opacity; if (s2.display === 'none' || s2.visibility === 'hidden') shown = false; }
         const r1 = (x) => Math.round(x * 10) / 10;
-        return { selector: mw.__selector(e), visible: shown && op > 0.01 && b.right > 0 && b.bottom > 0 && b.left < mw.width && b.top < mw.height, x: r1(b.left), y: r1(b.top), width: r1(b.width), height: r1(b.height), opacity: Math.round(op * 1000) / 1000, transform: cs.transform, translate: cs.translate, scale: cs.scale, rotate: cs.rotate, text: (e.textContent || '').trim().slice(0, 40) };
+        return { selector: gm.__selector(e), visible: shown && op > 0.01 && b.right > 0 && b.bottom > 0 && b.left < gm.width && b.top < gm.height, x: r1(b.left), y: r1(b.top), width: r1(b.width), height: r1(b.height), opacity: Math.round(op * 1000) / 1000, transform: cs.transform, translate: cs.translate, scale: cs.scale, rotate: cs.rotate, text: (e.textContent || '').trim().slice(0, 40) };
       }))()`);
       // Which clips are on screen, and what their own clock says (data-enter delays, burst `at`, scoped onFrame use it)
       const T = +args.at, r3 = (x) => Math.round(x * 1000) / 1000;
@@ -291,7 +291,7 @@ async function cmdAudio(args) {
   const { analyzeAudio, formatAudio } = await import('./audio-cli.js');
   try {
     const f = args._[0];
-    if (!f) throw new Error('Usage: motionwright audio music.mp3 [--json]');
+    if (!f) throw new Error('Usage: givemotion audio music.mp3 [--json]');
     const r = await analyzeAudio(f, { fps: args.fps ? +args.fps : 30, chrome: args.chrome });
     console.log(args.json ? JSON.stringify(r, null, 2) : formatAudio(r));
   } catch (e) { fail(e, args); }
@@ -299,18 +299,18 @@ async function cmdAudio(args) {
 
 async function cmdCaptions(args) {
   const f = args._[0];
-  if (!f) return fail(new Error('Usage: motionwright captions captions.json [--words 5]'), args);
+  if (!f) return fail(new Error('Usage: givemotion captions captions.json [--words 5]'), args);
   const file = resolve(f);
   if (!existsSync(file)) return fail(new Error(`Not found: ${file}`), args);
   // a tiny page next to the file with the captions block in it; the block itself does the paging
-  const page = join(dirname(file), `.mw-captions-${process.pid}.html`);
+  const page = join(dirname(file), `.gm-captions-${process.pid}.html`);
   const words = parseInt(args.words || '5', 10);
-  writeFileSync(page, `<!doctype html><html data-width="1080" data-height="1920" data-duration="1"><body><mw-include src="${join(PKG_ROOT, 'blocks', 'captions.html').split('\\').join('/')}" file="${basename(file)}" words="${words}"></mw-include></body></html>`);
+  writeFileSync(page, `<!doctype html><html data-width="1080" data-height="1920" data-duration="1"><body><gm-include src="${join(PKG_ROOT, 'blocks', 'captions.html').split('\\').join('/')}" file="${basename(file)}" words="${words}"></gm-include></body></html>`);
   const { openComposition } = await import('./render.js');
   let ctx;
   try {
     ctx = await openComposition(page, { ...commonOpts(args), mode: 'render' });
-    const pages = await ctx.page.evaluate(`(document.querySelector('.mwb-cap') || {}).__mwPages || []`);
+    const pages = await ctx.page.evaluate(`(document.querySelector('.gmb-cap') || {}).__gmPages || []`);
     if (args.json) return console.log(JSON.stringify(pages.map((p) => ({ start: p.start, end: p.end, text: p.words.map((w) => w.word).join(' ') })), null, 2));
     console.log(`${pages.length} caption pages with words="${words}":`);
     for (const p of pages) console.log(`  ${p.start.toFixed(2).padStart(6)}–${p.end.toFixed(2).padEnd(6)} ${p.words.map((w) => w.word).join(' ')}`);
@@ -321,7 +321,7 @@ async function cmdAnalyze(args) {
   const { analyzeVideo, formatAnalysis, compareAnalyses } = await import('./analyze.js');
   try {
     const f = args._[0];
-    if (!f) throw new Error('Usage: motionwright analyze video.mp4 [--compare reference.mp4] [-o dir] [--json]');
+    if (!f) throw new Error('Usage: givemotion analyze video.mp4 [--compare reference.mp4] [-o dir] [--json]');
     const o = { output: args.output, every: args.every, sheets: args.sheets, audio: args.audio, chrome: args.chrome };
     const r = await analyzeVideo(f, o);
     let cmp = null;
@@ -341,7 +341,7 @@ async function cmdBundle(args) {
   try {
     const r = bundle(inputOf(args), { output: args.output, data: loadData(args) });
     if (args.json) return console.log(JSON.stringify(r, null, 2));
-    console.log(`Standalone page: ${shortPath(r.page)} (${r.files} asset file${r.files === 1 ? '' : 's'} copied)\nPlayer demo:     ${shortPath(r.player)}\nEmbed anywhere:  <script src="mw-player.js"></script> <mw-player src="${relative(r.outDir, r.page).split('\\').join('/')}" controls></mw-player>\n(Open through a web server, not file://.)`);
+    console.log(`Standalone page: ${shortPath(r.page)} (${r.files} asset file${r.files === 1 ? '' : 's'} copied)\nPlayer demo:     ${shortPath(r.player)}\nEmbed anywhere:  <script src="gm-player.js"></script> <gm-player src="${relative(r.outDir, r.page).split('\\').join('/')}" controls></gm-player>\n(Open through a web server, not file://.)`);
   } catch (e) { fail(e, args); }
 }
 
@@ -359,13 +359,13 @@ async function cmdInit(args) {
   installSkill(dir, true);
   console.log(`Created ${shortPath(dir) || '.'}/
   index.html                 your video (edit me)
-  .claude/skills/motionwright/SKILL.md   how AI agents should use motionwright
+  .claude/skills/givemotion/SKILL.md   how AI agents should use givemotion
   AGENTS.md                  short pointer for other agents
 
 Next:
-  npx motionwright dev ${relative(process.cwd(), join(dir, 'index.html'))}      # preview
-  npx motionwright check ${relative(process.cwd(), join(dir, 'index.html'))}    # find problems
-  npx motionwright render ${relative(process.cwd(), join(dir, 'index.html'))} -o out/video.mp4`);
+  npx givemotion dev ${relative(process.cwd(), join(dir, 'index.html'))}      # preview
+  npx givemotion check ${relative(process.cwd(), join(dir, 'index.html'))}    # find problems
+  npx givemotion render ${relative(process.cwd(), join(dir, 'index.html'))} -o out/video.mp4`);
 }
 function copyDir(src, dst, force) {
   mkdirSync(dst, { recursive: true });
@@ -389,18 +389,18 @@ function blockList() {
 async function cmdBlocks(args) {
   const list = blockList();
   if (args.json) return console.log(JSON.stringify(list.map(({ file, ...r }) => r), null, 2));
-  console.log('Blocks (copy one with `motionwright add <name>`, then <mw-include src="blocks/<name>.html" …>):\n');
+  console.log('Blocks (copy one with `givemotion add <name>`, then <gm-include src="blocks/<name>.html" …>):\n');
   for (const b of list) console.log(`  ${b.name.padEnd(18)} ${b.description || ''}${b.params ? '\n' + ' '.repeat(21) + 'params: ' + b.params : ''}`);
 }
 async function cmdAdd(args) {
   const names = args._;
-  if (!names.length) { console.error('Usage: motionwright add <block> [more blocks] [--dir blocks]'); process.exitCode = 2; return; }
+  if (!names.length) { console.error('Usage: givemotion add <block> [more blocks] [--dir blocks]'); process.exitCode = 2; return; }
   const list = blockList();
   const dir = resolve(args.dir || 'blocks');
   mkdirSync(dir, { recursive: true });
   for (const n of names) {
     const b = list.find((x) => x.name === n);
-    if (!b) { console.error(`No block "${n}". Run \`motionwright blocks\`.`); process.exitCode = 1; continue; }
+    if (!b) { console.error(`No block "${n}". Run \`givemotion blocks\`.`); process.exitCode = 1; continue; }
     const dst = join(dir, `${n}.html`);
     copyFileSync(b.file, dst);
     console.log(`added ${relative(process.cwd(), dst)}`);
@@ -409,11 +409,11 @@ async function cmdAdd(args) {
 }
 
 function installSkill(dir, quiet) {
-  const src = join(PKG_ROOT, 'skills', 'motionwright', 'SKILL.md');
-  const targets = [join(dir, '.claude', 'skills', 'motionwright', 'SKILL.md')];
+  const src = join(PKG_ROOT, 'skills', 'givemotion', 'SKILL.md');
+  const targets = [join(dir, '.claude', 'skills', 'givemotion', 'SKILL.md')];
   for (const t of targets) { mkdirSync(dirname(t), { recursive: true }); copyFileSync(src, t); }
   const agents = join(dir, 'AGENTS.md');
-  const pointer = `# Video projects in this folder\n\nVideos here are made with motionwright (HTML → MP4). Read .claude/skills/motionwright/SKILL.md before editing a composition.\nLoop: edit HTML → \`npx motionwright check\` → \`npx motionwright snapshot\` (look at sheet.png) → \`npx motionwright render -o out/video.mp4\`.\n`;
+  const pointer = `# Video projects in this folder\n\nVideos here are made with givemotion (HTML → MP4). Read .claude/skills/givemotion/SKILL.md before editing a composition.\nLoop: edit HTML → \`npx givemotion check\` → \`npx givemotion snapshot\` (look at sheet.png) → \`npx givemotion render -o out/video.mp4\`.\n`;
   if (!existsSync(agents)) writeFileSync(agents, pointer);
   if (!quiet) console.log(`installed ${relative(process.cwd(), targets[0])}\nand ${relative(process.cwd(), agents)}`);
 }
@@ -429,9 +429,9 @@ async function cmdDoctor() {
   const { ffmpegInfo } = await import('./ffmpeg.js');
   const c = findChrome();
   console.log(`node        ${process.version}`);
-  console.log(`chrome      ${c ? `${c.path} (${c.kind === 'shell' ? 'headless shell: fast frame capture' : 'regular Chrome: screenshot capture'}) ${chromeVersion(c.path) || ''}` : 'not found → run `npx motionwright install`'}`);
+  console.log(`chrome      ${c ? `${c.path} (${c.kind === 'shell' ? 'headless shell: fast frame capture' : 'regular Chrome: screenshot capture'}) ${chromeVersion(c.path) || ''}` : 'not found → run `npx givemotion install`'}`);
   const f = ffmpegInfo();
-  console.log(`ffmpeg      ${f ? f.version + '  encoders: ' + Object.entries(f.encoders).filter(([, v]) => v).map(([k]) => k).join(', ') : 'not found → install ffmpeg (brew/apt/winget) or set MOTIONWRIGHT_FFMPEG'}`);
+  console.log(`ffmpeg      ${f ? f.version + '  encoders: ' + Object.entries(f.encoders).filter(([, v]) => v).map(([k]) => k).join(', ') : 'not found → install ffmpeg (brew/apt/winget) or set GIVEMOTION_FFMPEG'}`);
   if (f) {
     // Which video encoder a render uses here: the GPU one on a Mac once it has shown it encodes reproducibly
     const { wantsHardware, encoderPlan, encoderIsReproducible } = await import('./ffmpeg.js');
@@ -460,7 +460,7 @@ function shortPath(p) { const r = relative(process.cwd(), p); return r && !r.sta
 function fail(e, args) {
   if (args && args.json) console.log(JSON.stringify({ ok: false, error: e.message, issues: e.issues || undefined }, null, 2));
   else console.error(`✖ ${e.message}`);
-  if (process.env.MOTIONWRIGHT_DEBUG) console.error(e.stack);
+  if (process.env.GIVEMOTION_DEBUG) console.error(e.stack);
   process.exitCode = 1;
 }
 

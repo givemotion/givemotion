@@ -14,7 +14,7 @@ import { render, stills, check, snapshot, inspect } from '../src/api.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..');
 const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
-const tmp = () => mkdtempSync(join(tmpdir(), 'mw-test-'));
+const tmp = () => mkdtempSync(join(tmpdir(), 'gm-test-'));
 const md5 = (f) => createHash('md5').update(readFileSync(f)).digest('hex');
 const quiet = { quiet: true, log: () => {} };
 
@@ -126,7 +126,7 @@ test('transparent ProRes keeps alpha', { skip: skip || (!ffmpegInfo()?.encoders.
 test('every block renders without errors', { skip }, async () => {
   const d = tmp();
   const blocks = readdirSync(join(ROOT, 'blocks')).filter((b) => b.endsWith('.html'));
-  const body = blocks.map((b, i) => `<section class="scene" data-duration="1"><mw-include src="blocks/${b}"></mw-include></section>`).join('\n');
+  const body = blocks.map((b, i) => `<section class="scene" data-duration="1"><gm-include src="blocks/${b}"></gm-include></section>`).join('\n');
   mkdirSync(join(d, 'blocks'));
   for (const b of blocks) copyFileSync(join(ROOT, 'blocks', b), join(d, 'blocks', b));
   writeFileSync(join(d, 'cap.json'), '[{"word":"hi","start":0,"end":0.5}]');

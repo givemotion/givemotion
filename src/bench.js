@@ -1,4 +1,4 @@
-// `motionwright bench`: measure render speed on this machine, and show what each frame costs to composite.
+// `givemotion bench`: measure render speed on this machine, and show what each frame costs to composite.
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir, cpus, totalmem } from 'node:os';
@@ -10,11 +10,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export async function bench(input, opts = {}) {
   const file = input ? resolve(input) : join(HERE, '..', 'examples', 'bench', 'index.html');
   if (!existsSync(file)) throw new Error('Benchmark composition not found: ' + file);
-  const tmp = mkdtempSync(join(tmpdir(), 'mw-bench-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'gm-bench-'));
   const runs = [
     { name: 'naive: 1 browser, screenshots, PNG, no frame reuse', opts: { workers: 1, capture: 'screenshot', lossless: true, noReuse: true } },
-    { name: 'motionwright, 1 worker', opts: { workers: 1 } },
-    { name: `motionwright, ${opts.workers || 'auto'} workers`, opts: { workers: opts.workers } },
+    { name: 'givemotion, 1 worker', opts: { workers: 1 } },
+    { name: `givemotion, ${opts.workers || 'auto'} workers`, opts: { workers: opts.workers } },
   ];
   const results = [];
   const log = (s) => process.stderr.write(s + '\n');
@@ -63,13 +63,13 @@ function visibleArea(l, W, H) {
 }
 // In the page: a short name for the element behind a layer, and whether it is drawn at all (opacity 0 is skipped).
 const NODE_INFO = `function () {
-  const name = (el) => { let s = el.localName; if (el.id) s += '#' + el.id; const c = typeof el.className === 'string' ? el.className.trim().split(/\\s+/).filter((x) => x && !x.startsWith('mw-')).slice(0, 2) : []; if (c.length) s += '.' + c.join('.'); return s; };
+  const name = (el) => { let s = el.localName; if (el.id) s += '#' + el.id; const c = typeof el.className === 'string' ? el.className.trim().split(/\\s+/).filter((x) => x && !x.startsWith('gm-')).slice(0, 2) : []; if (c.length) s += '.' + c.join('.'); return s; };
   const el = this.nodeType === 1 ? this : this.parentElement;
   if (!el || el === document.documentElement || el === document.body) return { label: 'page', shown: true };
   let shown = true;
   for (let a = el; a && a.nodeType === 1; a = a.parentElement) { const cs = getComputedStyle(a); if (+cs.opacity === 0 || cs.display === 'none') { shown = false; break; } }
   if (shown && getComputedStyle(el).visibility === 'hidden' && !el.children.length) shown = false;
-  const label = el.hasAttribute('data-mw-internal') && el.parentElement ? name(el) + ' in ' + name(el.parentElement) : name(el);
+  const label = el.hasAttribute('data-gm-internal') && el.parentElement ? name(el) + ' in ' + name(el.parentElement) : name(el);
   return { label, shown };
 }`;
 async function nodeInfo(p, backendNodeId) {

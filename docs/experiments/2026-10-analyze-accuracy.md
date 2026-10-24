@@ -1,6 +1,6 @@
 # N5: `analyze` accuracy, measured
 
-October 2026, 4 vCPU shared cloud machine. Question: how often does `motionwright analyze` find the scene changes of a
+October 2026, 4 vCPU shared cloud machine. Question: how often does `givemotion analyze` find the scene changes of a
 video, and how often does it name the transition right? Before this there was only an impression ("busy motion
 graphics: about 3 of 5 found").
 
@@ -29,13 +29,13 @@ at the end ("first look" below), then two generic fixes followed that a new prob
 | plain-moves | tuning | wipe-right, cover-up, whip-down, zoom-through, push-down, cut |
 | shared-gradient | tuning | one drifting gradient behind see-through scenes, small cards: fade, push-right, wipe-up, zoom, cut, iris, whip-left |
 | busy-bg | tuning | a background that never stops (scrolling stripes, drifting dots, a turning ring) + motion in every scene: whip-up, iris, push-left, cut, dip, zoom-through |
-| camera-in-shot | tuning | `mw.camera` over a world (fits, a fast pan, a pull-out), `push + float`, `move-left 700`: 2 true changes, the camera moves must not count |
+| camera-in-shot | tuning | `gm.camera` over a world (fits, a fast pan, a pull-out), `push + float`, `move-left 700`: 2 true changes, the camera moves must not count |
 | vertical-short | tuning | the repo example (shared gradient, constant motion): whip-up, zoom-through, push-left, whip-left, iris |
 | product-promo | tuning | repo example: blur, slide-left, zoom, fade, iris |
 | held-other | held-out | flip, blur, morph, diagonal, clock, cover-left on gradient scenes |
 | held-busy | held-out | shared gradient + rising particles + floating camera, small content: whip-right, zoom-through, wipe-left, cut, fade, push-up, iris |
 | held-vertical | held-out | 720x1280, panels, camera drift: push-left, cut, whip-up, dip, wipe-down, zoom |
-| data-story, code-explainer, photosynthesis | held-out | repo examples (`mw.camera` worlds, slide-left between scenes) |
+| data-story, code-explainer, photosynthesis | held-out | repo examples (`gm.camera` worlds, slide-left between scenes) |
 
 ## Results
 
@@ -117,7 +117,7 @@ search (`globalMotion`, full-size exhaustive). Output is deterministic (same vid
 - **flip** → dip, **morph** → push-right (the carried element dominates), **clock** → push-left (held-other).
 - **Fast camera moves over a world** (a 0.7 s pan between two cards, a 1.2 s pull-out with cards entering) still read
   as push/zoom-out: camera-in-shot and code-explainer have 2-3 such extras. data-story's whip-left between two
-  `mw.camera` worlds is missed and found 0.5 s late.
+  `gm.camera` worlds is missed and found 0.5 s late.
 - held-busy: the fade and the iris are found late (an old scene removed at the end looks like a cut 0.5 s after the
   fade's middle).
 

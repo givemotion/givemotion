@@ -12,7 +12,7 @@
 //    animation) holds it at opacity 0 or visibility hidden until T and it is out of the flow (position absolute/fixed),
 //    or it is an SVG shape/group. Checked in the page at load, where that state can be seen.
 //  - nothing else can look at it: no script string, selector or data attribute names it, its ids or classes (camera
-//    targets, mw.connect ends, timeline targets, cursor targets, url(#id) references), no SVG group around it is named
+//    targets, gm.connect ends, timeline targets, cursor targets, url(#id) references), no SVG group around it is named
 //    (its box grows with it), no CSS sibling/:has()/counter/anchor rules exist, no script walks the DOM (children,
 //    textContent reads, scrollWidth...), and every script is a local file.
 //  - it holds no video, canvas, iframe, morph pair, blend mode or will-change, and no loop/freeze/speed remaps its time.
@@ -69,28 +69,28 @@ export async function pagePrints() {
   }
   const cutSrc = new Map(), cutLive = new Map();
   for (const t of tops) {
-    const tm = mw.timing(t.live);
+    const tm = gm.timing(t.live);
     t.units = [];
     if (fine.ok) fine.findUnits(t.el, t.live, tm.start, t.units);
-    t.units.forEach((u, k) => { const ph = `<mw-late ${k} ${u.s.tagName}>`; cutSrc.set(u.s, ph); cutLive.set(u.l, ph); });
+    t.units.forEach((u, k) => { const ph = `<gm-late ${k} ${u.s.tagName}>`; cutSrc.set(u.s, ph); cutLive.set(u.l, ph); });
     t.timing = tm;
   }
   for (const t of tops) {
     const units = [];
-    for (const u of t.units) units.push({ print: await hash(ser(u.s, cutSrc, false) + '\n' + ser(u.l, cutLive, true)), t: u.t, end: u.end, name: mw.__selector(u.l) });
-    out.clips.push({ print: await hash(ser(t.el, cutSrc, false) + '\n' + ser(t.live, cutLive, true)), start: t.timing.start, end: t.timing.end, name: mw.__selector(t.live), units });
+    for (const u of t.units) units.push({ print: await hash(ser(u.s, cutSrc, false) + '\n' + ser(u.l, cutLive, true)), t: u.t, end: u.end, name: gm.__selector(u.l) });
+    out.clips.push({ print: await hash(ser(t.el, cutSrc, false) + '\n' + ser(t.live, cutLive, true)), start: t.timing.start, end: t.timing.end, name: gm.__selector(t.live), units });
   }
   const topSrc = new Map(), topLive = new Map();
-  for (const t of tops) { topSrc.set(t.el, '<mw-clip>'); topLive.set(t.live, '<mw-clip>'); }
+  for (const t of tops) { topSrc.set(t.el, '<gm-clip>'); topLive.set(t.live, '<gm-clip>'); }
   // the source around the scenes, every script and style, the live page around the scenes, and what cameras measured
-  out.shared = ser(doc.documentElement, topSrc, false) + '\n' + code.join('\n') + '\n' + ser(document.documentElement, topLive, true) + '\n' + JSON.stringify(mw.__cameraContent ? mw.__cameraContent() : null);
+  out.shared = ser(doc.documentElement, topSrc, false) + '\n' + code.join('\n') + '\n' + ser(document.documentElement, topLive, true) + '\n' + JSON.stringify(gm.__cameraContent ? gm.__cameraContent() : null);
   return out;
 
   // Everything the late-element rule needs to know about the page; { ok: false, why } turns it off.
   async function setupFine(doc, SKIP) {
     const no = (why) => ({ ok: false, why });
-    const I = mw.__internal;
-    const snap = mw.__sourceEls ? mw.__sourceEls() : null;
+    const I = gm.__internal;
+    const snap = gm.__sourceEls ? gm.__sourceEls() : null;
     if (!I || !snap) return no('old runtime');
     // the page's elements as the runtime found them, matched to the HTML file element by element; where a script
     // added, removed or replaced children while the page loaded, nothing below that element is matched
@@ -128,7 +128,7 @@ export async function pagePrints() {
     for (const sh of document.styleSheets) { let rules; try { rules = sh.cssRules; } catch (e) { return no('a stylesheet from another site'); } visitRules(rules); }
     if (cssWhy) return no(cssWhy);
     // fit: 'content' measures everything in the world (late things too) once at load; that box is in the shared print
-    if (mw.__cameraContent && mw.__cameraContent().some((b) => !b)) return no("a camera's fit: 'content' was not measured at load");
+    if (gm.__cameraContent && gm.__cameraContent().some((b) => !b)) return no("a camera's fit: 'content' was not measured at load");
 
     // Scripts (inline, local files, loaded JSON): every string in them could be a selector, an id or a class
     const texts = [], urls = new Set();
@@ -137,17 +137,17 @@ export async function pagePrints() {
       if (a) {
         const u = new URL(a, location.href);
         if (u.origin !== location.origin) return no('a script from another site');
-        if (!u.pathname.startsWith('/__mw/')) urls.add(u.href);
+        if (!u.pathname.startsWith('/__gm/')) urls.add(u.href);
       } else {
         // data (the injected config with --data, JSON scripts) can hold selectors too, but is not code
         const type = (s.getAttribute('type') || '').trim().toLowerCase();
-        const data = /^\s*window\.__MW_CONFIG\b/.test(s.textContent) || !!(type && !/^(module|(text|application)\/(java|ecma)script)$/.test(type));
+        const data = /^\s*window\.__GM_CONFIG\b/.test(s.textContent) || !!(type && !/^(module|(text|application)\/(java|ecma)script)$/.test(type));
         texts.push({ text: s.textContent, el: s, data });
       }
     }
     for (const r of performance.getEntriesByType('resource')) {
       let u; try { u = new URL(r.name); } catch (e) { continue; }
-      if (u.pathname.startsWith('/__mw/')) continue;
+      if (u.pathname.startsWith('/__gm/')) continue;
       if (/\.(m?js|cjs|jsx|tsx?|json)$/i.test(u.pathname)) { if (u.origin !== location.origin) return no('a script from another site'); urls.add(u.href); }
     }
     for (const u of urls) {
@@ -219,7 +219,7 @@ export async function pagePrints() {
     };
     const clipOf = new Map(I.clips().map((c) => [c.el, c]));
     const morphs = (I.morphPairs ? I.morphPairs() : []).flatMap((p) => [p.from, p.to]).filter(Boolean);
-    const NOPE = new Set(['video', 'audio', 'iframe', 'object', 'embed', 'canvas', 'foreignobject', 'mw-include']);
+    const NOPE = new Set(['video', 'audio', 'iframe', 'object', 'embed', 'canvas', 'foreignobject', 'gm-include']);
     const SVG_DEFS = new Set(['defs', 'clippath', 'mask', 'marker', 'pattern', 'symbol', 'lineargradient', 'radialgradient', 'filter', 'text']);
 
     // when an element can first change a pixel (null: treat it as part of what holds it)
@@ -267,7 +267,7 @@ export async function pagePrints() {
     // fill: backwards), checked against the page as it is now (at load, before any of these animations started)
     function hiddenUntil(l, subL) {
       const anims = l.getAnimations().filter((a) => a.effect && a.effect.target === l && !a.effect.pseudoElement);
-      const base = mw.timing(l).start;
+      const base = gm.timing(l).start;
       const best = { opacity: null, visibility: null }, hiders = new Set();
       anims.forEach((a, i) => {
         const kf = a.effect.getKeyframes(), tm = a.effect.getTiming();

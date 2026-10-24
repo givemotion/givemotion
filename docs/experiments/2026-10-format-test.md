@@ -5,7 +5,7 @@ Question (from Leo): with plain HTML, will the AI have to build everything from 
 ## Setup
 - 4 briefs: bar chart race (data), product promo, vertical kinetic typography (beat-synced), 20s map explainer.
 - 3 versions of each, same engine, same docs except the authoring part:
-  H = HTML + ready-made blocks, N = HTML without blocks, R = React (JSX via `motionwright/react`).
+  H = HTML + ready-made blocks, N = HTML without blocks, R = React (JSX via `givemotion/react`).
 - 12 fresh Claude Opus agents, docs only, no engine source, ~25 min each, check/snapshot loop.
 - Judging: 8 fresh Opus judges (2 per brief), blind, random labels, 2 fps contact sheets of the rendered mp4s.
 

@@ -1,4 +1,4 @@
-// `motionwright audio <file>`: tempo, beats, bars and hits of a sound file, to plan cuts before writing code.
+// `givemotion audio <file>`: tempo, beats, bars and hits of a sound file, to plan cuts before writing code.
 import { existsSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { ensureChrome, FramePage } from './browser.js';
@@ -12,10 +12,10 @@ export async function analyzeAudio(file, opts = {}) {
   const page = new FramePage({ chrome, width: 320, height: 180, scale: 1 });
   try {
     await page.start();
-    await page.open(server.origin + '/__mw_analyze?fps=' + (opts.fps || 30) + '&src=' + encodeURIComponent(basename(file)), { mode: 'render' });
+    await page.open(server.origin + '/__gm_analyze?fps=' + (opts.fps || 30) + '&src=' + encodeURIComponent(basename(file)), { mode: 'render' });
     return await page.evaluate(`(async () => {
-      const a = window.__mwA; await a.ready;
-      if (!a.data) return { error: (mw.__issues()[0] || {}).message || 'analysis failed' };
+      const a = window.__gmA; await a.ready;
+      if (!a.data) return { error: (gm.__issues()[0] || {}).message || 'analysis failed' };
       const d = a.data, r3 = (x) => Math.round(x * 1000) / 1000;
       // loud and quiet parts (per second)
       const per = Math.round(d.fps), loud = [];
@@ -47,12 +47,12 @@ export function formatAudio(r) {
     `biggest hits (best moments for a logo or a cut): ${r.biggestHits.map((x) => x.toFixed(2) + 's').join(' ')}`,
     `quiet gaps (a breath before a drop): ${r.quietGaps.length ? r.quietGaps.map(([a, b]) => a.toFixed(2) + '-' + b.toFixed(2) + 's').join(', ') : 'none'}`,
     `loudness per second (0-1): ${r.loudnessPerSecond.join(' ')}`,
-    `In a composition: const music = mw.audio('${r.file}'); music.beats / music.downbeats / music.beat(t)`,
+    `In a composition: const music = gm.audio('${r.file}'); music.beats / music.downbeats / music.beat(t)`,
     ...(r.beats && r.beats.length > 2 ? (() => {
       const per = (r.beats[r.beats.length - 1] - r.beats[0]) / (r.beats.length - 1);
       const bar = r.downbeats && r.downbeats.length ? r.downbeats[0] : r.beats[0];
       return [`Beat grid you can use while building timelines (no waiting): <html data-bpm="${(60 / per).toFixed(3)}" data-beat-offset="${r.beats[0].toFixed(3)}" data-bar-offset="${bar.toFixed(3)}">`,
-        `  then mw.beat(8) = ${(r.beats[0] + 8 * per).toFixed(3)}s (beat 0 is the first beat), mw.bar(2) = ${(bar + 8 * per).toFixed(3)}s (4 beats per bar; set data-beats-per-bar to change)`];
+        `  then gm.beat(8) = ${(r.beats[0] + 8 * per).toFixed(3)}s (beat 0 is the first beat), gm.bar(2) = ${(bar + 8 * per).toFixed(3)}s (4 beats per bar; set data-beats-per-bar to change)`];
     })() : []),
   ].join('\n');
 }

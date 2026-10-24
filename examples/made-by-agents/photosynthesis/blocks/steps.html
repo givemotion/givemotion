@@ -1,40 +1,40 @@
 <!-- block:
 description: Horizontal process steps. A progress line fills and each step lights up in turn.
 params: steps (labels separated by |), every (seconds per step, default 0.9), first (delay, default 0.4), accent (color)
-usage: <mw-include src="blocks/steps.html" steps="Trigger|Fetch data|Ask AI|Send email" data-duration="5"></mw-include>
+usage: <gm-include src="blocks/steps.html" steps="Trigger|Fetch data|Ask AI|Send email" data-duration="5"></gm-include>
 -->
-<div class="mwb-steps" style="--accent:{{accent|#7c9cff}}" data-steps="{{steps|Plan|Build|Ship}}" data-every="{{every|0.9}}" data-first="{{first|0.4}}">
-  <div class="mwb-steps__track"><div class="mwb-steps__fill"></div></div>
-  <div class="mwb-steps__row"></div>
+<div class="gmb-steps" style="--accent:{{accent|#7c9cff}}" data-steps="{{steps|Plan|Build|Ship}}" data-every="{{every|0.9}}" data-first="{{first|0.4}}">
+  <div class="gmb-steps__track"><div class="gmb-steps__fill"></div></div>
+  <div class="gmb-steps__row"></div>
 </div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
   const names = root.dataset.steps.split('|').map((s) => s.trim()).filter(Boolean);
   const every = parseFloat(root.dataset.every) || 0.9, first = parseFloat(root.dataset.first) || 0;
-  const row = root.querySelector('.mwb-steps__row');
+  const row = root.querySelector('.gmb-steps__row');
   names.forEach((n, i) => {
     const el = document.createElement('div');
-    el.className = 'mwb-steps__step';
+    el.className = 'gmb-steps__step';
     el.style.setProperty('--d', (first + i * every) + 's');
-    el.innerHTML = `<div class="mwb-steps__dot">${i + 1}</div><div class="mwb-steps__name">${n.replace(/</g, '&lt;')}</div>`;
+    el.innerHTML = `<div class="gmb-steps__dot">${i + 1}</div><div class="gmb-steps__name">${n.replace(/</g, '&lt;')}</div>`;
     row.appendChild(el);
   });
   root.style.setProperty('--n', names.length);
-  const fill = root.querySelector('.mwb-steps__fill');
+  const fill = root.querySelector('.gmb-steps__fill');
   fill.style.animationDuration = (every * (names.length - 1)) + 's';
   fill.style.animationDelay = first + 's';
 })();
 </script>
 <style>
-.mwb-steps{position:relative;width:calc(var(--px)*1500);max-width:calc(var(--stage-w,1920px) - var(--px)*192)}
-.mwb-steps__track{position:absolute;left:calc(100% / var(--n) / 2);right:calc(100% / var(--n) / 2);top:calc(var(--px)*44);height:calc(var(--px)*6);border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
-.mwb-steps__fill{height:100%;background:var(--accent);transform-origin:left;animation:mwb-steps-fill 2s linear both}
-.mwb-steps__row{position:relative;display:grid;grid-template-columns:repeat(var(--n),1fr)}
-.mwb-steps__step{display:flex;flex-direction:column;align-items:center;gap:calc(var(--px)*22);text-align:center}
-.mwb-steps__dot{width:calc(var(--px)*94);height:calc(var(--px)*94);border-radius:50%;display:grid;place-items:center;font-size:calc(var(--px)*38);font-weight:800;
-  background:#151923;border:calc(var(--px)*4) solid rgba(255,255,255,.18);color:rgba(255,255,255,.6);animation:mwb-steps-on .45s var(--ease-out-back) var(--d) both}
-.mwb-steps__name{font-size:calc(var(--px)*36);font-weight:600;max-width:12ch;animation:fade-up .5s var(--ease-out-expo) var(--d) both}
-@keyframes mwb-steps-fill{from{scale:0 1}}
-@keyframes mwb-steps-on{from{scale:.8}to{background:var(--accent);border-color:var(--accent);color:#0b0d12;scale:1;box-shadow:0 0 0 calc(var(--px)*10) color-mix(in oklab,var(--accent),transparent 80%)}}
+.gmb-steps{position:relative;width:calc(var(--px)*1500);max-width:calc(var(--stage-w,1920px) - var(--px)*192)}
+.gmb-steps__track{position:absolute;left:calc(100% / var(--n) / 2);right:calc(100% / var(--n) / 2);top:calc(var(--px)*44);height:calc(var(--px)*6);border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+.gmb-steps__fill{height:100%;background:var(--accent);transform-origin:left;animation:gmb-steps-fill 2s linear both}
+.gmb-steps__row{position:relative;display:grid;grid-template-columns:repeat(var(--n),1fr)}
+.gmb-steps__step{display:flex;flex-direction:column;align-items:center;gap:calc(var(--px)*22);text-align:center}
+.gmb-steps__dot{width:calc(var(--px)*94);height:calc(var(--px)*94);border-radius:50%;display:grid;place-items:center;font-size:calc(var(--px)*38);font-weight:800;
+  background:#151923;border:calc(var(--px)*4) solid rgba(255,255,255,.18);color:rgba(255,255,255,.6);animation:gmb-steps-on .45s var(--ease-out-back) var(--d) both}
+.gmb-steps__name{font-size:calc(var(--px)*36);font-weight:600;max-width:12ch;animation:fade-up .5s var(--ease-out-expo) var(--d) both}
+@keyframes gmb-steps-fill{from{scale:0 1}}
+@keyframes gmb-steps-on{from{scale:.8}to{background:var(--accent);border-color:var(--accent);color:#0b0d12;scale:1;box-shadow:0 0 0 calc(var(--px)*10) color-mix(in oklab,var(--accent),transparent 80%)}}
 </style>

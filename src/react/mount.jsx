@@ -12,6 +12,6 @@ export function mount(M) {
   const Comp = M.default;
   if (typeof Comp !== 'function') throw new Error('The .jsx file must `export default function Video() { … }`.');
   const root = createRoot(el);
-  flushSync(() => root.render(<Comp data={window.mw.data} />));
-  window.mw.onFrame((t) => { flushSync(() => __setTime(t)); });
+  flushSync(() => root.render(<Comp data={window.gm.data} />));
+  window.gm.onFrame((t) => { flushSync(() => __setTime(t)); });
 }

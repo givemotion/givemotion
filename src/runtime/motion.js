@@ -1,12 +1,12 @@
-/* motionwright motion tools: mw.timeline (seekable tweens), paths, shapes, camera moves,
+/* givemotion motion tools: gm.timeline (seekable tweens), paths, shapes, camera moves,
  * shared-element morphs, fit-to-box text and scramble text. MIT License.
  * Everything here is a pure function of time, so any frame can be rendered in any order.
  */
 (function () {
   'use strict';
-  const mw = window.mw;
-  if (!mw || !mw.__internal || mw.timeline) return;
-  const I = mw.__internal;
+  const gm = window.gm;
+  if (!gm || !gm.__internal || gm.timeline) return;
+  const I = gm.__internal;
   const PX = I.PX;
   const SVGNS = 'http://www.w3.org/2000/svg';
   const r4 = (x) => Math.round(x * 10000) / 10000;
@@ -115,7 +115,7 @@
   // sampled once up front, so seeking stays cheap.
   let helperEl = null;
   function browserInterp(prop, from, to) {
-    if (!helperEl) { helperEl = document.createElement('div'); helperEl.setAttribute('data-mw-internal', ''); helperEl.style.cssText = 'position:absolute;left:-99999px;top:0;width:100px;height:100px;visibility:hidden;pointer-events:none'; document.body.appendChild(helperEl); }
+    if (!helperEl) { helperEl = document.createElement('div'); helperEl.setAttribute('data-gm-internal', ''); helperEl.style.cssText = 'position:absolute;left:-99999px;top:0;width:100px;height:100px;visibility:hidden;pointer-events:none'; document.body.appendChild(helperEl); }
     let a;
     try { a = I.real.animate.call(helperEl, [{ [prop]: from }, { [prop]: to }], { duration: 1000, fill: 'both' }); } catch (e) { return null; }
     a.pause();
@@ -255,12 +255,12 @@
       const P = (x, y) => `${r4(cx + x * s)} ${r4(cy + y * s)}`;
       return `M${P(0, 35)}C${P(-45, 5)} ${P(-55, -30)} ${P(-28, -42)}C${P(-12, -48)} ${P(0, -38)} ${P(0, -24)}C${P(0, -38)} ${P(12, -48)} ${P(28, -42)}C${P(55, -30)} ${P(45, 5)} ${P(0, 35)}Z`;
     },
-    // An organic blob. Animate it by passing t (seconds): mw.shape.blob(200, { t })
+    // An organic blob. Animate it by passing t (seconds): gm.shape.blob(200, { t })
     blob(r = 100, o = {}) {
       const { cx = 0, cy = 0, points = 8, wobble = 0.22, seed = 1, t = 0, speed = 0.35 } = o; const pts = [];
       for (let i = 0; i < points; i++) {
         const a = (i / points) * Math.PI * 2;
-        const k = 1 + wobble * (mw.noise(t * speed + i * 1.7, seed + i * 13.1) * 2 - 1);
+        const k = 1 + wobble * (gm.noise(t * speed + i * 1.7, seed + i * 13.1) * 2 - 1);
         pts.push([cx + Math.cos(a) * r * k, cy + Math.sin(a) * r * k]);
       }
       return smoothClosed(pts);
@@ -315,7 +315,7 @@
       return i;
     });
     const max = Math.max(...order) || 1;
-    const ez = o.ease ? mw.easing(o.ease) : null;
+    const ez = o.ease ? gm.easing(o.ease) : null;
     return order.map((k) => (ez ? ez(k / max) * max : k) * each);
   }
   function evalVal(v, i, el, list, rnd) {
@@ -369,7 +369,7 @@
     if (!(el instanceof Element)) return el[prop];
     if (prop.startsWith('attr:')) { const v = el.getAttribute(prop.slice(5)); return v == null ? 0 : (isNaN(+v) ? v : +v); }
     if (prop === 'autoAlpha') return parseFloat(getComputedStyle(el).opacity);
-    if (prop === 'draw') return el.__mwDraw ?? 1;
+    if (prop === 'draw') return el.__gmDraw ?? 1;
     if (prop === 'morph') return el.getAttribute('d') || '';
     if (prop === 'text') return el.textContent;
     if (prop === 'textContent' || prop === 'innerText') { const n = parseFloat(String(el.textContent).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; }
@@ -513,7 +513,7 @@
           continue;
         }
         const targets = toArray(op.t, this.scope);
-        if (!targets.length) I.report('warning', 'timeline-no-target', `mw.timeline: "${typeof op.t === 'string' ? op.t : 'target'}" matched nothing.`, null, 'Check the selector. Targets are looked up when the video starts, inside the timeline scope if one was given.');
+        if (!targets.length) I.report('warning', 'timeline-no-target', `gm.timeline: "${typeof op.t === 'string' ? op.t : 'target'}" matched nothing.`, null, 'Check the selector. Targets are looked up when the video starts, inside the timeline scope if one was given.');
         const start = this._pos(op.pos, cursor) + (timing.delay || 0);
         const dur = Math.max(0, +timing.duration || 0);
         const rep = timing.repeat === -1 ? Infinity : Math.max(0, timing.repeat | 0);
@@ -525,13 +525,13 @@
         targets.forEach((el, i) => {
           const rnd = I.makeRandom(1 + this.id * 1000003 + opIndex * 7919 + i * 104729);
           const s = start + offs[i];
-          const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: mw.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, seq: this.items.length };
+          const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: gm.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, seq: this.items.length };
           for (const k of keys) it.props[k] = { from: fromProps && k in fromProps ? evalVal(fromProps[k], i, el, targets, rnd) : undefined, to: toProps && k in toProps ? evalVal(toProps[k], i, el, targets, rnd) : undefined };
           this.items.push(it);
           // hideBefore: hidden (visibility) until this tween starts, then shown; nothing else changes
           if (timing.hideBefore) {
-            this.items.push({ el, i, n: targets.length, type: 'to', start: -1e6, dur: 0, rep: 0, rd: 0, yoyo: false, ease: mw.easing('linear'), props: { visibility: { from: undefined, to: 'hidden' } }, onUpdate: null, immediate: false, seq: this.items.length });
-            this.items.push({ el, i, n: targets.length, type: 'to', start: s, dur: 0, rep: 0, rd: 0, yoyo: false, ease: mw.easing('linear'), props: { visibility: { from: undefined, to: 'visible' } }, onUpdate: null, immediate: false, seq: this.items.length });
+            this.items.push({ el, i, n: targets.length, type: 'to', start: -1e6, dur: 0, rep: 0, rd: 0, yoyo: false, ease: gm.easing('linear'), props: { visibility: { from: undefined, to: 'hidden' } }, onUpdate: null, immediate: false, seq: this.items.length });
+            this.items.push({ el, i, n: targets.length, type: 'to', start: s, dur: 0, rep: 0, rd: 0, yoyo: false, ease: gm.easing('linear'), props: { visibility: { from: undefined, to: 'visible' } }, onUpdate: null, immediate: false, seq: this.items.length });
           }
           const end = s + (rep === Infinity ? dur : dur * (rep + 1) + rd * rep);
           last = Math.max(last, end);
@@ -568,9 +568,9 @@
           // not the resolved matrix: the same in every frame order and every worker.
           let tf = 'none';
           if (!(el instanceof SVGElement) || el instanceof SVGSVGElement) {
-            if (el.__mwOwnTf === undefined) el.__mwOwnTf = el.style.transform;
+            if (el.__gmOwnTf === undefined) el.__gmOwnTf = el.style.transform;
             const cur = el.style.transform;
-            el.style.transform = el.__mwOwnTf;
+            el.style.transform = el.__gmOwnTf;
             try { tf = String(el.computedStyleMap().get('transform')); } catch (e) { tf = getComputedStyle(el).transform; }
             el.style.transform = cur;
           }
@@ -778,8 +778,8 @@
   // ---------------------------------------------------------------------------
   function setupCameras() {
     for (const el of document.querySelectorAll('[data-camera]')) {
-      if (el.__mwCam) continue;
-      el.__mwCam = true;
+      if (el.__gmCam) continue;
+      el.__gmCam = true;
       const c = I.nearestClip(el);
       const cs = c ? c.start : 0, ce = c && isFinite(c.end) ? c.end : I.comp.duration;
       const moves = el.getAttribute('data-camera').split(/[;,]/).map((s) => s.trim()).filter(Boolean);
@@ -819,14 +819,14 @@
             const freq = isShake ? 9 : name === 'handheld' ? 0.9 : 0.25;
             const step = isShake ? 1 / I.comp.fps : 1 / 10;
             const n = Math.max(2, Math.ceil(dur / step) + 1);
-            const seed = (el.__mwSeed = (el.__mwSeed || 0) + 1) * 17 + name.length;
+            const seed = (el.__gmSeed = (el.__gmSeed || 0) + 1) * 17 + name.length;
             const s = isShake ? 1 + (2 * a) / short : 1 + (2 * a) / short + 0.01;
             kf = [];
             for (let i = 0; i < n; i++) {
               const u = Math.min(dur, i * step);
               const t = u * freq;
               const env = isShake ? Math.sin(Math.min(1, u / dur) * Math.PI) * (1 - 0.4 * (u / dur)) : 1;
-              const nx = mw.noise(t, seed) * 2 - 1, ny = mw.noise(t + 31.7, seed + 3) * 2 - 1, nr = mw.noise(t + 77.1, seed + 9) * 2 - 1;
+              const nx = gm.noise(t, seed) * 2 - 1, ny = gm.noise(t + 31.7, seed + 3) * 2 - 1, nr = gm.noise(t + 77.1, seed + 9) * 2 - 1;
               const sc = isShake ? 1 + (s - 1) * env : s;
               kf.push({ transform: `translate(${r4(nx * a * env)}px, ${r4(ny * a * env)}px) rotate(${r4(nr * (isShake ? 0.6 : 0.35) * env)}deg) scale(${r4(sc)})`, offset: Math.min(1, u / dur) });
             }
@@ -841,7 +841,7 @@
         const a = I.real.animate.call(el, kf, { duration: dur * 1000, delay: from * 1000, easing: I.cssEasing(ease), fill: name === 'shake' ? 'none' : 'both', composite: 'add' });
         a.pause();
         // register with the runtime clock
-        a.__mwCamera = true;
+        a.__gmCamera = true;
         I.addOwnAnim(a, cs);
       }
     }
@@ -856,8 +856,8 @@
   function setupMorphs() {
     for (const pair of I.morphPairs()) {
       const A = pair.from, B = pair.to;
-      if (B.__mwMorphed) continue;
-      B.__mwMorphed = true;
+      if (B.__gmMorphed) continue;
+      B.__gmMorphed = true;
       const map = new Map();
       for (const e of A.querySelectorAll('[data-morph]')) map.set(e.getAttribute('data-morph'), e);
       let found = 0;
@@ -867,7 +867,7 @@
         found++;
         // translate/scale do nothing on an inline box (a <span> or <b> in a line of text): make it an inline-block
         for (const e of [ea, eb]) if (!(e instanceof SVGElement) && getComputedStyle(e).display === 'inline') e.style.display = 'inline-block';
-        morphs.push({ a: ea, b: eb, sceneB: B, dur: pair.dur, ease: mw.easing(pair.ease), on: false });
+        morphs.push({ a: ea, b: eb, sceneB: B, dur: pair.dur, ease: gm.easing(pair.ease), on: false });
       }
       // Fade out everything in the old scene except the morphing elements (they must stay solid).
       const ca = I.nearestClip(A);
@@ -879,7 +879,7 @@
         const timing = { duration: pair.dur * 1000 * 0.7, delay: Math.max(0, ca.end - ca.start - pair.dur) * 1000, easing: 'ease-in-out', fill: 'forwards' };
         const fadeKids = (node) => {
           for (const ch of node.children) {
-            if (I.SKIP_TAGS.has(ch.tagName) || ch.hasAttribute('data-mw-internal')) continue;
+            if (I.SKIP_TAGS.has(ch.tagName) || ch.hasAttribute('data-gm-internal')) continue;
             if (keep.includes(ch)) continue;
             // wrappers that draw nothing themselves (display: contents, e.g. blocks) pass the fade to their children
             if (getComputedStyle(ch).display === 'contents') { fadeKids(ch); continue; }
@@ -978,17 +978,17 @@
   // the element its own layer, and a scaled layer rasterizes a hair differently in a fresh worker.)
   function setFade(el, o) {
     const st = el.style;
-    if (el.__mwFadeV != null) {
+    if (el.__gmFadeV != null) {
       // still the value written last frame: put the page's own value back (if the page wrote since, keep that)
-      if (st.getPropertyValue('opacity') === el.__mwFadeV && st.getPropertyPriority('opacity') === 'important') {
-        if (el.__mwFadeOwn) st.setProperty('opacity', el.__mwFadeOwn); else st.removeProperty('opacity');
+      if (st.getPropertyValue('opacity') === el.__gmFadeV && st.getPropertyPriority('opacity') === 'important') {
+        if (el.__gmFadeOwn) st.setProperty('opacity', el.__gmFadeOwn); else st.removeProperty('opacity');
       }
-      el.__mwFadeV = null;
+      el.__gmFadeV = null;
     }
     if (o == null || o >= 1) return;
-    el.__mwFadeOwn = st.getPropertyValue('opacity');
+    el.__gmFadeOwn = st.getPropertyValue('opacity');
     st.setProperty('opacity', String(r4(Math.max(0, o) * (parseFloat(getComputedStyle(el).opacity) || 0))), 'important');
-    el.__mwFadeV = st.getPropertyValue('opacity');
+    el.__gmFadeV = st.getPropertyValue('opacity');
   }
   // What a morph element shows: its text and the kind and geometry of its pictures (SVG shapes, images).
   function morphSig(el) {
@@ -1000,14 +1000,14 @@
   }
 
   // ---------------------------------------------------------------------------
-  // fly (tl.fly / mw.fly): where an element must start so that it sits on another element's box.
+  // fly (tl.fly / gm.fly): where an element must start so that it sits on another element's box.
   // ---------------------------------------------------------------------------
   // Measured once, while loading (the same in every worker), where both elements rest: clips that are not on screen
   // yet are shown for a moment, and the animations on both and on their parents (entrances, camera pushes) are taken
   // off for the measure. Returns the x/y (in the target's own parent units) and scaleX/scaleY that put it on `src`.
   function flyOffset(el, src, size) {
     const hidden = [], held = [], tfs = [];
-    for (const e of [el, src]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-mw-hidden')) { hidden.push(p); p.removeAttribute('data-mw-hidden'); }
+    for (const e of [el, src]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-gm-hidden')) { hidden.push(p); p.removeAttribute('data-gm-hidden'); }
     try {
       try {
         for (const a of document.getAnimations()) {
@@ -1016,7 +1016,7 @@
         }
       } catch (e) {}
       // a timeline's own transform written in an earlier frame (when built late): back to the element's CSS
-      for (const e of [el, src]) for (let p = e; p && p.nodeType === 1; p = p.parentElement) if (p.__mwOwnTf !== undefined && p.style.transform !== p.__mwOwnTf) { tfs.push([p, p.style.transform]); p.style.transform = p.__mwOwnTf; }
+      for (const e of [el, src]) for (let p = e; p && p.nodeType === 1; p = p.parentElement) if (p.__gmOwnTf !== undefined && p.style.transform !== p.__gmOwnTf) { tfs.push([p, p.style.transform]); p.style.transform = p.__gmOwnTf; }
       const H = el.getBoundingClientRect(), F = src.getBoundingClientRect();
       if (!H.width || !H.height || !F.width || !F.height) return null;
       let k = 1, ox = H.left + H.width / 2, oy = H.top + H.height / 2;
@@ -1038,14 +1038,14 @@
     } finally {
       for (const [p, v] of tfs) p.style.transform = v;
       for (const [a, eff, ct] of held) { try { a.effect = eff; if (ct != null) a.currentTime = ct; } catch (e) {} }
-      for (const p of hidden) p.setAttribute('data-mw-hidden', '');
+      for (const p of hidden) p.setAttribute('data-gm-hidden', '');
     }
   }
 
   // ---------------------------------------------------------------------------
-  // mw.camera(world): a virtual camera over a big "world" layer. Shots frame elements,
+  // gm.camera(world): a virtual camera over a big "world" layer. Shots frame elements,
   // follow moving ones, and blend smoothly from one to the next. Pure function of time.
-  //   const cam = mw.camera('#world');
+  //   const cam = gm.camera('#world');
   //   cam.shot(0, { fit: ['#a', '#b'], padding: 80 })
   //      .shot(2, { follow: '#package', zoom: 1.8, duration: 1.2 })
   //      .shot(12, { fit: '#route', duration: 1.5, ease: 'in-out-quart' })
@@ -1056,31 +1056,31 @@
   // The box of an element that is not displayed right now (its clip starts later), in world coordinates: shown for a
   // moment to be measured, then remembered (rounded, so every worker gets the same numbers).
   function hiddenBox(e, M) {
-    if (e.__mwHiddenBox !== undefined) return e.__mwHiddenBox;
+    if (e.__gmHiddenBox !== undefined) return e.__gmHiddenBox;
     const hidden = [];
-    for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
+    for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
     let box = null;
     if (e.getClientRects().length) {
       const c = e.getBoundingClientRect(), r2 = (x) => Math.round(x * 100) / 100;
       box = { l: r2((c.left - M.ox) / M.k), t: r2((c.top - M.oy) / M.k), r: r2((c.right - M.ox) / M.k), b: r2((c.bottom - M.oy) / M.k) };
     }
-    for (const a of hidden) a.setAttribute('data-mw-hidden', '');
-    return (e.__mwHiddenBox = hidden.length ? box : null);
+    for (const a of hidden) a.setAttribute('data-gm-hidden', '');
+    return (e.__gmHiddenBox = hidden.length ? box : null);
   }
   class Camera {
     constructor(world, opts = {}) {
       this.spec = world; this.opts = opts; this.shots = []; this.shakes = [];
       cameras.push(this);
     }
-    get world() { if (!this._w) { this._w = typeof this.spec === 'string' ? document.querySelector(this.spec) : this.spec; if (!this._w) I.report('error', 'camera-no-world', `mw.camera: "${this.spec}" matched nothing.`, null); } return this._w; }
+    get world() { if (!this._w) { this._w = typeof this.spec === 'string' ? document.querySelector(this.spec) : this.spec; if (!this._w) I.report('error', 'camera-no-world', `gm.camera: "${this.spec}" matched nothing.`, null); } return this._w; }
     shot(at, s) { this.shots.push(Object.assign({ at: +at || 0, duration: 1, ease: 'in-out-cubic', padding: 60 }, s)); this.shots.sort((a, b) => a.at - b.at); return this; }
     shake(at, o = {}) { this.shakes.push(Object.assign({ at: +at || 0, duration: 0.4, amount: 10, freq: 18 }, o)); return this; }
     _markers() {
       const w = this.world;
       if (!this._m || !this._m[0].isConnected) {
-        const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; w.appendChild(d); return d; };
+        const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; w.appendChild(d); return d; };
         this._m = [mk(0), mk(1000)];
-        w.setAttribute('data-mw-camera-world', '');
+        w.setAttribute('data-gm-camera-world', '');
         if (getComputedStyle(w).position === 'static') w.style.position = 'relative';
         w.style.transformOrigin = '0 0';
       }
@@ -1099,18 +1099,18 @@
       if (target === 'content') {
         if (this._contentBox) return this._contentBox;
         const hidden = [];
-        for (let a = w; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
-        for (const a of w.querySelectorAll('[data-mw-hidden]')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
-        const els = this._content || (this._content = [...w.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon,text,img,canvas,video,svg image')].concat([...w.querySelectorAll('*')].filter((e) => !(e instanceof SVGElement) && [...e.childNodes].some((n) => n.nodeType === 3 && n.data.trim()))).filter((e) => !e.closest('[data-mw-internal],defs,clipPath,mask,marker,pattern,[data-mw-sketch-guide],.mw-sketch-mark,.mw-connect,[data-check~="ignore"]')));
+        for (let a = w; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+        for (const a of w.querySelectorAll('[data-gm-hidden]')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+        const els = this._content || (this._content = [...w.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon,text,img,canvas,video,svg image')].concat([...w.querySelectorAll('*')].filter((e) => !(e instanceof SVGElement) && [...e.childNodes].some((n) => n.nodeType === 3 && n.data.trim()))).filter((e) => !e.closest('[data-gm-internal],defs,clipPath,mask,marker,pattern,[data-gm-sketch-guide],.gm-sketch-mark,.gm-connect,[data-check~="ignore"]')));
         let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
         for (const e of els) { const q = e.getBoundingClientRect(); if (!q.width && !q.height) continue; l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); }
-        for (const a of hidden) a.setAttribute('data-mw-hidden', '');
+        for (const a of hidden) a.setAttribute('data-gm-hidden', '');
         const r4b = (x) => Math.round(x * 100) / 100;
         return (this._contentBox = l === Infinity ? { x: 0, y: 0, w: w.offsetWidth, h: w.offsetHeight } : { x: r4b((l - M.ox) / M.k), y: r4b((t - M.oy) / M.k), w: r4b((r - l) / M.k), h: r4b((b - t) / M.k) });
       }
       const els = (Array.isArray(target) ? target : [target]).flatMap((t) => typeof t === 'string' ? [...w.querySelectorAll(t)] : t ? [(I.replaced && I.replaced.get(t)) || t] : []);
       if (!els.length) {
-        if (!this._warned) { this._warned = true; I.report('warning', 'camera-no-target', `mw.camera: shot target ${JSON.stringify(typeof target === 'string' ? target : String(target))} matched nothing inside the world, so that shot does nothing.`, null, "Use a selector of elements inside the world, a list of them, {x, y, w, h}, or fit: 'all' for the whole world."); }
+        if (!this._warned) { this._warned = true; I.report('warning', 'camera-no-target', `gm.camera: shot target ${JSON.stringify(typeof target === 'string' ? target : String(target))} matched nothing inside the world, so that shot does nothing.`, null, "Use a selector of elements inside the world, a list of them, {x, y, w, h}, or fit: 'all' for the whole world."); }
         return null;
       }
       let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
@@ -1140,7 +1140,7 @@
       if (sh.fit != null) {
         // padding is screen px on each side; never let it eat more than 40% of the frame
         const pad = Math.max(0, Math.min(sh.padding, view.w * 0.4, view.h * 0.4));
-        if (pad < sh.padding && !sh.__padWarned) { sh.__padWarned = true; I.report('warning', 'camera-padding', `mw.camera shot at ${sh.at}s: padding ${sh.padding} is more than 40% of the frame, so it was reduced to ${Math.round(pad)}.`, null, 'padding is in screen px on each side of the framed element (the frame is ' + Math.round(view.w) + 'x' + Math.round(view.h) + '). To show the element smaller, use a smaller padding with zoom below 1, or center + zoom.'); }
+        if (pad < sh.padding && !sh.__padWarned) { sh.__padWarned = true; I.report('warning', 'camera-padding', `gm.camera shot at ${sh.at}s: padding ${sh.padding} is more than 40% of the frame, so it was reduced to ${Math.round(pad)}.`, null, 'padding is in screen px on each side of the framed element (the frame is ' + Math.round(view.w) + 'x' + Math.round(view.h) + '). To show the element smaller, use a smaller padding with zoom below 1, or center + zoom.'); }
         zoom = Math.min((view.w - 2 * pad) / Math.max(1, box.w), (view.h - 2 * pad) / Math.max(1, box.h)) * (sh.zoom ?? 1);
       }
       zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom ?? 1));
@@ -1166,7 +1166,7 @@
       if (i > 0 && t < cur.at + cur.duration) {
         const prevS = this._state(this.shots[i - 1], M, view);
         if (prevS) {
-          const p = mw.easing(cur.ease)(Math.max(0, Math.min(1, (t - cur.at) / Math.max(0.001, cur.duration))));
+          const p = gm.easing(cur.ease)(Math.max(0, Math.min(1, (t - cur.at) / Math.max(0.001, cur.duration))));
           // zoom blends in log space so it feels even
           const z = Math.exp(Math.log(prevS.zoom) + (Math.log(st.zoom) - Math.log(prevS.zoom)) * p);
           st = { cx: prevS.cx + (st.cx - prevS.cx) * p, cy: prevS.cy + (st.cy - prevS.cy) * p, zoom: z, rot: prevS.rot + (st.rot - prevS.rot) * p };
@@ -1177,7 +1177,7 @@
         const lt = t - sk.at;
         if (lt < 0 || lt > sk.duration) continue;
         const env = Math.sin((lt / sk.duration) * Math.PI) * (1 - lt / sk.duration * 0.5);
-        sx += (mw.noise(lt * sk.freq, 11) * 2 - 1) * sk.amount * env; sy += (mw.noise(lt * sk.freq, 23) * 2 - 1) * sk.amount * env; sr += (mw.noise(lt * sk.freq, 37) * 2 - 1) * sk.amount * 0.05 * env;
+        sx += (gm.noise(lt * sk.freq, 11) * 2 - 1) * sk.amount * env; sy += (gm.noise(lt * sk.freq, 23) * 2 - 1) * sk.amount * env; sr += (gm.noise(lt * sk.freq, 37) * 2 - 1) * sk.amount * 0.05 * env;
       }
       const ox = w.offsetLeft, oy = w.offsetTop;
       const tx = view.w / 2 - ox - st.zoom * st.cx + sx, ty = view.h / 2 - oy - st.zoom * st.cy + sy;
@@ -1196,7 +1196,7 @@
     }
   }
   // ---------------------------------------------------------------------------
-  // mw.path.travel(el, path, { stops, ease, rotate }): move an element along an SVG path.
+  // gm.path.travel(el, path, { stops, ease, rotate }): move an element along an SVG path.
   //   stops: [[time, progress], ...] e.g. [[0, 0], [1.5, 0.3], [2.5, 0.3], [4, 1]] (holds where progress repeats)
   // The path is converted to the element's own coordinates once, then played by the browser
   // (CSS offset-path), so it is exact and cheap. Times are relative to the element's clip.
@@ -1206,10 +1206,10 @@
     const el = typeof tr.el === 'string' ? document.querySelector(tr.el) : (I.replaced && I.replaced.get(tr.el)) || tr.el;
     let pth = typeof tr.path === 'string' && !/^\s*[Mm]/.test(tr.path) ? document.querySelector(tr.path) : tr.path;
     // a sketched shape (data-sketch) is a group: travel along its exact shape
-    if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-mw-sketch-guide]') || pth.querySelector('path') || pth;
-    if (!el) { I.report('error', 'travel-no-element', `mw.path.travel: "${tr.el}" matched nothing.`, null); return; }
-    // along an mw.connect arrow: its path changes every frame, so sketch.js lays it out each frame (I.liveTravels)
-    const conn = tr.path && tr.path.__mwConnector;
+    if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-gm-sketch-guide]') || pth.querySelector('path') || pth;
+    if (!el) { I.report('error', 'travel-no-element', `gm.path.travel: "${tr.el}" matched nothing.`, null); return; }
+    // along an gm.connect arrow: its path changes every frame, so sketch.js lays it out each frame (I.liveTravels)
+    const conn = tr.path && tr.path.__gmConnector;
     if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth, conn);
     if (conn) liveTravels.push({ kind: 'travel', tr, el, conn });
     else setupTravelPath(tr, el, pth);
@@ -1218,7 +1218,7 @@
   }
   function setupTravelPath(tr, el, pth) {
     const cb = el.offsetParent || el.parentElement;
-    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
+    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
     const m0 = mk(0), m1 = mk(1000);
     const a = m0.getBoundingClientRect(), b = m1.getBoundingClientRect();
     const k = (b.left - a.left) / 1000 || 1;
@@ -1255,7 +1255,7 @@
     const an = I.real.animate.call(el, kf, { duration: total * 1000, delay: T0 * 1000, fill: 'both' });
     an.pause(); I.addOwnAnim(an, c ? c.start : 0);
     tr.done = true;
-    tr.stops = stops; tr.easeFn = (i) => mw.easing(Array.isArray(ease) ? ease[i] || 'linear' : ease);
+    tr.stops = stops; tr.easeFn = (i) => gm.easing(Array.isArray(ease) ? ease[i] || 'linear' : ease);
   }
   // SVG shapes (a <circle>, a <g>) travel in their own SVG's coordinates, moved by a transform each frame.
   const svgTravels = [];
@@ -1312,7 +1312,7 @@
     // Stops and easing are known right away, so .progress(t) is the same before and after the video starts.
     const ease0 = opts.ease || 'in-out-cubic';
     tr.stops = (opts.stops || [[0, 0], [opts.duration || 2, 1]]).map((s0) => (Array.isArray(s0) ? s0 : [s0.at, s0.to])).sort((x, y) => x[0] - y[0]);
-    tr.easeFn = (i) => mw.easing(Array.isArray(ease0) ? ease0[i] || 'linear' : ease0);
+    tr.easeFn = (i) => gm.easing(Array.isArray(ease0) ? ease0[i] || 'linear' : ease0);
     travels.push(tr);
     if (initDone) setupTravel(tr);
     // progress (0..1) at local time t, e.g. to draw the route behind the traveler
@@ -1327,7 +1327,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // mw.burst(target, { at, kind, x, y, count, colors, … }): confetti, sparks, dust or bubbles
+  // gm.burst(target, { at, kind, x, y, count, colors, … }): confetti, sparks, dust or bubbles
   // thrown from a point at a moment. Pure physics of time: seekable, same in every render.
   // ---------------------------------------------------------------------------
   const bursts = [];
@@ -1345,13 +1345,13 @@
   }
   function setupBurst(b) {
     const el = typeof b.target === 'string' ? document.querySelector(b.target) : b.target;
-    if (!el) { I.report('error', 'burst-no-target', `mw.burst: "${b.target}" matched nothing.`, null); return; }
+    if (!el) { I.report('error', 'burst-no-target', `gm.burst: "${b.target}" matched nothing.`, null); return; }
     const o = Object.assign({ kind: 'confetti', at: 0, x: '50%', y: '50%', colors: ['#ff5c8a', '#ffd166', '#06d6a0', '#118ab2', '#a78bfa', '#ffffff'], seed: bursts.indexOf(b) + 1 }, BURST_KINDS[b.opts.kind || 'confetti'] || BURST_KINDS.confetti, b.opts);
     const find = (v) => (typeof v === 'string' ? el.querySelector(v) || document.querySelector(v) : v);
     const behind = o.behind ? find(o.behind) : null;
-    if (o.behind && !behind) I.report('warning', 'burst-no-target', `mw.burst: behind "${o.behind}" matched nothing.`, null);
+    if (o.behind && !behind) I.report('warning', 'burst-no-target', `gm.burst: behind "${o.behind}" matched nothing.`, null);
     b.fromEl = o.from ? find(o.from) : null;
-    if (o.from && !b.fromEl) I.report('warning', 'burst-no-target', `mw.burst: from "${o.from}" matched nothing.`, null);
+    if (o.from && !b.fromEl) I.report('warning', 'burst-no-target', `gm.burst: from "${o.from}" matched nothing.`, null);
     // Where the canvas lives: next to `behind` (just before it, so it paints under it in the same layer), else in the
     // camera world of the `from` element (so the particles pan and zoom with the camera), else in the target.
     const worldOf = (n) => { const c = n && cameras.find((cm) => cm.world && cm.world !== n && cm.world.contains(n)); return c ? c.world : null; };
@@ -1359,7 +1359,7 @@
     const host = under ? under.parentElement : worldOf(b.fromEl) || el;
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     const cv = document.createElement('canvas');
-    cv.setAttribute('data-mw-internal', '');
+    cv.setAttribute('data-gm-internal', '');
     let z = o.zIndex ?? o.z ?? (host === el ? 30 : 'auto');
     if (behind) {
       const bcs = getComputedStyle(under);
@@ -1368,13 +1368,13 @@
       host.insertBefore(cv, under);
     } else host.appendChild(cv);
     // two markers map screen points to the host's own (untransformed) coordinates
-    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; host.appendChild(d); return d; };
+    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; host.appendChild(d); return d; };
     b.marks = [mk(0), mk(1000)];
     // When does it fire (video time)? Warn if that is outside the time its element is on screen.
     const c = I.nearestClip(el);
     const T0 = o.global ? o.at : (c ? c.start : 0) + o.at;
     b.t0 = T0;
-    if (c && (T0 < c.start - 1e-6 || T0 >= c.end)) I.report('warning', 'burst-outside-clip', `mw.burst on ${I.selectorOf ? I.selectorOf(el) : b.target} fires at ${T0.toFixed(2)}s of the video, but that element is only on screen from ${c.start.toFixed(2)}s to ${c.end.toFixed(2)}s.`, null, '`at` counts from the start of the element\'s scene. For a video time (a beat, a voice word) pass { at: 4.2, global: true }.');
+    if (c && (T0 < c.start - 1e-6 || T0 >= c.end)) I.report('warning', 'burst-outside-clip', `gm.burst on ${I.selectorOf ? I.selectorOf(el) : b.target} fires at ${T0.toFixed(2)}s of the video, but that element is only on screen from ${c.start.toFixed(2)}s to ${c.end.toFixed(2)}s.`, null, '`at` counts from the start of the element\'s scene. For a video time (a beat, a voice word) pass { at: 4.2, global: true }.');
     const px = PX();
     const rnd = I.makeRandom(1 + o.seed * 7919);
     const parts = [];
@@ -1480,7 +1480,7 @@
         else if (tk.length === 3) every = parseFloat(tk.shift()) || 1;
         return { el, every, amount: tk[0] != null ? parseFloat(tk[0]) : 0.06, decay: tk[1] != null ? parseFloat(tk[1]) : 0.25, last: null };
       });
-      if (pulses.length) pulses.grid = { b0: mw.beat(0), period: mw.beat(1) - mw.beat(0), bar0: mw.bar(0), barLen: mw.bar(1) - mw.bar(0) };
+      if (pulses.length) pulses.grid = { b0: gm.beat(0), period: gm.beat(1) - gm.beat(0), bar0: gm.bar(0), barLen: gm.bar(1) - gm.bar(0) };
     }
     if (!pulses.length) return false;
     const g = pulses.grid;
@@ -1504,8 +1504,8 @@
   // ---------------------------------------------------------------------------
   function setupFit() {
     for (const el of document.querySelectorAll('[data-fit]')) {
-      if (el.__mwFit) continue;
-      el.__mwFit = true;
+      if (el.__gmFit) continue;
+      el.__gmFit = true;
       const mode = (el.getAttribute('data-fit') || 'shrink').trim() || 'shrink';
       const cs = getComputedStyle(el);
       const fs0 = parseFloat(cs.fontSize);
@@ -1543,8 +1543,8 @@
   const scramblers = [];
   function setupScramble() {
     for (const el of document.querySelectorAll('[data-scramble]')) {
-      if (el.__mwScr) continue;
-      el.__mwScr = true;
+      if (el.__gmScr) continue;
+      el.__gmScr = true;
       const text = el.textContent;
       const dur = I.parseTime(el.getAttribute('data-scramble'), el, 'data-scramble') || 1;
       const delay = I.parseTime(el.getAttribute('data-scramble-delay'), el, 'data-scramble-delay') || 0;
@@ -1579,9 +1579,9 @@
   const animImgs = [];
   async function setupAnimatedImages() {
     if (typeof ImageDecoder === 'undefined') return;
-    const imgs = [...document.querySelectorAll('img')].filter((im) => !im.__mwAnim && (im.hasAttribute('data-animated') || /\.(gif|webp|apng|avif)(\?|#|$)/i.test(im.getAttribute('src') || '')));
+    const imgs = [...document.querySelectorAll('img')].filter((im) => !im.__gmAnim && (im.hasAttribute('data-animated') || /\.(gif|webp|apng|avif)(\?|#|$)/i.test(im.getAttribute('src') || '')));
     await Promise.all(imgs.map(async (im) => {
-      im.__mwAnim = true;
+      im.__gmAnim = true;
       const src = im.getAttribute('src');
       try {
         const res = await fetch(src);
@@ -1626,13 +1626,13 @@
     }
     return changed;
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => mw.wait(setupAnimatedImages()), { once: true });
-  else mw.wait(setupAnimatedImages());
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => gm.wait(setupAnimatedImages()), { once: true });
+  else gm.wait(setupAnimatedImages());
 
   // ---------------------------------------------------------------------------
   // Fast big blurs. A large CSS blur (soft glow blobs) is very slow to paint at full size.
   // For plain shapes (no children, no text) we paint the blur at 1/k size and scale it up,
-  // which looks the same because the result is already very soft. Opt out: data-mw-exact.
+  // which looks the same because the result is already very soft. Opt out: data-gm-exact.
   // ---------------------------------------------------------------------------
   // Does the element move on its own (a CSS/WAAPI animation, a timeline tween, a path travel or a camera)?
   function movesByItself(el) {
@@ -1651,7 +1651,7 @@
   function optimizeBlurs() {
     const els = document.body ? document.body.getElementsByTagName('*') : [];
     for (const el of els) {
-      if (el.__mwBlur || el.hasAttribute('data-mw-exact') || el.children.length || (el.textContent || '').trim() || !(el instanceof HTMLElement)) continue;
+      if (el.__gmBlur || el.hasAttribute('data-gm-exact') || el.children.length || (el.textContent || '').trim() || !(el instanceof HTMLElement)) continue;
       const cs = getComputedStyle(el);
       const m = /^blur\(([\d.]+)px\)$/.exec(cs.filter);
       if (!m) continue;
@@ -1666,7 +1666,7 @@
       if (animated) continue;
       const moves = movesByItself(el);
       const k = Math.min(8, Math.max(2, Math.floor(r / 10)));
-      el.__mwBlur = true;
+      el.__gmBlur = true;
       // Bake: a small SVG image (shape + blur) is decoded once; moving it later is just copying pixels.
       const sw = w / k, sh = h / k, br = r / k, pad = Math.ceil(br * 3);
       const radius = cs.borderRadius.split(' ').map((v) => (v.endsWith('%') ? v : (parseFloat(v) / k) + 'px')).join(' ');
@@ -1687,7 +1687,7 @@
         cv.getContext('2d').drawImage(img, 0, 0);
         let out = cv;
         if (!moves) { out = new Image(); out.alt = ''; out.src = cv.toDataURL('image/png'); }
-        out.setAttribute('data-mw-internal', '');
+        out.setAttribute('data-gm-internal', '');
         out.style.cssText = box;
         return (out === cv ? Promise.resolve() : out.decode()).then(() => {
           el.style.setProperty('filter', 'none', 'important');
@@ -1767,10 +1767,10 @@
     return tl;
   }
   // what fit: 'content' measured at load, per camera that uses it (render fingerprints it; null = not measured yet)
-  mw.__cameraContent = () => cameras.filter((c) => c.shots.some((sh) => (sh.fit ?? sh.follow ?? sh.center) === 'content')).map((c) => c._contentBox || null);
+  gm.__cameraContent = () => cameras.filter((c) => c.shots.some((sh) => (sh.fit ?? sh.follow ?? sh.center) === 'content')).map((c) => c._contentBox || null);
   // camera shots in video time (inspect lists them; snapshot shows each shot once the camera has arrived)
-  mw.__cameraShots = () => cameras.flatMap((c) => {
-    const base = c.opts.global || !c.world ? 0 : mw.timing(c.world).start;
+  gm.__cameraShots = () => cameras.flatMap((c) => {
+    const base = c.opts.global || !c.world ? 0 : gm.timing(c.world).start;
     // what each shot shows of the world, in world px (a follow shot: where its target is right now)
     let M = null, view = null;
     try { if (c.world) { M = c._markers(); const p = c.world.offsetParent || c.world.parentElement; view = { w: p.clientWidth || I.comp.width, h: p.clientHeight || I.comp.height }; } } catch (e) {}
@@ -1778,18 +1778,18 @@
     return c.shots.map((s, i) => {
       let shows = null;
       try { const st = M && c._state(s, M, view); if (st) { const w = view.w / st.zoom, h = view.h / st.zoom; shows = { x: r1(st.cx - w / 2), y: r1(st.cy - h / 2), w: r1(w), h: r1(h), zoom: Math.round(st.zoom * 1000) / 1000 }; } } catch (e) {}
-      return { world: c.world ? mw.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null, shows };
+      return { world: c.world ? gm.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null, shows };
     });
   });
   // what the current shot of each camera frames (its fit/follow target), in screen px; for check
-  mw.__cameraFocus = () => cameras.flatMap((c) => {
+  gm.__cameraFocus = () => cameras.flatMap((c) => {
     const sh = c._cur, target = sh && (sh.fit ?? sh.follow ?? sh.center);
-    if (!c.world || !c.world.isConnected || c.world.closest('[data-mw-hidden]')) return [];
+    if (!c.world || !c.world.isConnected || c.world.closest('[data-gm-hidden]')) return [];
     if (sh && sh.overview) return [{ world: c.world, overview: true }]; // a wide shot of everything on purpose: small text is fine
     if (target == null || target === 'all' || target === 'content') return [];
     try { const M = c._markers(), b = c._box(target, M); return b ? [{ world: c.world, l: M.ox + b.x * M.k, t: M.oy + b.y * M.k, r: M.ox + (b.x + b.w) * M.k, b: M.oy + (b.y + b.h) * M.k }] : []; } catch (e) { return []; }
   });
-  Object.assign(mw, {
+  Object.assign(gm, {
     timeline: (scope, opts) => new Timeline(scope, opts),
     camera: (world, opts) => new Camera(world, opts),
     burst,
@@ -1797,7 +1797,7 @@
     from: (t, v) => tween('from', t, v),
     fromTo: (t, a, b) => tween('fromTo', t, a, b),
     set: (t, v) => tween('set', t, v),
-    // mw.fly('#event', { from: '#slot', at: 7.5, duration: 0.8 }): at = seconds in the element's own clip
+    // gm.fly('#event', { from: '#slot', at: 7.5, duration: 0.8 }): at = seconds in the element's own clip
     fly: (t, v) => { const o = Object.assign({}, v || {}), at = o.at || 0; delete o.at; return new Timeline(null, {}).fly(t, o, at); },
     color: { mix: mixColor, parse: toRGBA },
     path: { point: pointAt, length: (d) => pathInfo(d).len, morph: morphInterp, interpolate: morphInterp, travel },

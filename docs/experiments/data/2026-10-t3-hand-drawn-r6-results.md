@@ -27,7 +27,7 @@ Engine: refs/heads/main @ 9af167e832. Runs set up 2026-10-24T11:30:18.470Z. 3 ju
 11 engine, 6 docs, 4 agent entries.
 
 - hand-drawn-1 [engine] Undrawn sketched shapes leave a dot on the canvas
-- hand-drawn-1 [engine] mw.connect label shows at the frame's top-left when an end is not displayed yet
+- hand-drawn-1 [engine] gm.connect label shows at the frame's top-left when an end is not displayed yet
 - hand-drawn-1 [engine] tiny-text warning during a camera move
 - hand-drawn-1 [docs] Centering a label with a nested absolute span broke `write`
 - hand-drawn-1 [engine] Wide fit shot pulled in empty space

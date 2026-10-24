@@ -1,4 +1,4 @@
-/* motionwright live charts: mw.chart.line(el, opts). MIT License.
+/* givemotion live charts: gm.chart.line(el, opts). MIT License.
  * A line chart that draws itself over time. Its head is a real element (a camera can follow it, labels can ride it),
  * callouts are pinned to data points and appear when the line reaches them, the y axis can grow with the highest value
  * so far, segments can take their own color and the line can pause at chosen points.
@@ -6,9 +6,9 @@
  */
 (function () {
   'use strict';
-  const mw = window.mw;
-  if (!mw || !mw.__internal || mw.chart) return;
-  const I = mw.__internal;
+  const gm = window.gm;
+  if (!gm || !gm.__internal || gm.chart) return;
+  const I = gm.__internal;
   const PX = I.PX;
   const SVGNS = 'http://www.w3.org/2000/svg';
   const r2 = (x) => Math.round(x * 100) / 100;
@@ -16,23 +16,23 @@
   const charts = [];
 
   const CSS = `
-.mw-chart{--chart-line:#5eead4}
-.mw-chart-svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
-.mw-chart-line,.mw-chart-seg{fill:none;stroke:var(--chart-line);stroke-width:calc(var(--px,1px)*7);stroke-linecap:round;stroke-linejoin:round}
-.mw-chart-area-stop{stop-color:var(--chart-line)}
-.mw-chart-grid line{stroke:currentColor;stroke-opacity:.13;stroke-width:calc(var(--px,1px)*2)}
-.mw-chart-base{stroke:currentColor;stroke-opacity:.32;stroke-width:calc(var(--px,1px)*2.5)}
-.mw-chart-tick{position:absolute;font-size:calc(var(--px,1px)*32);font-weight:600;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums;color:color-mix(in srgb,currentColor 58%,transparent)}
-.mw-chart-label{position:absolute;font-size:calc(var(--px,1px)*34);font-weight:700;line-height:1;white-space:nowrap;color:color-mix(in srgb,currentColor 42%,transparent)}
-.mw-chart-label[data-reached]{color:currentColor}
-.mw-chart-dot{position:absolute;box-sizing:border-box;width:calc(var(--px,1px)*22);height:calc(var(--px,1px)*22);margin:calc(var(--px,1px)*-11) 0 0 calc(var(--px,1px)*-11);border-radius:50%;background:var(--chart-bg,#0b0d12);border:calc(var(--px,1px)*5) solid var(--chart-line)}
-.mw-chart-head{position:absolute;width:calc(var(--px,1px)*32);height:calc(var(--px,1px)*32);margin:calc(var(--px,1px)*-16) 0 0 calc(var(--px,1px)*-16);border-radius:50%;background:var(--chart-color,var(--chart-line));
+.gm-chart{--chart-line:#5eead4}
+.gm-chart-svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.gm-chart-line,.gm-chart-seg{fill:none;stroke:var(--chart-line);stroke-width:calc(var(--px,1px)*7);stroke-linecap:round;stroke-linejoin:round}
+.gm-chart-area-stop{stop-color:var(--chart-line)}
+.gm-chart-grid line{stroke:currentColor;stroke-opacity:.13;stroke-width:calc(var(--px,1px)*2)}
+.gm-chart-base{stroke:currentColor;stroke-opacity:.32;stroke-width:calc(var(--px,1px)*2.5)}
+.gm-chart-tick{position:absolute;font-size:calc(var(--px,1px)*32);font-weight:600;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums;color:color-mix(in srgb,currentColor 58%,transparent)}
+.gm-chart-label{position:absolute;font-size:calc(var(--px,1px)*34);font-weight:700;line-height:1;white-space:nowrap;color:color-mix(in srgb,currentColor 42%,transparent)}
+.gm-chart-label[data-reached]{color:currentColor}
+.gm-chart-dot{position:absolute;box-sizing:border-box;width:calc(var(--px,1px)*22);height:calc(var(--px,1px)*22);margin:calc(var(--px,1px)*-11) 0 0 calc(var(--px,1px)*-11);border-radius:50%;background:var(--chart-bg,#0b0d12);border:calc(var(--px,1px)*5) solid var(--chart-line)}
+.gm-chart-head{position:absolute;width:calc(var(--px,1px)*32);height:calc(var(--px,1px)*32);margin:calc(var(--px,1px)*-16) 0 0 calc(var(--px,1px)*-16);border-radius:50%;background:var(--chart-color,var(--chart-line));
   box-shadow:0 0 0 calc(var(--px,1px)*10) color-mix(in oklab,var(--chart-color,var(--chart-line)),transparent 72%),0 0 calc(var(--px,1px)*48) calc(var(--px,1px)*6) color-mix(in oklab,var(--chart-color,var(--chart-line)),transparent 50%)}
 `;
   function addCSS() {
-    if (document.getElementById('mw-chart-css')) return;
+    if (document.getElementById('gm-chart-css')) return;
     const s = document.createElement('style');
-    s.id = 'mw-chart-css';
+    s.id = 'gm-chart-css';
     s.textContent = CSS;
     // first in <head>: the page's own CSS overrides it
     const h = document.head || document.documentElement;
@@ -74,14 +74,14 @@
       this.opts = opts;
       let el = typeof target === 'string' ? document.querySelector(target) : target;
       if (!el) {
-        I.report('error', 'chart-no-element', `mw.chart.line: "${target}" matched nothing.`, null, 'Give it a selector of an element with a width and a height, e.g. <div id="growth" style="position:absolute;left:0;top:0;width:3600px;height:1000px">.');
+        I.report('error', 'chart-no-element', `gm.chart.line: "${target}" matched nothing.`, null, 'Give it a selector of an element with a width and a height, e.g. <div id="growth" style="position:absolute;left:0;top:0;width:3600px;height:1000px">.');
         el = document.createElement('div'); // (not in the page: the chart's methods still answer, nothing is drawn)
       }
       this.el = el;
       const vals = list(opts.values ?? el.getAttribute('data-values')).map((x) => (typeof x === 'number' ? x : parseFloat(String(x).replace(/[^\d.eE+-]/g, ''))));
       this.vals = vals.filter((x) => isFinite(x));
       if (this.vals.length !== vals.length || this.vals.length < 2) {
-        I.report('error', 'chart-no-values', `mw.chart.line: needs at least 2 numbers in values (got ${JSON.stringify(opts.values ?? null).slice(0, 80)}).`, el, 'Pass values: [1200, 1850, 1700] or values: mw.data.values.');
+        I.report('error', 'chart-no-values', `gm.chart.line: needs at least 2 numbers in values (got ${JSON.stringify(opts.values ?? null).slice(0, 80)}).`, el, 'Pass values: [1200, 1850, 1700] or values: gm.data.values.');
         if (this.vals.length < 2) this.vals = [0, 0];
       }
       const n = (this.n = this.vals.length);
@@ -96,7 +96,7 @@
       this.timing();
       this.build();
       charts.push(this);
-      el.__mwChart = this;
+      el.__gmChart = this;
     }
     // a point given as 2, -1, 'last', 'first', 'max', 'min' or one of the labels ('Mar')
     index(k) {
@@ -111,7 +111,7 @@
       if (low === 'min') return this.vals.indexOf(Math.min(...this.vals));
       const li = this.labels.findIndex((l) => l.toLowerCase() === low);
       if (li >= 0) return li;
-      I.report('warning', 'chart-bad-point', `mw.chart.line: point "${s}" is not an index, first/last/max/min or one of the labels.`, this.el, 'Use a 0-based index (2 = the third point), -1 for the last, or a label from labels.');
+      I.report('warning', 'chart-bad-point', `gm.chart.line: point "${s}" is not an index, first/last/max/min or one of the labels.`, this.el, 'Use a 0-based index (2 = the third point), -1 for the last, or a label from labels.');
       return NaN;
     }
     // monotone cubic through the points (no bumps past the data), in (index, value) space
@@ -141,20 +141,20 @@
       const k = Math.min(n - 2, Math.floor(p)), f = p - k, [a, b, c, d] = this.seg(k), u = 1 - f;
       return u * u * u * a + 3 * u * u * f * b + 3 * u * f * f * c + f * f * f * d;
     }
-    // when the line reaches each point: stops [[time, index], …] like mw.path.travel, eased between stops
+    // when the line reaches each point: stops [[time, index], …] like gm.path.travel, eased between stops
     timing() {
       const o = this.opts, n = this.n;
-      this.ease = mw.easing(o.ease || 'in-out-sine');
+      this.ease = gm.easing(o.ease || 'in-out-sine');
       let stops;
       if (Array.isArray(o.stops) && o.stops.length) {
-        stops = o.stops.map((s) => [I.parseTime(s[0], this.el, 'mw.chart.line stops') ?? NaN, this.index(s[1])]).filter((s) => isFinite(s[0]) && isFinite(s[1])).sort((a, b) => a[0] - b[0]);
+        stops = o.stops.map((s) => [I.parseTime(s[0], this.el, 'gm.chart.line stops') ?? NaN, this.index(s[1])]).filter((s) => isFinite(s[0]) && isFinite(s[1])).sort((a, b) => a[0] - b[0]);
       }
       if (!stops || !stops.length) {
         const holds = new Array(n).fill(0);
-        for (const [k, h] of pairs(o.holds)) { const i = this.index(k), s = I.parseTime(h, this.el, 'mw.chart.line holds'); if (i >= 0 && i < n - 1 && s > 0) holds[i] += s; }
-        const start = I.parseTime(o.delay ?? o.at, this.el, 'mw.chart.line delay') ?? 0.3;
+        for (const [k, h] of pairs(o.holds)) { const i = this.index(k), s = I.parseTime(h, this.el, 'gm.chart.line holds'); if (i >= 0 && i < n - 1 && s > 0) holds[i] += s; }
+        const start = I.parseTime(o.delay ?? o.at, this.el, 'gm.chart.line delay') ?? 0.3;
         const holdSum = holds.reduce((a, b) => a + b, 0);
-        const dur = I.parseTime(o.duration, this.el, 'mw.chart.line duration') ?? Math.max(1.8, 0.45 * (n - 1)) + holdSum;
+        const dur = I.parseTime(o.duration, this.el, 'gm.chart.line duration') ?? Math.max(1.8, 0.45 * (n - 1)) + holdSum;
         const per = Math.max(0.02, (dur - holdSum) / (n - 1));
         let t = start;
         stops = [[t, 0]];
@@ -173,7 +173,7 @@
       this.ov = null;
       if (o.overview) {
         const ov = typeof o.overview === 'object' ? o.overview : typeof o.overview === 'number' ? { width: o.overview } : {};
-        this.ov = { at: I.parseTime(ov.at, this.el, 'mw.chart.line overview.at') ?? this.reach[n - 1] + 0.2, duration: I.parseTime(ov.duration, this.el, 'mw.chart.line overview.duration') ?? 1.4, width: +ov.width || 0, ease: mw.easing(ov.ease || 'in-out-cubic') };
+        this.ov = { at: I.parseTime(ov.at, this.el, 'gm.chart.line overview.at') ?? this.reach[n - 1] + 0.2, duration: I.parseTime(ov.duration, this.el, 'gm.chart.line overview.duration') ?? 1.4, width: +ov.width || 0, ease: gm.easing(ov.ease || 'in-out-cubic') };
       }
     }
     // fractional point index the head is at, at time t (seconds in the chart's clip)
@@ -231,29 +231,29 @@
     build() {
       addCSS();
       const el = this.el, n = this.n, o = this.opts;
-      el.classList.add('mw-chart');
+      el.classList.add('gm-chart');
       if (o.color) el.style.setProperty('--chart-line', o.color);
-      const id = 'mw-chart-' + charts.length;
+      const id = 'gm-chart-' + charts.length;
       const svg = document.createElementNS(SVGNS, 'svg');
-      svg.setAttribute('class', 'mw-chart-svg');
-      svg.innerHTML = `<defs><linearGradient id="${id}-fill" x1="0" y1="0" x2="0" y2="1" gradientUnits="userSpaceOnUse"><stop class="mw-chart-area-stop" offset="0" stop-opacity="${o.area === false ? 0 : 0.3}"/><stop class="mw-chart-area-stop" offset="1" stop-opacity="0"/></linearGradient></defs>
-<g class="mw-chart-grid"></g><line class="mw-chart-base"/><path class="mw-chart-area" fill="url(#${id}-fill)"/><path class="mw-chart-line"/><g class="mw-chart-segs"></g>`;
+      svg.setAttribute('class', 'gm-chart-svg');
+      svg.innerHTML = `<defs><linearGradient id="${id}-fill" x1="0" y1="0" x2="0" y2="1" gradientUnits="userSpaceOnUse"><stop class="gm-chart-area-stop" offset="0" stop-opacity="${o.area === false ? 0 : 0.3}"/><stop class="gm-chart-area-stop" offset="1" stop-opacity="0"/></linearGradient></defs>
+<g class="gm-chart-grid"></g><line class="gm-chart-base"/><path class="gm-chart-area" fill="url(#${id}-fill)"/><path class="gm-chart-line"/><g class="gm-chart-segs"></g>`;
       this.svg = svg;
       this.grad = svg.querySelector('linearGradient');
-      this.gridG = svg.querySelector('.mw-chart-grid');
-      this.base = svg.querySelector('.mw-chart-base');
-      this.area = svg.querySelector('.mw-chart-area');
-      this.line = svg.querySelector('.mw-chart-line');
+      this.gridG = svg.querySelector('.gm-chart-grid');
+      this.base = svg.querySelector('.gm-chart-base');
+      this.area = svg.querySelector('.gm-chart-area');
+      this.line = svg.querySelector('.gm-chart-line');
       this.segs = [];
-      this.colors.forEach((c, i) => { if (!c) return; const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('class', 'mw-chart-seg'); p.style.stroke = c; svg.querySelector('.mw-chart-segs').appendChild(p); this.segs.push({ i, p }); });
+      this.colors.forEach((c, i) => { if (!c) return; const p = document.createElementNS(SVGNS, 'path'); p.setAttribute('class', 'gm-chart-seg'); p.style.stroke = c; svg.querySelector('.gm-chart-segs').appendChild(p); this.segs.push({ i, p }); });
       const div = (cls, parent) => { const d = document.createElement('div'); d.className = cls; if (parent) parent.appendChild(d); return d; };
       const frag = document.createDocumentFragment();
       frag.appendChild(svg);
-      this.tickBox = div('mw-chart-ticks', frag);
+      this.tickBox = div('gm-chart-ticks', frag);
       this.tickBox.setAttribute('aria-hidden', 'true');
-      this.labelEls = this.labels.length ? this.vals.map((_, i) => { const d = div('mw-chart-label', frag); d.textContent = this.labels[i] ?? ''; return d; }) : [];
-      this.dots = this.vals.map((_, i) => { const d = div('mw-chart-dot', frag); d.setAttribute('data-i', i); if (this.colors[i]) d.style.borderColor = this.colors[i]; if (o.dots === false) d.style.display = 'none'; return d; });
-      this.head = div('mw-chart-head', frag);
+      this.labelEls = this.labels.length ? this.vals.map((_, i) => { const d = div('gm-chart-label', frag); d.textContent = this.labels[i] ?? ''; return d; }) : [];
+      this.dots = this.vals.map((_, i) => { const d = div('gm-chart-dot', frag); d.setAttribute('data-i', i); if (this.colors[i]) d.style.borderColor = this.colors[i]; if (o.dots === false) d.style.display = 'none'; return d; });
+      this.head = div('gm-chart-head', frag);
       if (o.head === false) this.head.style.display = 'none';
       el.insertBefore(frag, el.firstChild);
       // callouts and riders: <div data-point="2 top 30">, <div data-point="head right 24">
@@ -269,7 +269,7 @@
         // appears when the line gets there: its data-enter delay counts from that moment
         if (i >= 0) {
           if (!p.hasAttribute('data-enter')) p.setAttribute('data-enter', 'pop 0.5');
-          p.__mwEnterAt = this.reach[i];
+          p.__gmEnterAt = this.reach[i];
         }
         p.style.position = 'absolute';
         p.style.margin = '0';
@@ -285,8 +285,8 @@
       for (const t of document.querySelectorAll('[data-chart-text]')) {
         const tk = t.getAttribute('data-chart-text').trim().split(/\s+/);
         let owner = null, kind = tk[tk.length - 1];
-        if (tk.length > 1) { const r = document.querySelector(tk[0]); owner = r && (r.__mwChart || (r.querySelector('.mw-chart') || {}).__mwChart); }
-        else { const r = t.closest('.mw-chart'); owner = r && r.__mwChart; }
+        if (tk.length > 1) { const r = document.querySelector(tk[0]); owner = r && (r.__gmChart || (r.querySelector('.gm-chart') || {}).__gmChart); }
+        else { const r = t.closest('.gm-chart'); owner = r && r.__gmChart; }
         if (owner === this) this.texts.push({ el: t, kind });
       }
     }
@@ -294,10 +294,10 @@
     geom() {
       if (this.g !== undefined) return this.g;
       const el = this.el, hidden = [];
-      for (let a = el; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
+      for (let a = el; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
       try {
         const W = el.offsetWidth, H = el.offsetHeight;
-        if (!W || !H) { I.report('warning', 'chart-no-size', 'mw.chart.line: the chart element has no size, so nothing is drawn.', el, 'Give it a width and a height in CSS (e.g. width: 3600px; height: 1000px).'); return (this.g = null); }
+        if (!W || !H) { I.report('warning', 'chart-no-size', 'gm.chart.line: the chart element has no size, so nothing is drawn.', el, 'Give it a width and a height in CSS (e.g. width: 3600px; height: 1000px).'); return (this.g = null); }
         const o = this.opts, P = PX(), ax = String(o.axis ?? 'left').trim().split(/\s+/), axis = o.axis === false ? 'none' : ax[0];
         const pad = Array.isArray(o.padding) ? o.padding : o.padding != null ? [o.padding, o.padding, o.padding, o.padding] : [40, axis === 'right' ? 150 : 40, this.labels.length ? 80 : 30, axis === 'left' ? 150 : 40];
         const [pt, pr, pb, pl] = [0, 1, 2, 3].map((k) => (pad[k] ?? pad[k % 2] ?? 40) * P);
@@ -312,11 +312,11 @@
           const step = (minW - pl - pr) / Math.max(1, this.n - 1);
           const widest = Math.max(...this.labelEls.map((d) => d.offsetWidth));
           const every = Math.max(1, Math.ceil((widest + 16 * P) / Math.max(1, step)));
-          this.labelEls.forEach((d, i) => { if (i % every) d.style.display = 'none'; else d.__mwW = d.offsetWidth; });
+          this.labelEls.forEach((d, i) => { if (i % every) d.style.display = 'none'; else d.__gmW = d.offsetWidth; });
         }
         this.bindTexts();
         return this.g;
-      } finally { for (const a of hidden) a.setAttribute('data-mw-hidden', ''); }
+      } finally { for (const a of hidden) a.setAttribute('data-gm-hidden', ''); }
     }
     // the plot box at time t (it only changes during the overview)
     // (extra: room the overview leaves on the right for labels that ride the head)
@@ -343,7 +343,7 @@
         const line = document.createElementNS(SVGNS, 'line');
         this.gridG.appendChild(line);
         const lab = document.createElement('div');
-        lab.className = 'mw-chart-tick';
+        lab.className = 'gm-chart-tick';
         lab.textContent = this.tickFormat(x);
         this.tickBox.appendChild(lab);
         return { v: x, line, lab };
@@ -427,18 +427,18 @@
       for (let i = 0; i < n; i++) {
         const on = p >= i - 1e-6;
         const lab = this.labelEls[i];
-        if (lab && lab.__mwW != null) { set(lab, 'data-reached', on ? '' : null, true); set(lab, 'left', r2(this.X(i, g) - lab.__mwW / 2) + 'px'); set(lab, 'top', r2(g.b + 22 * P) + 'px'); }
+        if (lab && lab.__gmW != null) { set(lab, 'data-reached', on ? '' : null, true); set(lab, 'left', r2(this.X(i, g) - lab.__gmW / 2) + 'px'); set(lab, 'top', r2(g.b + 22 * P) + 'px'); }
         const dot = this.dots[i];
         set(dot, 'data-reached', on ? '' : null, true);
         set(dot, 'left', r2(this.X(i, g)) + 'px'); set(dot, 'top', r2(Y(this.vals[i])) + 'px');
         const age = t - this.reach[i];
-        const s = !on ? 0 : age >= 0.4 ? 1 : r2(mw.easing('out-back')(clamp(age / 0.4)));
+        const s = !on ? 0 : age >= 0.4 ? 1 : r2(gm.easing('out-back')(clamp(age / 0.4)));
         set(dot, 'scale', s === 1 ? '' : String(s));
         set(dot, 'visibility', on ? '' : 'hidden');
       }
       // the head (pops in just before the line starts) and the color of the segment it is on
       set(this.head, 'left', r2(hx) + 'px'); set(this.head, 'top', r2(hy) + 'px');
-      const t0 = this.stops[0][0], hs = t0 < 0.35 ? 1 : r2(mw.easing('out-back')(clamp((t - (t0 - 0.35)) / 0.35)));
+      const t0 = this.stops[0][0], hs = t0 < 0.35 ? 1 : r2(gm.easing('out-back')(clamp((t - (t0 - 0.35)) / 0.35)));
       set(this.head, 'scale', hs === 1 ? '' : String(hs));
       const ci = Math.min(n - 1, Math.ceil(p - 1e-6));
       set(this.el, '--chart-color', this.colors[ci] || 'var(--chart-line)');
@@ -476,15 +476,15 @@
   I.hooks.seek.push(update);
 
   function line(target, opts) { return new LineChart(target, opts); }
-  // the chart drawn in (or inside) an element: mw.chart.get('#growth') for a chart made by the line-chart block
+  // the chart drawn in (or inside) an element: gm.chart.get('#growth') for a chart made by the line-chart block
   function get(target) {
     const el = typeof target === 'string' ? document.querySelector(target) : target;
     if (!el) return null;
-    if (el.__mwChart) return el.__mwChart;
-    const inner = el.querySelector && el.querySelector('.mw-chart');
-    if (inner && inner.__mwChart) return inner.__mwChart;
-    const outer = el.closest && el.closest('.mw-chart');
-    return (outer && outer.__mwChart) || null;
+    if (el.__gmChart) return el.__gmChart;
+    const inner = el.querySelector && el.querySelector('.gm-chart');
+    if (inner && inner.__gmChart) return inner.__gmChart;
+    const outer = el.closest && el.closest('.gm-chart');
+    return (outer && outer.__gmChart) || null;
   }
-  mw.chart = { line, get };
+  gm.chart = { line, get };
 })();

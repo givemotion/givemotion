@@ -39,7 +39,7 @@
   #intro .spark circle { fill: var(--teal); }
   #intro .center { position: relative; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 34px; }
   #intro h1 { font-family: 'Inter Display', Inter, sans-serif; font-size: 156px; font-weight: 800; letter-spacing: -.045em; line-height: .98; margin: 0; max-width: 1500px; text-wrap: balance; }
-  #intro h1 .mw-word:last-child { color: var(--teal); }
+  #intro h1 .gm-word:last-child { color: var(--teal); }
   #intro .range { display: flex; align-items: center; gap: 22px; font-size: 40px; font-weight: 600; color: var(--muted); }
   #intro .range i { display: block; width: 120px; height: 3px; background: linear-gradient(90deg, var(--teal), var(--violet)); border-radius: 3px; transform-origin: left; }
 
@@ -150,7 +150,7 @@
 </main>
 
 <script>
-const D = mw.data || {};
+const D = gm.data || {};
 const users = D.users || [], months = D.weeks || [], quarters = D.quarters || [], revenue = D.revenue || [];
 const fmt = (v) => Math.round(v).toLocaleString('en-US');
 const compact = (v) => v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(v));
@@ -178,15 +178,15 @@ document.getElementById('rangeTo').textContent = months[months.length - 1] || ''
   const pts = users.map((v, i) => [-40 + i * 2000 / Math.max(1, n - 1), 960 - (v - min) / Math.max(1, max - min) * 260]);
   document.getElementById('sparkPath').setAttribute('d', smooth(pts));
 }
-// (mw.path.travel does not move SVG elements, so the dot is placed by hand)
+// (gm.path.travel does not move SVG elements, so the dot is placed by hand)
 const sparkD = document.getElementById('sparkPath').getAttribute('d'), sparkDot = document.getElementById('sparkDot');
-mw.onFrame('#intro', (t) => {
-  const p = mw.interpolate(t, [0.2, 2.6], [0, 1], { easing: 'in-out-sine' });
+gm.onFrame('#intro', (t) => {
+  const p = gm.interpolate(t, [0.2, 2.6], [0, 1], { easing: 'in-out-sine' });
   document.getElementById('sparkPath').style.strokeDasharray = p + ' 2';
-  const q = mw.path.point(sparkD, p);
+  const q = gm.path.point(sparkD, p);
   sparkDot.setAttribute('cx', q.x); sparkDot.setAttribute('cy', q.y);
 });
-mw.timeline('#intro')
+gm.timeline('#intro')
   .from('.range span, .range i', { autoAlpha: 0, y: 30, stagger: 0.08, duration: 0.7, ease: 'expo.out' }, 0)
   .from('.range i', { scaleX: 0, duration: 0.8, ease: 'expo.out' }, 0.25);
 
@@ -215,18 +215,18 @@ users.forEach((v, i) => {
 });
 
 const T0 = 0.7, T1 = 3.5;   // line draws from T0 to T1 (scene time)
-const trip = mw.path.travel('#tip', '#uline', { stops: [[T0, 0], [T1, 1]], ease: 'in-out-sine' });
+const trip = gm.path.travel('#tip', '#uline', { stops: [[T0, 0], [T1, 1]], ease: 'in-out-sine' });
 // when does the tip pass each point? (sampled once, deterministic)
 const passTime = upts.map(([x]) => {
-  // NOTE: trip.progress(t) ignores the ease when called at load time, so use the same curve via mw.interpolate
-  for (let t = T0; t <= T1; t += 1 / 120) if (mw.path.point(ud, mw.interpolate(t, [T0, T1], [0, 1], { easing: 'in-out-sine' })).x >= x - 0.5) return t;
+  // NOTE: trip.progress(t) ignores the ease when called at load time, so use the same curve via gm.interpolate
+  for (let t = T0; t <= T1; t += 1 / 120) if (gm.path.point(ud, gm.interpolate(t, [T0, T1], [0, 1], { easing: 'in-out-sine' })).x >= x - 0.5) return t;
   return T1;
 });
 const readNum = document.getElementById('readNum'), readLbl = document.getElementById('readLbl');
-mw.onFrame('#users', (t) => {
+gm.onFrame('#users', (t) => {
   const p = trip.progress(t);
   line.style.strokeDasharray = p + ' 2';
-  const x = mw.path.point(ud, p).x;
+  const x = gm.path.point(ud, p).x;
   document.getElementById('areaRect').setAttribute('width', x);
   // live readout = value under the tip
   const f = Math.max(0, Math.min(users.length - 1, (x - CH.x0) / ((CH.x1 - CH.x0) / Math.max(1, users.length - 1))));
@@ -236,7 +236,7 @@ mw.onFrame('#users', (t) => {
   readLbl.textContent = months[Math.round(f)] || '';
 });
 
-const tl2 = mw.timeline('#users')
+const tl2 = gm.timeline('#users')
   .from('.hud .eyebrow', { autoAlpha: 0, x: -40, duration: 0.6, ease: 'expo.out' }, 0.35)
   .from('.readout', { autoAlpha: 0, y: 40, duration: 0.7, ease: 'expo.out' }, 0.45)
   .from('#chart .gl', { scaleX: 0, transformOrigin: '0% 50%', stagger: 0.06, duration: 0.9, ease: 'expo.out' }, 0.2)
@@ -252,7 +252,7 @@ tl2.to('#tip', { scale: 0, duration: 0.3, ease: 'power2.in' }, T1 + 0.05)
    .from('.growth b', { scale: 2.6, autoAlpha: 0, rotate: -8, duration: 0.55, ease: 'expo.in' }, T1 + 0.2)
    .from('.growth span', { autoAlpha: 0, y: 20, duration: 0.5, ease: 'expo.out' }, T1 + 0.75);
 
-mw.camera('#world')
+gm.camera('#world')
   .shot(0, { follow: '#tip', zoom: 1.9, offset: [120, -60] })
   .shot(T1 - 0.6, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, duration: 1.2, ease: 'in-out-cubic' })
   .shot(T1 + 0.7, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, zoom: 1.05, offset: [60, 40], duration: 1.6, ease: 'in-out-sine' })
@@ -296,7 +296,7 @@ const first = tops[0], last = tops[tops.length - 1];
 const lift = 120;
 document.getElementById('trendPath').setAttribute('d', `M${first[0]},${first[1] - lift} Q${(first[0] + last[0]) / 2},${Math.min(first[1], last[1]) - lift - 160} ${last[0]},${last[1] - lift}`);
 const tp = document.getElementById('trendPath').getAttribute('d');
-const head = mw.path.point(tp, 1), mid = mw.path.point(tp, 0.5);
+const head = gm.path.point(tp, 1), mid = gm.path.point(tp, 0.5);
 document.getElementById('trendHead').setAttribute('transform', `translate(${head.x},${head.y}) rotate(${head.angle})`);
 const total = revenue.reduce((a, b) => a + b, 0);
 const rt = document.getElementById('revTotal');
@@ -309,7 +309,7 @@ delta.textContent = (pct >= 0 ? '+' : '') + pct + '%';
 bars.appendChild(delta);
 Object.assign(delta.style, { left: mid.x + 'px', top: mid.y + 'px', translate: '-50% -50%' });
 
-const tl3 = mw.timeline('#revenue')
+const tl3 = gm.timeline('#revenue')
   .from('.hud .eyebrow', { autoAlpha: 0, x: -40, duration: 0.6, ease: 'expo.out' }, 0.3)
   .from('h2', { autoAlpha: 0, y: 40, duration: 0.7, ease: 'expo.out' }, 0.4)
   .from('.baseline', { scaleX: 0, duration: 0.8, ease: 'expo.out' }, 0.25);
@@ -342,11 +342,11 @@ const ticks = document.getElementById('npsTicks');
 });
 [-100, 100].forEach((v) => { const [x, y] = pt(v, G.r); el('text', { class: 'tl', x, y: y + 80 }, ticks).textContent = v; });
 const fillD = document.getElementById('npsFill').getAttribute('d'), knob = document.getElementById('knob');
-mw.onFrame('#nps', (t) => {
-  const q = mw.path.point(fillD, mw.interpolate(t, [0.5, 2.1], [0, 1], { easing: 'out-cubic' }));
+gm.onFrame('#nps', (t) => {
+  const q = gm.path.point(fillD, gm.interpolate(t, [0.5, 2.1], [0, 1], { easing: 'out-cubic' }));
   knob.setAttribute('cx', q.x); knob.setAttribute('cy', q.y);
 });
-mw.timeline('#nps')
+gm.timeline('#nps')
   .from('#npsTrack', { draw: 0, duration: 0.9, ease: 'power2.inOut' }, 0.15)
   .from('#npsTicks > *', { autoAlpha: 0, stagger: 0.04, duration: 0.4 }, 0.5)
   .from('#npsFill', { draw: 0, duration: 1.6, ease: 'out-cubic' }, 0.5)
@@ -355,7 +355,7 @@ mw.timeline('#nps')
   .from('.readout .eyebrow', { autoAlpha: 0, y: 20, duration: 0.6, ease: 'expo.out' }, 0.9)
   .fromTo('.readout b', { scale: 1 }, { keyframes: [{ scale: 1.1, duration: 0.12 }, { scale: 1, duration: 0.5, ease: 'back.out(3)' }] }, 2.1);
 { const [kx, ky] = pt(npsVal, G.r);   // where the knob lands, in page px (gauge is centered, top 170px)
-  mw.burst('#nps', { at: 2.1, kind: 'sparks', x: (960 - 550 + kx) / 19.2 + '%', y: (170 + ky) / 10.8 + '%', count: 36, colors: ['#4fe3c1', '#ffb84d', '#ffffff'] }); }
+  gm.burst('#nps', { at: 2.1, kind: 'sparks', x: (960 - 550 + kx) / 19.2 + '%', y: (170 + ky) / 10.8 + '%', count: 36, colors: ['#4fe3c1', '#ffb84d', '#ffffff'] }); }
 </script>
 </body>
 </html>

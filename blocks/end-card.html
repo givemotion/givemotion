@@ -1,28 +1,28 @@
 <!-- block:
 description: Closing card: optional logo, headline, subtitle and a call-to-action button that pops in. It never sits dead still: a slow camera push and a shine across the button keep it alive.
 params: title, subtitle, cta (button text), url (small text under the button), logo (image path), accent (color)
-usage: <mw-include src="blocks/end-card.html" title="Try it today" cta="Get started" url="example.com" data-duration="4"></mw-include>
+usage: <gm-include src="blocks/end-card.html" title="Try it today" cta="Get started" url="example.com" data-duration="4"></gm-include>
 -->
-<div class="mwb-end" style="--accent:{{accent|#7c9cff}}" data-camera="push 1.06">
-  <img class="mwb-end__logo" src="{{logo}}" alt="" data-enter="scale 0.7">
-  <h2 class="mwb-end__h" data-split="words" data-enter="rise 0.8 0.15" data-stagger="0.06">{{title|Thanks for watching}}</h2>
-  <p class="mwb-end__sub" data-enter="fade-up 0.6 0.5">{{subtitle}}</p>
-  <div class="mwb-end__cta" data-enter="pop 0.6 0.8">{{cta}}</div>
-  <div class="mwb-end__url" data-enter="fade 0.6 1.1">{{url}}</div>
+<div class="gmb-end" style="--accent:{{accent|#7c9cff}}" data-camera="push 1.06">
+  <img class="gmb-end__logo" src="{{logo}}" alt="" data-enter="scale 0.7">
+  <h2 class="gmb-end__h" data-split="words" data-enter="rise 0.8 0.15" data-stagger="0.06">{{title|Thanks for watching}}</h2>
+  <p class="gmb-end__sub" data-enter="fade-up 0.6 0.5">{{subtitle}}</p>
+  <div class="gmb-end__cta" data-enter="pop 0.6 0.8">{{cta}}</div>
+  <div class="gmb-end__url" data-enter="fade 0.6 1.1">{{url}}</div>
 </div>
 <script>
 (() => { const r = document.currentScript.previousElementSibling; const i = r.querySelector('img'); if (!i.getAttribute('src')) i.remove(); })();
 </script>
 <style>
-.mwb-end{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:calc(var(--px)*28);padding:0 calc(var(--px)*160)}
-.mwb-end__logo{height:calc(var(--px)*110);width:auto;margin-bottom:calc(var(--px)*10)}
-.mwb-end__h{margin:0;font-size:calc(var(--px)*112);font-weight:800;letter-spacing:-.035em;line-height:1.04;max-width:18ch;text-wrap:balance}
-.mwb-end__sub{margin:0;font-size:calc(var(--px)*42);opacity:.72;max-width:32ch;text-wrap:balance}
-.mwb-end__cta{margin-top:calc(var(--px)*18);padding:calc(var(--px)*24) calc(var(--px)*54);border-radius:99px;background:var(--accent);color:#0b0d12;font-size:calc(var(--px)*42);font-weight:800;
+.gmb-end{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:calc(var(--px)*28);padding:0 calc(var(--px)*160)}
+.gmb-end__logo{height:calc(var(--px)*110);width:auto;margin-bottom:calc(var(--px)*10)}
+.gmb-end__h{margin:0;font-size:calc(var(--px)*112);font-weight:800;letter-spacing:-.035em;line-height:1.04;max-width:18ch;text-wrap:balance}
+.gmb-end__sub{margin:0;font-size:calc(var(--px)*42);opacity:.72;max-width:32ch;text-wrap:balance}
+.gmb-end__cta{margin-top:calc(var(--px)*18);padding:calc(var(--px)*24) calc(var(--px)*54);border-radius:99px;background:var(--accent);color:#0b0d12;font-size:calc(var(--px)*42);font-weight:800;
   box-shadow:0 calc(var(--px)*16) calc(var(--px)*50) color-mix(in oklab,var(--accent),transparent 55%)}
-.mwb-end__cta{position:relative;overflow:hidden;isolation:isolate}
-.mwb-end__cta::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);transform:translateX(-120%);animation:mwb-end-shine 1.1s 1.7s cubic-bezier(.4,0,.2,1) 3 forwards}
-@keyframes mwb-end-shine{0%{transform:translateX(-120%)}60%,100%{transform:translateX(120%)}}
-.mwb-end__url{font-size:calc(var(--px)*32);opacity:.6;letter-spacing:.02em}
-.mwb-end__sub:empty,.mwb-end__cta:empty,.mwb-end__url:empty{display:none}
+.gmb-end__cta{position:relative;overflow:hidden;isolation:isolate}
+.gmb-end__cta::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);transform:translateX(-120%);animation:gmb-end-shine 1.1s 1.7s cubic-bezier(.4,0,.2,1) 3 forwards}
+@keyframes gmb-end-shine{0%{transform:translateX(-120%)}60%,100%{transform:translateX(120%)}}
+.gmb-end__url{font-size:calc(var(--px)*32);opacity:.6;letter-spacing:.02em}
+.gmb-end__sub:empty,.gmb-end__cta:empty,.gmb-end__url:empty{display:none}
 </style>

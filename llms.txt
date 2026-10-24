@@ -1,12 +1,12 @@
-# motionwright
+# givemotion
 
 > Make videos with AI, free and open source (MIT). A free code-to-video engine built for AI coding agents (Claude Code, Cursor, Codex): the agent writes one HTML/CSS/JS page, checks it (`check`), looks at key frames (`snapshot`) and renders MP4/WebM/ProRes/GIF. Free for any use, including companies. Needs Node 20+, ffmpeg and Chrome.
 
-Install in a project: `npx motionwright init my-video` (starter video + agent instructions) or `npx motionwright skill` (instructions only). Then ask the agent for a video.
+Install in a project: `npx givemotion init my-video` (starter video + agent instructions) or `npx givemotion skill` (instructions only). Then ask the agent for a video.
 
-- [Agent reference (SKILL.md)](skills/motionwright/SKILL.md): composition format, timing attributes, motion presets, JS API, media, blocks, checks. Read this first.
+- [Agent reference (SKILL.md)](skills/givemotion/SKILL.md): composition format, timing attributes, motion presets, JS API, media, blocks, checks. Read this first.
 - [README](README.md): overview, commands, performance, how it works.
 - [Blocks](blocks/): copyable HTML building blocks; each file's header lists params and usage.
 - [Examples](examples/): complete compositions.
 
-Core loop: write HTML → `npx motionwright check file.html` → `npx motionwright snapshot file.html` (look at snapshots/sheet.png) → `npx motionwright render file.html -o out/video.mp4`.
+Core loop: write HTML → `npx givemotion check file.html` → `npx givemotion snapshot file.html` (look at snapshots/sheet.png) → `npx givemotion render file.html -o out/video.mp4`.

@@ -24,7 +24,7 @@ Engine: refs/heads/main @ 76ddbe95b9. Runs set up 2026-10-24T12:16:37.105Z. 3 ju
 10 engine, 10 docs, 4 agent entries.
 
 - hand-drawn-1 [engine] Labels must be positioned by hand, separately from the shapes they describe
-- hand-drawn-1 [engine] mw.connect label overlaps the target box; check is silent
+- hand-drawn-1 [engine] gm.connect label overlaps the target box; check is silent
 - hand-drawn-1 [engine] Can't mark an engine-generated connect label as crop-ok
 - hand-drawn-1 [docs] Arrow attaches oddly to a `<g>` whose bbox is larger than the visual target
 - hand-drawn-1 [docs] Curve sign for right-to-left arrows
@@ -32,8 +32,8 @@ Engine: refs/heads/main @ 76ddbe95b9. Runs set up 2026-10-24T12:16:37.105Z. 3 ju
 - hand-drawn-1 [docs] Motion strip blank cells
 - hand-drawn-1 [agent] Misread a contact-sheet thumbnail as an off-center camera
 - hand-drawn-1 [agent] First frame blank
-- hand-drawn-2 [engine] mw.connect label is serif, not handwritten
-- hand-drawn-2 [engine] mw.connect label is placed on top of other shapes
+- hand-drawn-2 [engine] gm.connect label is serif, not handwritten
+- hand-drawn-2 [engine] gm.connect label is placed on top of other shapes
 - hand-drawn-2 [engine] check misses lines crossing text
 - hand-drawn-2 [docs] No way to know where an auto-routed arrow goes
 - hand-drawn-2 [docs] text-offscreen for neighbouring labels in a camera world
@@ -41,10 +41,10 @@ Engine: refs/heads/main @ 76ddbe95b9. Runs set up 2026-10-24T12:16:37.105Z. 3 ju
 - hand-drawn-2 [docs] sketch-mark circle overlaps neighbouring words
 - hand-drawn-2 [agent] grep exit code made a command look failed
 - hand-drawn-2 [docs] small: changing one CSS value re-renders everything
-- hand-drawn-3 [engine] mw.connect label is not hand-drawn style
+- hand-drawn-3 [engine] gm.connect label is not hand-drawn style
 - hand-drawn-3 [engine] No warning when a label collides with drawn strokes
 - hand-drawn-3 [docs] Several text-offscreen warnings for labels cut by neighbouring parts of the world
-- hand-drawn-3 [docs] Unclear whether data-camera and mw.camera combine
+- hand-drawn-3 [docs] Unclear whether data-camera and gm.camera combine
 - hand-drawn-3 [docs] Unclear whether write / sketch marks work on SVG text
 - hand-drawn-3 [agent] Empty first frame
 

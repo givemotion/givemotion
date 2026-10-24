@@ -1,9 +1,9 @@
 <!-- block:
 description: Kinetic typography for shorts: shows one word (or short phrase) at a time, big and centered, with a punchy pop. Separate phrases with |.
 params: text (phrases separated by |), every (seconds per phrase, default 0.45), accent (color for words wrapped in *stars*), size (px at 1080p; scales with the short side, default 170)
-usage: <mw-include src="blocks/word-pop.html" text="Stop|editing|videos|*by hand*" every="0.5" data-duration="2.5"></mw-include>
+usage: <gm-include src="blocks/word-pop.html" text="Stop|editing|videos|*by hand*" every="0.5" data-duration="2.5"></gm-include>
 -->
-<div class="mwb-pop" style="--accent:{{accent|#ffd23f}};--size:{{size|170}}" data-text="{{text|Make|it|*move*}}" data-every="{{every|0.45}}"></div>
+<div class="gmb-pop" style="--accent:{{accent|#ffd23f}};--size:{{size|170}}" data-text="{{text|Make|it|*move*}}" data-every="{{every|0.45}}"></div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
@@ -11,7 +11,7 @@ usage: <mw-include src="blocks/word-pop.html" text="Stop|editing|videos|*by hand
   const every = parseFloat(root.dataset.every) || 0.45;
   parts.forEach((p, i) => {
     const el = document.createElement('div');
-    el.className = 'mwb-pop__w';
+    el.className = 'gmb-pop__w';
     const hl = /^\*(.*)\*$/.exec(p);
     el.textContent = hl ? hl[1] : p;
     if (hl) el.classList.add('is-hl');
@@ -20,8 +20,8 @@ usage: <mw-include src="blocks/word-pop.html" text="Stop|editing|videos|*by hand
     root.appendChild(el);
   });
   // Shrink any phrase that would not fit the frame width.
-  mw.wait(document.fonts.ready.then(() => {
-    const avail = mw.width - 2 * 80 * mw.px * Math.min(1, mw.width / mw.height * 1.2);
+  gm.wait(document.fonts.ready.then(() => {
+    const avail = gm.width - 2 * 80 * gm.px * Math.min(1, gm.width / gm.height * 1.2);
     for (const el of root.children) {
       const was = el.style.display; el.style.display = 'block';
       const w = el.scrollWidth, fs = parseFloat(getComputedStyle(el).fontSize);
@@ -32,9 +32,9 @@ usage: <mw-include src="blocks/word-pop.html" text="Stop|editing|videos|*by hand
 })();
 </script>
 <style>
-.mwb-pop{position:absolute;inset:0;display:grid;place-items:center}
-.mwb-pop__w{grid-area:1/1;font-size:calc(var(--px)*var(--size));font-weight:900;letter-spacing:-.04em;text-transform:uppercase;line-height:1;text-align:center;
-  animation:mwb-pop-in .32s var(--ease-out-back) both}
-.mwb-pop__w.is-hl{color:var(--accent)}
-@keyframes mwb-pop-in{from{scale:1.6;opacity:0;filter:blur(calc(var(--px)*10))}}
+.gmb-pop{position:absolute;inset:0;display:grid;place-items:center}
+.gmb-pop__w{grid-area:1/1;font-size:calc(var(--px)*var(--size));font-weight:900;letter-spacing:-.04em;text-transform:uppercase;line-height:1;text-align:center;
+  animation:gmb-pop-in .32s var(--ease-out-back) both}
+.gmb-pop__w.is-hl{color:var(--accent)}
+@keyframes gmb-pop-in{from{scale:1.6;opacity:0;filter:blur(calc(var(--px)*10))}}
 </style>

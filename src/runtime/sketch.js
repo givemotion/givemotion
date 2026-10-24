@@ -1,12 +1,12 @@
-/* motionwright sketch: hand-drawn (whiteboard) shapes. MIT License.
- * mw.sketch.* returns SVG path data for rough, slightly wobbly strokes; data-sketch on an SVG shape turns it into one.
+/* givemotion sketch: hand-drawn (whiteboard) shapes. MIT License.
+ * gm.sketch.* returns SVG path data for rough, slightly wobbly strokes; data-sketch on an SVG shape turns it into one.
  * Every shape is seeded, so it looks the same in every frame and every render (no boiling lines).
  */
 (function () {
   'use strict';
-  const mw = window.mw;
-  if (!mw || !mw.__internal || mw.sketch) return;
-  const I = mw.__internal;
+  const gm = window.gm;
+  if (!gm || !gm.__internal || gm.sketch) return;
+  const I = gm.__internal;
   const SVGNS = 'http://www.w3.org/2000/svg';
   const f1 = (x) => Math.round(x * 10) / 10;
   const px = () => (typeof I.PX === 'function' ? I.PX() : 1);
@@ -257,7 +257,7 @@
     return null;
   }
   // perceived lightness 0..1 of a CSS color
-  function lightness(c) { const v = mw.color && mw.color.parse(c); if (!v) return 0.5; const f = (x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }; return Math.cbrt(0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2])); }
+  function lightness(c) { const v = gm.color && gm.color.parse(c); if (!v) return 0.5; const f = (x) => { x /= 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }; return Math.cbrt(0.2126 * f(v[0]) + 0.7152 * f(v[1]) + 0.0722 * f(v[2])); }
   // the shape as plain path data
   function guidePath(g) {
     const [a, b, c, d] = g.args;
@@ -298,7 +298,7 @@
     const grp = document.createElementNS(SVGNS, 'g');
     // keep identity and styling: id, classes, data-* (enter, exit, timing), style, presentation attributes
     for (const at of [...el.attributes]) if (!GEOM[el.tagName.toLowerCase()].includes(at.name) && at.name !== 'data-sketch' && !at.name.startsWith('data-sketch-') && at.name !== 'pathLength') grp.setAttribute(at.name, at.value);
-    grp.setAttribute('data-mw-sketch', g.kind);
+    grp.setAttribute('data-gm-sketch', g.kind);
     // the fill as drawn, or the fill attribute when a CSS rule (like .ink { fill: none }) hides it
     const visible = (c) => c && c !== 'none' && !/rgba\(\d+, \d+, \d+, 0\)/.test(c) && !/^url\(/.test(c);
     const attrFill = el.getAttribute('fill');
@@ -319,11 +319,11 @@
         fp.setAttribute('d', hachure(pts, { gap: o.gap ?? Math.max(9, sw * 3.2), angle: o.angle ?? -41, cross: mode === 'cross' || mode === 'cross-hatch', seed: seed + 'f', roughness: 0.5 * so.roughness }));
         // a pale fill would fade away as thin lines: the same hue, deeper (pastel yellow → a real yellow)
         // a pale fill hatched on paper would vanish: deepen it in the same hue; a white/grey one (no hue) to grey, not pink
-        const rgb = mw.color && mw.color.parse(fillColor), gray = rgb && Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]) < 16;
+        const rgb = gm.color && gm.color.parse(fillColor), gray = rgb && Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]) < 16;
         const hatchColor = lightness(fillColor) > 0.82 && CSS.supports('color', `oklch(from ${fillColor} l c h)`) ? (gray ? `oklch(from ${fillColor} min(l, 0.84) 0 h)` : `oklch(from ${fillColor} min(l, 0.8) max(c, 0.14) h)`) : fillColor;
         fp.setAttribute('style', `fill:none;stroke:${hatchColor};stroke-width:${Math.max(2, sw * 0.9)}px;stroke-linecap:round`);
       }
-      fp.setAttribute('data-mw-sketch-fill', mode);
+      fp.setAttribute('data-gm-sketch-fill', mode);
       grp.appendChild(fp);
     }
     const noStroke = (el.getAttribute('stroke') === 'none' || cs.stroke === 'none') && fillColor;
@@ -336,11 +336,11 @@
       if (cs.stroke === 'none' || !cs.stroke) op.style.stroke = 'currentColor';
       grp.appendChild(op);
     }
-    // the exact shape, hidden: mw.path.travel('#pkg', '#route') follows it when '#route' is a sketched shape
+    // the exact shape, hidden: gm.path.travel('#pkg', '#route') follows it when '#route' is a sketched shape
     if (guideD) {
       const gp = document.createElementNS(SVGNS, 'path');
       gp.setAttribute('d', guideD);
-      gp.setAttribute('data-mw-sketch-guide', '');
+      gp.setAttribute('data-gm-sketch-guide', '');
       gp.setAttribute('style', 'fill:none;stroke:none;visibility:hidden');
       grp.appendChild(gp);
     }
@@ -366,14 +366,14 @@
   function addMark(el, kind) {
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('data-check', 'ignore');
-    svg.setAttribute('class', 'mw-sketch-mark');
+    svg.setAttribute('class', 'gm-sketch-mark');
     svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:1' + (kind === 'highlight' ? ';mix-blend-mode:multiply' : '');
     marks.push({ el, kind, svg, seed: (el.id || 'm') + ':' + marks.length, at: startTime(el, 'data-sketch-mark-at'), dur: parseFloat(el.getAttribute('data-sketch-mark-duration')) || (kind === 'highlight' || kind === 'underline' || kind === 'strike' ? 0.5 : 0.7) });
   }
   function addBorder(el) {
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('data-check', 'ignore');
-    svg.setAttribute('class', 'mw-sketch-border');
+    svg.setAttribute('class', 'gm-sketch-border');
     svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none';
     marks.push({ el, kind: 'border', svg, seed: (el.id || 'b') + ':' + marks.length, opts: parseOpts(el, {}) });
   }
@@ -383,8 +383,8 @@
     // Built once while the page loads (the same for every worker). Things in clips that are not on screen yet are
     // shown for a moment to be measured.
     const hidden = [];
-    for (let a = el; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
-    try { return buildMarkNow(m); } finally { for (const a of hidden) a.setAttribute('data-mw-hidden', ''); }
+    for (let a = el; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+    try { return buildMarkNow(m); } finally { for (const a of hidden) a.setAttribute('data-gm-hidden', ''); }
   }
   function buildMarkNow(m) {
     const el = m.el;
@@ -430,7 +430,7 @@
     m.p = m.svg.firstChild;
     if (cs.position === 'static') el.style.position = 'relative';
     el.appendChild(m.svg);
-    m.base = mw.timing(el).start;
+    m.base = gm.timing(el).start;
     m.svg.style.visibility = 'hidden';
     return true;
   }
@@ -450,11 +450,11 @@
 
   function setupSketch() {
     let i = 0;
-    for (const el of document.querySelectorAll('[data-sketch-mark]')) if (!el.__mwMark) { el.__mwMark = true; addMark(el, (el.getAttribute('data-sketch-mark') || 'underline').trim()); }
+    for (const el of document.querySelectorAll('[data-sketch-mark]')) if (!el.__gmMark) { el.__gmMark = true; addMark(el, (el.getAttribute('data-sketch-mark') || 'underline').trim()); }
     for (const host of [...document.querySelectorAll('[data-sketch]')]) {
       if (!host.isConnected) continue;
       const tag = host.tagName.toLowerCase();
-      if (!(host instanceof SVGElement)) { if (!host.__mwBorder) { host.__mwBorder = true; addBorder(host); } continue; }
+      if (!(host instanceof SVGElement)) { if (!host.__gmBorder) { host.__gmBorder = true; addBorder(host); } continue; }
       const o = parseOpts(host, {});
       if (GEOM[tag]) { sketchOne(host, o, i++); continue; }
       // on an <svg> or <g>: every shape inside (a shape's own data-sketch options win)
@@ -468,15 +468,15 @@
   I.hooks.preinit.unshift(setupSketch);
 
   // ---------------------------------------------------------------------------
-  // mw.rect(el, space): an element's box in another element's own coordinates (e.g. a camera world),
+  // gm.rect(el, space): an element's box in another element's own coordinates (e.g. a camera world),
   // whatever transforms (camera zoom, rotation) sit on top of that space.
   // ---------------------------------------------------------------------------
   function spaceMap(space) {
-    let m = space.__mwMarks;
+    let m = space.__gmMarks;
     if (!m || !m[0].isConnected) {
-      const mk = (x, y) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:0;height:0;pointer-events:none;visibility:hidden`; space.appendChild(d); return d; };
+      const mk = (x, y) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:0;height:0;pointer-events:none;visibility:hidden`; space.appendChild(d); return d; };
       if (space !== document.body && getComputedStyle(space).position === 'static') space.style.position = 'relative';
-      m = space.__mwMarks = [mk(0, 0), mk(1000, 0), mk(0, 1000)];
+      m = space.__gmMarks = [mk(0, 0), mk(1000, 0), mk(0, 1000)];
     }
     const [o, x, y] = m.map((d) => d.getBoundingClientRect());
     const ax = (x.left - o.left) / 1000, ay = (x.top - o.top) / 1000, bx = (y.left - o.left) / 1000, by = (y.top - o.top) / 1000;
@@ -500,14 +500,14 @@
   }
 
   // ---------------------------------------------------------------------------
-  // mw.connect('#a', '#b', opts): a line or arrow between two elements that follows them every frame
+  // gm.connect('#a', '#b', opts): a line or arrow between two elements that follows them every frame
   // ---------------------------------------------------------------------------
   const connectors = [];
   function connect(a, b, o = {}) {
     const c = { a, b, o, seed: o.seed ?? 'c' + connectors.length };
     connectors.push(c);
-    // (mw.path.travel(el, thisArrow) rides along the arrow, see planTravel)
-    return { el: () => c.path, progress: (t) => c.progressAt ? c.progressAt(t) : 1, __mwConnector: c };
+    // (gm.path.travel(el, thisArrow) rides along the arrow, see planTravel)
+    return { el: () => c.path, progress: (t) => c.progressAt ? c.progressAt(t) : 1, __gmConnector: c };
   }
   // where the line from the center of box r toward point (px, py) leaves r (plus a gap)
   function edgePoint(r, px2, py2, gap) {
@@ -521,11 +521,11 @@
   function commonParent(x, y) { for (let p = x.parentElement; p; p = p.parentElement) if (p.contains(y) && !(p instanceof SVGElement)) return p; return document.body; }
   function setupConnector(c) {
     const A = elOf(c.a), B = elOf(c.b);
-    if (!A || !B) { I.report('error', 'connect-no-target', `mw.connect: "${!A ? c.a : c.b}" matched nothing.`, null, 'Check the selector.'); c.dead = true; return; }
+    if (!A || !B) { I.report('error', 'connect-no-target', `gm.connect: "${!A ? c.a : c.b}" matched nothing.`, null, 'Check the selector.'); c.dead = true; return; }
     c.A = A; c.B = B;
     c.space = c.o.in ? elOf(c.o.in) : commonParent(A, B);
     const svg = document.createElementNS(SVGNS, 'svg');
-    svg.setAttribute('class', 'mw-connect' + (c.o.class ? ' ' + c.o.class : ''));
+    svg.setAttribute('class', 'gm-connect' + (c.o.class ? ' ' + c.o.class : ''));
     svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none';
     const path = document.createElementNS(SVGNS, 'path');
     path.setAttribute('fill', 'none');
@@ -552,7 +552,7 @@
       tx.style.stroke = 'none';
       svg.appendChild(tx);
       const side = String(L.side || 'auto').toLowerCase();
-      if (!LABEL_SIDES.has(side)) I.report('warning', 'connect-label-side', `mw.connect: label side "${L.side}" is not one of ${[...LABEL_SIDES].join(' ')}.`, null, "Use side: 'above', 'below', 'left', 'right', 'outside' (of the bend) or 'inside'.");
+      if (!LABEL_SIDES.has(side)) I.report('warning', 'connect-label-side', `gm.connect: label side "${L.side}" is not one of ${[...LABEL_SIDES].join(' ')}.`, null, "Use side: 'above', 'below', 'left', 'right', 'outside' (of the bend) or 'inside'.");
       const at = L.at == null ? 0.5 : parseFrac(L.at);
       c.label = tx; c.labelOpt = L; c.labelSide = LABEL_SIDES.has(side) ? side : 'auto'; c.labelAt = at == null ? 0.5 : at;
     }
@@ -565,7 +565,7 @@
       const at = Array.isArray(dr) ? +dr[0] : typeof dr === 'object' ? +dr.at || 0 : +dr || 0;
       const dur = Array.isArray(dr) ? +(dr[1] ?? 0.8) : typeof dr === 'object' ? +(dr.duration ?? 0.8) : 0.8;
       const ease = I.easing ? I.easing(Array.isArray(dr) ? dr[2] || 'in-out-cubic' : (dr && dr.ease) || 'in-out-cubic') : (p) => p;
-      const base = c.o.global ? 0 : mw.timing(c.space === document.body ? A : c.space).start;
+      const base = c.o.global ? 0 : gm.timing(c.space === document.body ? A : c.space).start;
       c.progressAt = (T) => Math.max(0, Math.min(1, ease(Math.max(0, Math.min(1, (T - base - at) / Math.max(1e-6, dur))))));
       path.setAttribute('pathLength', '1');
     }
@@ -600,12 +600,12 @@
   // from: 'top' | 'top 0.25' | 'top-left' | 'center' | 0.25, plus fromAt: 0.25 -> { side, at }
   function parseAttach(v, at, what) {
     let side = null, f = at == null ? null : parseFrac(at);
-    if (at != null && f == null) I.report('warning', 'connect-bad-attach', `mw.connect: ${what}At "${at}" is not a number from 0 to 1.`, null, `${what}At: 0.25 attaches a quarter of the way along the side (from its left or top end).`);
+    if (at != null && f == null) I.report('warning', 'connect-bad-attach', `gm.connect: ${what}At "${at}" is not a number from 0 to 1.`, null, `${what}At: 0.25 attaches a quarter of the way along the side (from its left or top end).`);
     if (v != null && v !== '') {
       for (const tok of String(v).trim().toLowerCase().split(/[\s,]+/)) {
         if (ATTACH_SIDES[tok]) side = ATTACH_SIDES[tok];
         else if (parseFrac(tok) != null) { if (f == null) f = parseFrac(tok); }
-        else I.report('warning', 'connect-bad-attach', `mw.connect: ${what}: "${v}" is not a side.`, null, `Use 'top' 'right' 'bottom' 'left' 'center', a corner like 'top-left', or a side and a place along it: 'top 0.25'.`);
+        else I.report('warning', 'connect-bad-attach', `gm.connect: ${what}: "${v}" is not a side.`, null, `Use 'top' 'right' 'bottom' 'left' 'center', a corner like 'top-left', or a side and a place along it: 'top 0.25'.`);
       }
     }
     return { side, at: f };
@@ -714,7 +714,7 @@
   // moves (timeline, travel, camera, entrance). Side: top bottom left right center, or top-left top-right bottom-left
   // bottom-right (above/below, lined up with that edge); "inside" puts it inside that edge instead. The number is the
   // gap in px at 1080p (default 12). The label is positioned absolutely in its own parent (left/top are set).
-  // Plus mw.path.travel(el, arrow): ride along an mw.connect arrow, whose line is rebuilt every frame.
+  // Plus gm.path.travel(el, arrow): ride along an gm.connect arrow, whose line is rebuilt every frame.
   // ---------------------------------------------------------------------------
   const r2 = (x) => Math.round(x * 100) / 100;
   const SIDES = { top: 'top', above: 'top', bottom: 'bottom', below: 'bottom', under: 'bottom', left: 'left', right: 'right', center: 'center', middle: 'center', 'top-left': 'top-left', 'top-right': 'top-right', 'bottom-left': 'bottom-left', 'bottom-right': 'bottom-right', 'left-top': 'top-left', 'right-top': 'top-right', 'left-bottom': 'bottom-left', 'right-bottom': 'bottom-right' };
@@ -761,15 +761,15 @@
     let s = probeSets.get(parent);
     if (!s) probeSets.set(parent, (s = {}));
     if (!s[pos]) {
-      const mk = (x, y) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:${pos};left:${x}px;top:${y}px;width:0;height:0;margin:0;pointer-events:none;visibility:hidden`; parent.appendChild(d); return d; };
+      const mk = (x, y) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:${pos};left:${x}px;top:${y}px;width:0;height:0;margin:0;pointer-events:none;visibility:hidden`; parent.appendChild(d); return d; };
       s[pos] = [mk(0, 0), mk(1000, 0), mk(0, 1000)];
     }
     return s[pos];
   }
   function collectAnchors() {
     for (const el of document.querySelectorAll('[data-anchor]')) {
-      if (el.__mwAnchor) continue;
-      el.__mwAnchor = true;
+      if (el.__gmAnchor) continue;
+      el.__gmAnchor = true;
       const sp = parseAnchor(el.getAttribute('data-anchor'));
       const tg = sp.sel ? findNear(el, sp.sel) : null;
       if (!tg) { I.report('error', 'anchor-no-target', `data-anchor="${el.getAttribute('data-anchor')}": "${sp.sel}" matched nothing.`, el, 'Start with a selector of the element to stay next to, then the side and gap: data-anchor="#server bottom 12".'); continue; }
@@ -813,7 +813,7 @@
   function targetBox(a, map) {
     const tg = a.tg;
     if (!tg.isConnected || !tg.getClientRects().length) return null;
-    const ge = tg.hasAttribute('data-mw-sketch') ? tg.querySelector(':scope > [data-mw-sketch-guide]') || tg : tg;
+    const ge = tg.hasAttribute('data-gm-sketch') ? tg.querySelector(':scope > [data-gm-sketch-guide]') || tg : tg;
     const r = ge.getBoundingClientRect();
     let e = 0;
     if (a.sw) { const m = tg.getScreenCTM && tg.getScreenCTM(); e = m ? (a.sw / 2) * Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) : 0; }
@@ -893,11 +893,11 @@
     };
     all.forEach(visit);
     // what the camera moves: its world, layers with parallax, shared-element morphs
-    const mover = (e) => e && e.closest && e.closest('[data-mw-camera-world],[data-parallax],[data-morph]');
+    const mover = (e) => e && e.closest && e.closest('[data-gm-camera-world],[data-parallax],[data-morph]');
     for (const j of out) j.late = depsOf(j).some((d) => mover(d) !== mover(j.el)) || j.dep.some((k) => k.late);
     // before the camera, the camera's transforms of the last frame are taken off while measuring: rounding then never
     // depends on which frame came before (1 worker == N workers)
-    camLayers = [...new Set(out.filter((j) => !j.late).flatMap((j) => { const r = []; for (let e = j.el.closest('[data-mw-camera-world],[data-parallax]'); e; e = e.parentElement && e.parentElement.closest('[data-mw-camera-world],[data-parallax]')) r.push(e); return r; }))];
+    camLayers = [...new Set(out.filter((j) => !j.late).flatMap((j) => { const r = []; for (let e = j.el.closest('[data-gm-camera-world],[data-parallax]'); e; e = e.parentElement && e.parentElement.closest('[data-gm-camera-world],[data-parallax]')) r.push(e); return r; }))];
     jobs = out.sort((x, y) => x.level - y.level); jobsDirty = false;
   }
   let camLayers = [];
@@ -934,8 +934,8 @@
     for (const a of jobs) {
       if (a.kind !== 'anchor') continue;
       const hidden = [];
-      for (const e of [a.el, a.tg]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-mw-hidden')) { hidden.push(p); p.removeAttribute('data-mw-hidden'); }
-      try { const w = planAnchor(a, true, null); if (w) w(); } catch (e) { I.pageError(e); } finally { for (const p of hidden) p.setAttribute('data-mw-hidden', ''); }
+      for (const e of [a.el, a.tg]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-gm-hidden')) { hidden.push(p); p.removeAttribute('data-gm-hidden'); }
+      try { const w = planAnchor(a, true, null); if (w) w(); } catch (e) { I.pageError(e); } finally { for (const p of hidden) p.setAttribute('data-gm-hidden', ''); }
     }
     jobsDirty = true;
   }
@@ -945,8 +945,8 @@
   I.hooks.post.push((T) => runJobs(T, true));
   I.hooks.post.push(updateConnectors);
 
-  mw.rect = rectIn;
-  mw.connect = connect;
+  gm.rect = rectIn;
+  gm.connect = connect;
   // Without a seed, the shape's own numbers are the seed: the same call gives the same drawing in every frame and
   // every worker (a counter would make lines boil when called from onFrame).
   const seeded = (fn, n) => (...a) => {
@@ -955,7 +955,7 @@
     a[n] = o;
     return fn(...a);
   };
-  mw.sketch = {
+  gm.sketch = {
     line: seeded((x1, y1, x2, y2, o) => line(x1, y1, x2, y2, o), 4),
     rect: seeded((x, y, w, h, o) => rect(x, y, w, h, o), 4),
     ellipse: seeded((cx, cy, rx, ry, o) => ellipse(cx, cy, rx, ry, o), 4),

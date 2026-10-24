@@ -7,11 +7,11 @@ import { tmpdir, release as osRelease } from 'node:os';
 let cachedPath = null;
 export function ffmpegPath() {
   if (cachedPath) return cachedPath;
-  cachedPath = process.env.MOTIONWRIGHT_FFMPEG || process.env.FFMPEG_PATH || 'ffmpeg';
+  cachedPath = process.env.GIVEMOTION_FFMPEG || process.env.FFMPEG_PATH || 'ffmpeg';
   return cachedPath;
 }
 export function ffprobePath() {
-  if (process.env.MOTIONWRIGHT_FFPROBE || process.env.FFPROBE_PATH) return process.env.MOTIONWRIGHT_FFPROBE || process.env.FFPROBE_PATH;
+  if (process.env.GIVEMOTION_FFPROBE || process.env.FFPROBE_PATH) return process.env.GIVEMOTION_FFPROBE || process.env.FFPROBE_PATH;
   const f = ffmpegPath();
   return f === 'ffmpeg' ? 'ffprobe' : f.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1');
 }
@@ -33,7 +33,7 @@ export function ffmpegInfo() {
 
 export function requireFfmpeg() {
   const info = ffmpegInfo();
-  if (!info) throw new Error('ffmpeg was not found. Install it (macOS: `brew install ffmpeg`, Ubuntu: `sudo apt install ffmpeg`, Windows: `winget install ffmpeg`) or set MOTIONWRIGHT_FFMPEG to its path.');
+  if (!info) throw new Error('ffmpeg was not found. Install it (macOS: `brew install ffmpeg`, Ubuntu: `sudo apt install ffmpeg`, Windows: `winget install ffmpeg`) or set GIVEMOTION_FFMPEG to its path.');
   return info;
 }
 
@@ -267,7 +267,7 @@ export function encoderIsReproducible(plan, info, { cacheFile, tmp } = {}) {
   let cache = {};
   try { if (cacheFile) cache = JSON.parse(readFileSync(cacheFile, 'utf8')); } catch {}
   if (key in cache) return cache[key];
-  const dir = mkdtempSync(join(tmp || tmpdir(), 'mw-hwcheck-'));
+  const dir = mkdtempSync(join(tmp || tmpdir(), 'gm-hwcheck-'));
   let ok = false;
   try {
     const enc = (out) => spawnSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=2',

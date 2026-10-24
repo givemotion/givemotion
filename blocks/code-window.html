@@ -1,13 +1,13 @@
 <!-- block:
 description: Editor window with syntax highlighting and an optional typing effect. Put the code between the tags as plain text (no escaping needed).
 params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p; scales with the short side, default 1200), size (font px, default 34), highlight (lines to highlight: "6" or "2-4,6"), focus (lines to keep bright, the others are dimmed), gutter (true = line numbers), grow (true = the window grows while typing instead of keeping its final size)
-targets: every line is <span class="mw-line" data-line="N"> (aim a camera at it, animate it with a timeline: '.mw-line[data-line="6"]'). Wrap a part of the code in ⟦ ⟧ to mark it: it becomes <span class="mw-mark" data-mark="1"> (2, 3… in order), e.g. await sleep(⟦2 ** i * 250⟧). The ⟦ ⟧ are not shown.
-usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing="40" data-duration="6">const answer = await ai.run(prompt);</mw-include>
+targets: every line is <span class="gm-line" data-line="N"> (aim a camera at it, animate it with a timeline: '.gm-line[data-line="6"]'). Wrap a part of the code in ⟦ ⟧ to mark it: it becomes <span class="gm-mark" data-mark="1"> (2, 3… in order), e.g. await sleep(⟦2 ** i * 250⟧). The ⟦ ⟧ are not shown.
+usage: <gm-include src="blocks/code-window.html" title="app.ts" lang="ts" typing="40" data-duration="6">const answer = await ai.run(prompt);</gm-include>
 -->
-<div class="mwb-code" style="--w:{{width|1200}};--fs:{{size|34}}" data-enter="scale 0.7 0 out-expo">
-  <div class="mwb-code__bar"><i></i><i></i><i></i><span>{{title}}</span></div>
-  <textarea hidden class="mwb-code__src">{{content}}</textarea>
-  <pre class="mwb-code__pre"><code data-lang="{{lang|js}}" data-typing="{{typing|0}}" data-delay="{{delay|0.4}}" data-highlight="{{highlight}}" data-focus="{{focus}}" data-gutter="{{gutter}}" data-grow="{{grow}}"></code></pre>
+<div class="gmb-code" style="--w:{{width|1200}};--fs:{{size|34}}" data-enter="scale 0.7 0 out-expo">
+  <div class="gmb-code__bar"><i></i><i></i><i></i><span>{{title}}</span></div>
+  <textarea hidden class="gmb-code__src">{{content}}</textarea>
+  <pre class="gmb-code__pre"><code data-lang="{{lang|js}}" data-typing="{{typing|0}}" data-delay="{{delay|0.4}}" data-highlight="{{highlight}}" data-focus="{{focus}}" data-gutter="{{gutter}}" data-grow="{{grow}}"></code></pre>
 </div>
 <script>
 (() => {
@@ -15,7 +15,7 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
   const code = root.querySelector('code');
   const lang = code.dataset.lang.toLowerCase();
   // Dedent and trim
-  let lines = root.querySelector('.mwb-code__src').value.replace(/\t/g, '  ').split('\n');
+  let lines = root.querySelector('.gmb-code__src').value.replace(/\t/g, '  ').split('\n');
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   const ind = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length));
@@ -74,8 +74,8 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
     outLines.push(cur + '</span>'.repeat(stack.length));
     const sel = (v) => { const set = new Set(); for (const part of String(v || '').split(',')) { const r = /^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/.exec(part); if (r) for (let i = +r[1]; i <= +(r[2] || r[1]); i++) set.add(i); } return set; };
     const hl = sel(code.dataset.highlight), fo = sel(code.dataset.focus);
-    html = outLines.map((l, i) => `<span class="mw-line${hl.has(i + 1) ? ' is-hl' : ''}${fo.size && !fo.has(i + 1) ? ' is-dim' : ''}" data-line="${i + 1}">${l}</span>`).join('');
-    if (/^(true|1|yes)$/i.test(code.dataset.gutter)) root.classList.add('mwb-code--gutter');
+    html = outLines.map((l, i) => `<span class="gm-line${hl.has(i + 1) ? ' is-hl' : ''}${fo.size && !fo.has(i + 1) ? ' is-dim' : ''}" data-line="${i + 1}">${l}</span>`).join('');
+    if (/^(true|1|yes)$/i.test(code.dataset.gutter)) root.classList.add('gmb-code--gutter');
   }
   code.innerHTML = html;
   // Wrap the ⟦marked⟧ ranges (they may cross token colors).
@@ -90,11 +90,11 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
     }
     if (!start || !end) return;
     const r = document.createRange(); r.setStart(...start); r.setEnd(...end);
-    const span = document.createElement('span'); span.className = 'mw-mark'; span.dataset.mark = String(i + 1);
+    const span = document.createElement('span'); span.className = 'gm-mark'; span.dataset.mark = String(i + 1);
     span.appendChild(r.extractContents()); r.insertNode(span);
   });
   // Shrink the font if the longest line would not fit the window.
-  mw.wait(document.fonts.ready.then(() => {
+  gm.wait(document.fonts.ready.then(() => {
     const pre = root.querySelector('pre');
     if (pre.scrollWidth > pre.clientWidth + 1) {
       const fs = parseFloat(getComputedStyle(pre).fontSize);
@@ -109,18 +109,18 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
 })();
 </script>
 <style>
-.mwb-code{position:relative;width:calc(var(--px)*var(--w));max-width:calc(var(--stage-w,1920px) - var(--px)*120);border-radius:calc(var(--px)*22);overflow:hidden;background:#0d1117;
+.gmb-code{position:relative;width:calc(var(--px)*var(--w));max-width:calc(var(--stage-w,1920px) - var(--px)*120);border-radius:calc(var(--px)*22);overflow:hidden;background:#0d1117;
   border:1px solid rgba(255,255,255,.1);box-shadow:0 calc(var(--px)*40) calc(var(--px)*120) rgba(0,0,0,.45);text-align:left}
-.mwb-code__bar{display:flex;align-items:center;gap:calc(var(--px)*12);height:calc(var(--px)*64);padding:0 calc(var(--px)*24);background:#161b22;border-bottom:1px solid rgba(255,255,255,.06)}
-.mwb-code__bar i{width:calc(var(--px)*16);height:calc(var(--px)*16);border-radius:50%;background:#ff5f57}
-.mwb-code__bar i:nth-child(2){background:#febc2e} .mwb-code__bar i:nth-child(3){background:#28c840}
-.mwb-code__bar span{flex:1;text-align:center;margin-right:calc(var(--px)*72);color:#8b949e;font:500 calc(var(--px)*24)/1 Inter,system-ui,sans-serif}
-.mwb-code__pre{margin:0;padding:calc(var(--px)*36) calc(var(--px)*44);font:calc(var(--px)*var(--fs))/1.55 "JetBrains Mono","SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;color:#e6edf3;white-space:pre;tab-size:2}
-.mwb-code .c{color:#8b949e;font-style:italic} .mwb-code .s{color:#a5d6ff} .mwb-code .n{color:#79c0ff} .mwb-code .k{color:#ff7b72}
-.mwb-code .f{color:#d2a8ff} .mwb-code .y{color:#ffa657} .mwb-code .p{color:#c9d1d9} .mwb-code .t{color:#7ee787} .mwb-code .a{color:#79c0ff}
-.mwb-code .mw-caret{background:#58a6ff}
-.mwb-code .mw-line{display:block;min-height:1lh;margin:0 calc(var(--px)*-44);padding:0 calc(var(--px)*44)}
-.mwb-code .mw-line.is-hl{background:rgba(88,166,255,.16);box-shadow:inset calc(var(--px)*5) 0 0 #58a6ff}
-.mwb-code .mw-line.is-dim{opacity:.35}
-.mwb-code--gutter .mw-line::before{content:attr(data-line);display:inline-block;width:2.2em;margin-right:.8em;text-align:right;color:#6e7681}
+.gmb-code__bar{display:flex;align-items:center;gap:calc(var(--px)*12);height:calc(var(--px)*64);padding:0 calc(var(--px)*24);background:#161b22;border-bottom:1px solid rgba(255,255,255,.06)}
+.gmb-code__bar i{width:calc(var(--px)*16);height:calc(var(--px)*16);border-radius:50%;background:#ff5f57}
+.gmb-code__bar i:nth-child(2){background:#febc2e} .gmb-code__bar i:nth-child(3){background:#28c840}
+.gmb-code__bar span{flex:1;text-align:center;margin-right:calc(var(--px)*72);color:#8b949e;font:500 calc(var(--px)*24)/1 Inter,system-ui,sans-serif}
+.gmb-code__pre{margin:0;padding:calc(var(--px)*36) calc(var(--px)*44);font:calc(var(--px)*var(--fs))/1.55 "JetBrains Mono","SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;color:#e6edf3;white-space:pre;tab-size:2}
+.gmb-code .c{color:#8b949e;font-style:italic} .gmb-code .s{color:#a5d6ff} .gmb-code .n{color:#79c0ff} .gmb-code .k{color:#ff7b72}
+.gmb-code .f{color:#d2a8ff} .gmb-code .y{color:#ffa657} .gmb-code .p{color:#c9d1d9} .gmb-code .t{color:#7ee787} .gmb-code .a{color:#79c0ff}
+.gmb-code .gm-caret{background:#58a6ff}
+.gmb-code .gm-line{display:block;min-height:1lh;margin:0 calc(var(--px)*-44);padding:0 calc(var(--px)*44)}
+.gmb-code .gm-line.is-hl{background:rgba(88,166,255,.16);box-shadow:inset calc(var(--px)*5) 0 0 #58a6ff}
+.gmb-code .gm-line.is-dim{opacity:.35}
+.gmb-code--gutter .gm-line::before{content:attr(data-line);display:inline-block;width:2.2em;margin-right:.8em;text-align:right;color:#6e7681}
 </style>

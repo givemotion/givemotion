@@ -1,33 +1,33 @@
 <!-- block:
 description: Logo reveal: the logo scales in from a soft glow, a light sweep passes over it, and an optional tagline appears.
 params: logo (image path; or put HTML/SVG between the tags), tagline, size (logo height px at 1080p, default 220), glow (color)
-usage: <mw-include src="blocks/logo-reveal.html" logo="assets/logo.svg" tagline="Automate anything" data-duration="3.5"></mw-include>
+usage: <gm-include src="blocks/logo-reveal.html" logo="assets/logo.svg" tagline="Automate anything" data-duration="3.5"></gm-include>
 -->
-<div class="mwb-logo" style="--size:{{size|220}};--glow:{{glow|#7c9cff}}">
-  <div class="mwb-logo__halo"></div>
-  <div class="mwb-logo__mark"><img src="{{logo}}" alt="">{{content}}<div class="mwb-logo__shinebox"><div class="mwb-logo__shine"></div></div></div>
-  <div class="mwb-logo__tag" data-enter="fade-up 0.7 1.0">{{tagline}}</div>
+<div class="gmb-logo" style="--size:{{size|220}};--glow:{{glow|#7c9cff}}">
+  <div class="gmb-logo__halo"></div>
+  <div class="gmb-logo__mark"><img src="{{logo}}" alt="">{{content}}<div class="gmb-logo__shinebox"><div class="gmb-logo__shine"></div></div></div>
+  <div class="gmb-logo__tag" data-enter="fade-up 0.7 1.0">{{tagline}}</div>
 </div>
 <script>
 (() => {
-  const r = document.currentScript.previousElementSibling, i = r.querySelector('img'), box = r.querySelector('.mwb-logo__shinebox');
+  const r = document.currentScript.previousElementSibling, i = r.querySelector('img'), box = r.querySelector('.gmb-logo__shinebox');
   if (!i.getAttribute('src')) { i.remove(); box.remove(); return; }
   // The light sweep only shows on the logo's own pixels.
   box.style.maskImage = box.style.webkitMaskImage = `url("${i.src}")`;
 })();
 </script>
 <style>
-.mwb-logo{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--px)*44)}
-.mwb-logo__halo{position:absolute;left:50%;top:50%;width:calc(var(--px)*900);aspect-ratio:1;translate:-50% -50%;border-radius:50%;
-  background:radial-gradient(closest-side,color-mix(in oklab,var(--glow),transparent 55%),transparent);animation:mwb-logo-halo 1.6s var(--ease-out-expo) both}
-.mwb-logo__mark{position:relative;height:calc(var(--px)*var(--size));display:flex;align-items:center;justify-content:center;animation:mwb-logo-in 1.1s var(--ease-out-expo) .1s both;
+.gmb-logo{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--px)*44)}
+.gmb-logo__halo{position:absolute;left:50%;top:50%;width:calc(var(--px)*900);aspect-ratio:1;translate:-50% -50%;border-radius:50%;
+  background:radial-gradient(closest-side,color-mix(in oklab,var(--glow),transparent 55%),transparent);animation:gmb-logo-halo 1.6s var(--ease-out-expo) both}
+.gmb-logo__mark{position:relative;height:calc(var(--px)*var(--size));display:flex;align-items:center;justify-content:center;animation:gmb-logo-in 1.1s var(--ease-out-expo) .1s both;
 }
-.mwb-logo__mark img,.mwb-logo__mark svg{height:100%;width:auto;display:block}
-.mwb-logo__shinebox{position:absolute;inset:0;overflow:hidden;-webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
-.mwb-logo__shine{position:absolute;top:0;bottom:0;left:0;width:60%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.55) 50%,transparent 100%);translate:-120% 0;animation:mwb-logo-shine 1.1s var(--ease-in-out-cubic) .9s both}
-.mwb-logo__tag{font-size:calc(var(--px)*44);font-weight:500;opacity:.8;letter-spacing:.01em}
-.mwb-logo__tag:empty{display:none}
-@keyframes mwb-logo-in{from{opacity:0;scale:.7;filter:blur(calc(var(--px)*24))}}
-@keyframes mwb-logo-halo{from{opacity:0;scale:.4}}
-@keyframes mwb-logo-shine{to{translate:200% 0}}
+.gmb-logo__mark img,.gmb-logo__mark svg{height:100%;width:auto;display:block}
+.gmb-logo__shinebox{position:absolute;inset:0;overflow:hidden;-webkit-mask-size:100% 100%;mask-size:100% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+.gmb-logo__shine{position:absolute;top:0;bottom:0;left:0;width:60%;background:linear-gradient(105deg,transparent 0%,rgba(255,255,255,.55) 50%,transparent 100%);translate:-120% 0;animation:gmb-logo-shine 1.1s var(--ease-in-out-cubic) .9s both}
+.gmb-logo__tag{font-size:calc(var(--px)*44);font-weight:500;opacity:.8;letter-spacing:.01em}
+.gmb-logo__tag:empty{display:none}
+@keyframes gmb-logo-in{from{opacity:0;scale:.7;filter:blur(calc(var(--px)*24))}}
+@keyframes gmb-logo-halo{from{opacity:0;scale:.4}}
+@keyframes gmb-logo-shine{to{translate:200% 0}}
 </style>

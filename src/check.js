@@ -15,14 +15,14 @@ async function autoTransparent(ctx, opts) {
 // Page-side analysis (stringified and evaluated in the composition page)
 // ---------------------------------------------------------------------------
 const PAGE_ANALYZE = String.raw`((dt, opt) => {
-  const W = mw.width, H = mw.height, PX = mw.px;
+  const W = gm.width, H = gm.height, PX = gm.px;
   // Safe zone for vertical social video (app buttons and titles cover the edges), in px at 1080p
   const ZONES = { shorts: [220, 60, 380, 60], reels: [220, 60, 380, 60], tiktok: [220, 120, 380, 60] };
   const zname = (opt && opt.safeZone) || document.documentElement.getAttribute('data-safe-zone');
   let zone = null;
   if (zname && zname !== 'none' && zname !== 'off') { const z = ZONES[zname] || String(zname).split(/[\s,]+/).map(Number); if (z.length === 4 && z.every((v) => isFinite(v))) zone = { left: z[3] * PX, top: z[0] * PX, right: W - z[1] * PX, bottom: H - z[2] * PX, name: ZONES[zname] ? zname : 'custom' }; }
   const out = [];
-  const ignored = (el) => !!el.closest('[data-check="ignore"],[aria-hidden="true"],[data-mw-internal]');
+  const ignored = (el) => !!el.closest('[data-check="ignore"],[aria-hidden="true"],[data-gm-internal]');
   const isTextEl = (el) => {
     // Emoji-only text is a picture, not reading text.
     for (const n of el.childNodes) if (n.nodeType === 3 && n.data.trim() && !/^[\s\p{Extended_Pictographic}‍️⃣]+$/u.test(n.data)) return true;
@@ -51,7 +51,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     return rects;
   };
   const union = (rs) => rs.reduce((a, r) => a ? { left: Math.min(a.left, r.left), top: Math.min(a.top, r.top), right: Math.max(a.right, r.right), bottom: Math.max(a.bottom, r.bottom) } : { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, null);
-  const sel = (el) => mw.__selector(el);
+  const sel = (el) => gm.__selector(el);
   // Glyph boxes are taller than the visible letters; shrink them for clip/overlap tests.
   const tight = (r) => { const h = r.bottom - r.top; return { left: r.left, right: r.right, top: r.top + h * 0.2, bottom: r.bottom - h * 0.22, width: r.right - r.left, height: h * 0.58 }; };
   const area = (r) => Math.max(0, r.right - r.left) * Math.max(0, r.bottom - r.top);
@@ -61,7 +61,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   const animating = new Set();
   for (const a of document.getAnimations()) {
     try {
-      if (a.__mwCamera) continue;
+      if (a.__gmCamera) continue;
       const ct = a.effect.getComputedTiming();
       const lt = ct.localTime, d = ct.delay || 0, ad = ct.activeDuration;
       if (ct.progress != null && lt > d && lt < d + ad && isFinite(ad) && ad <= 2500) animating.add(a.effect.target);
@@ -70,12 +70,12 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   const inAnim = (el) => { for (let c = el; c; c = c.parentElement) if (animating.has(c)) return true; return false; };
   const transitioning = [...animating].some((m) => m && m.parentElement && m.parentElement.hasAttribute('data-sequence'));
   // 2. Motion from any code (timeline, React, onFrame): compare with the previous sample.
-  const prev = window.__mwPrevBoxes || new Map();
+  const prev = window.__gmPrevBoxes || new Map();
   const next = new Map();
   const snippet = (el) => (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
   const texts = [];
   for (const el of document.body.querySelectorAll('*')) {
-    if (el.closest('[data-mw-hidden]') || ignored(el)) continue;
+    if (el.closest('[data-gm-hidden]') || ignored(el)) continue;
     if (!isTextEl(el)) continue;
     const op = visible(el);
     if (!op) continue;
@@ -102,17 +102,17 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     }
     texts.push({ el, rs, u, op, moving: inAnim(el) || speedMoving, fading: !!(p && Math.abs(box.op - p.op) > 0.02) });
   }
-  window.__mwPrevBoxes = next;
+  window.__gmPrevBoxes = next;
   // Is a camera world moving right now? Labels the camera passes over on its way to the next shot are not framing mistakes.
-  const focus = (window.mw && mw.__cameraFocus) ? mw.__cameraFocus() : [];
-  const prevCam = window.__mwPrevCam || new Map(), nextCam = new Map(), camMoving = new Set();
-  for (const wEl of document.querySelectorAll('[data-mw-camera-world]')) {
+  const focus = (window.gm && gm.__cameraFocus) ? gm.__cameraFocus() : [];
+  const prevCam = window.__gmPrevCam || new Map(), nextCam = new Map(), camMoving = new Set();
+  for (const wEl of document.querySelectorAll('[data-gm-camera-world]')) {
     const r = wEl.getBoundingClientRect(), c = { x: r.left, y: r.top, s: r.width / (wEl.offsetWidth || r.width || 1) };
     nextCam.set(wEl, c);
     const p = prevCam.get(wEl);
     if (p && dt > 0 && (Math.hypot(c.x - p.x, c.y - p.y) / dt > 60 * PX || Math.abs(Math.log(c.s / p.s)) / dt > 0.03)) camMoving.add(wEl);
   }
-  window.__mwPrevCam = nextCam;
+  window.__gmPrevCam = nextCam;
   // Visible part of the text: inside the frame and inside every clipping ancestor (overflow or clip-path inset).
   const clipBoxOf = (el) => {
     let r = { left: -1e9, top: -1e9, right: 1e9, bottom: 1e9 }, by = null, masked = false;
@@ -201,18 +201,18 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     // Partly hidden behind a shape or box that is drawn on top of it
     // (something flying over it on its way somewhere does not count)
     const passing = (c) => inAnim(c) || texts.some((o) => o.moving && (o.el === c || c.contains(o.el)));
-    if (cov.hits > 0 && cov.by && t.op >= 0.5 && !transitioning && !ignored(cov.by) && !cov.by.closest('[data-mw-internal]') && !passing(cov.by)) {
+    if (cov.hits > 0 && cov.by && t.op >= 0.5 && !transitioning && !ignored(cov.by) && !cov.by.closest('[data-gm-internal]') && !passing(cov.by)) {
       out.push({ severity: 'warning', code: 'text-covered', selector: sel(el), text: snippet(el), message: 'Part of the text is hidden behind ' + sel(cov.by) + ', which is drawn on top of it.', minSpan: 0.3, fix: 'Move one of them, or put the text above it (z-index, or later in the HTML).' });
     }
     // Inside a camera world (or data-check="crop-ok"), being cut by the frame edge is framing, not a mistake.
-    const cropOk = !!el.closest('[data-mw-camera-world],[data-check~="crop-ok"]');
+    const cropOk = !!el.closest('[data-gm-camera-world],[data-check~="crop-ok"]');
     // 1. Text partly outside the frame (fully outside = not shown, which is fine)
     const outX = Math.max(0, -tu.left) + Math.max(0, tu.right - W);
     const outY = Math.max(0, -tu.top) + Math.max(0, tu.bottom - H);
     // In a camera world, text passing by the edge is fine, but a label that is mostly in view and cut is still worth a look.
     const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
     const cropMeant = !!el.closest('[data-check~="crop-ok"]');
-    const camWorld = el.closest('[data-mw-camera-world]');
+    const camWorld = el.closest('[data-gm-camera-world]');
     // (a label of another part of the drawing that sits half in frame is still reported: judges and viewers read a
     //  half-cut label as a mistake, whatever the shot is about)
     const overview = camWorld && focus.some((f) => f.world === camWorld && f.overview);
@@ -265,7 +265,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   //     Fills (a card behind a label, hatching) are fine; strokes still being drawn on, or hidden under something opaque, are skipped.
   const strokes = [];
   for (const sh of document.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')) {
-    if (sh.closest('defs,clipPath,mask,marker,pattern,symbol,[data-mw-sketch-guide],[data-mw-sketch-fill],.mw-sketch-mark,[data-mw-internal]') || ignored(sh)) continue;
+    if (sh.closest('defs,clipPath,mask,marker,pattern,symbol,[data-gm-sketch-guide],[data-gm-sketch-fill],.gm-sketch-mark,[data-gm-internal]') || ignored(sh)) continue;
     const cs = getComputedStyle(sh);
     if (cs.stroke === 'none' || /rgba\([^)]*,\s*0\)/.test(cs.stroke) || cs.visibility !== 'visible' || inAnim(sh)) continue;
     // A dashed line counts (a dashed ring through a label is still a line through it), but a draw-on that has not
@@ -362,7 +362,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   }
   // 6. Broken images
   for (const img of document.images) {
-    if (img.closest('[data-mw-hidden]') || ignored(img)) continue;
+    if (img.closest('[data-gm-hidden]') || ignored(img)) continue;
     if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) out.push({ severity: 'error', code: 'image-broken', selector: sel(img), message: 'Image did not load: ' + img.getAttribute('src'), fix: 'Check the file path (relative to the HTML file).' });
   }
   // Text boxes for the contrast pass. Fading, moving, covered or clip-filled text is not judged.
@@ -375,11 +375,11 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     for (let ix = 0; ix < 5; ix++) {
       const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 5, y = (tu.top + tu.bottom) / 2;
       const st = document.elementsFromPoint(x, y), k = st.findIndex((e) => e === t.el || t.el.contains(e));
-      if (k > 0 && st.slice(0, k).some((e) => !e.contains(t.el) && !e.closest('[data-mw-internal]'))) return true;
+      if (k > 0 && st.slice(0, k).some((e) => !e.contains(t.el) && !e.closest('[data-gm-internal]'))) return true;
     }
     return false;
   };
-  window.__mwTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && !t.fading && inFrame(t) && !underSomething(t)).map((t) => {
+  window.__gmTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && !t.fading && inFrame(t) && !underSomething(t)).map((t) => {
     const cs = getComputedStyle(t.el);
     // A dark/light text-shadow or outline gives text its own backing; be lenient then.
     const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;
@@ -387,18 +387,18 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   });
   // where each issue's element sits: its scene and when that scene starts (for scene-local times)
   for (const i of out) {
-    try { const e = i.selector && document.querySelector(i.selector); const sc = e && (e.closest('.scene') || e.closest('[data-start],[data-duration]')); if (sc) { i.scene = sel(sc); i.sceneStart = mw.timing(sc).start; } } catch (er) {}
+    try { const e = i.selector && document.querySelector(i.selector); const sc = e && (e.closest('.scene') || e.closest('[data-start],[data-duration]')); if (sc) { i.scene = sel(sc); i.sceneStart = gm.timing(sc).start; } } catch (er) {}
   }
   // the biggest readable text on screen (an "empty" frame with a heading on it is not empty)
   let maxFont = 0;
   for (const t of texts) { if (t.hidden || t.covered) continue; const k = t.el.offsetHeight ? t.el.getBoundingClientRect().height / t.el.offsetHeight : 1; maxFont = Math.max(maxFont, parseFloat(getComputedStyle(t.el).fontSize) * (isFinite(k) && k > 0 ? k : 1)); }
-  return { issues: out, textCount: texts.length, maxFont: maxFont / PX, boxes: window.__mwTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
+  return { issues: out, textCount: texts.length, maxFont: maxFont / PX, boxes: window.__gmTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
 })`;
 
-const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__mw_hide'); if (!s) { s = document.createElement('style'); s.id='__mw_hide'; document.head.appendChild(s); }
-  s.textContent = '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke-color:transparent!important;caret-color:transparent!important;text-decoration-color:transparent!important} text,text *{fill:transparent!important;stroke:transparent!important} .mw-caret{visibility:hidden!important}';
+const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__gm_hide'); if (!s) { s = document.createElement('style'); s.id='__gm_hide'; document.head.appendChild(s); }
+  s.textContent = '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke-color:transparent!important;caret-color:transparent!important;text-decoration-color:transparent!important} text,text *{fill:transparent!important;stroke:transparent!important} .gm-caret{visibility:hidden!important}';
   return true; })()`;
-const PAGE_SHOW_TEXT = `(() => { const s = document.getElementById('__mw_hide'); if (s) s.remove(); return true; })()`;
+const PAGE_SHOW_TEXT = `(() => { const s = document.getElementById('__gm_hide'); if (s) s.remove(); return true; })()`;
 
 function contrastScript(dataUrl, scale) {
   return `(async () => {
@@ -411,7 +411,7 @@ function contrastScript(dataUrl, scale) {
   const pc = document.createElement('canvas'); pc.width = pc.height = 1; const pg = pc.getContext('2d', { willReadFrequently: true });
   const parse = (s) => { pg.clearRect(0, 0, 1, 1); pg.fillStyle = '#000'; pg.fillStyle = s; pg.fillRect(0, 0, 1, 1); const d = pg.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };
   const res = [];
-  for (const b of window.__mwTextBoxes || []) {
+  for (const b of window.__gmTextBoxes || []) {
     const samples = [];
     for (const [x, y, w, h] of b.rects) {
       const X = Math.max(0, Math.floor(x * S)), Y = Math.max(0, Math.floor(y * S)), Wd = Math.min(c.width - X, Math.ceil(w * S)), Hd = Math.min(c.height - Y, Math.ceil(h * S));
@@ -510,7 +510,7 @@ export async function check(input, opts = {}) {
     // Pacing: a tiny grey picture of the frame every half second finds long stretches where nothing moves.
     const GW = 192, GH = 108;
     const pace = opts.at == null && opts.pacing !== false;
-    if (pace) await ctx.page.evaluate(`window.__mwGrid = async (src) => { const im = new Image(); im.src = src; await im.decode(); const c = document.createElement('canvas'); c.width = ${GW}; c.height = ${GH}; const g = c.getContext('2d'); g.drawImage(im, 0, 0, ${GW}, ${GH}); const d = g.getImageData(0, 0, ${GW}, ${GH}).data; const o = new Array(${GW * GH}); for (let i = 0, j = 0; i < d.length; i += 4, j++) o[j] = (54 * d[i] + 183 * d[i + 1] + 19 * d[i + 2]) >> 8; return o; }`);
+    if (pace) await ctx.page.evaluate(`window.__gmGrid = async (src) => { const im = new Image(); im.src = src; await im.decode(); const c = document.createElement('canvas'); c.width = ${GW}; c.height = ${GH}; const g = c.getContext('2d'); g.drawImage(im, 0, 0, ${GW}, ${GH}); const d = g.getImageData(0, 0, ${GW}, ${GH}).data; const o = new Array(${GW * GH}); for (let i = 0, j = 0; i < d.length; i += 4, j++) o[j] = (54 * d[i] + 183 * d[i + 1] + 19 * d[i + 2]) >> 8; return o; }`);
     let lastGrid = null, lastGridT = -Infinity, busy = false;
     let motion = null;
     const openFrames = []; // the first half second: is anything on screen?
@@ -525,7 +525,7 @@ export async function check(input, opts = {}) {
       busy = busy || !!a.busy; // an entrance, exit or moving text since the last grid
       if (pace && t - lastGridT >= 0.49) {
         const jpg = await ctx.page.capture('jpeg', 60);
-        const g = await ctx.page.evaluate(`window.__mwGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
+        const g = await ctx.page.evaluate(`window.__gmGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
         { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++;
           // (the opening frame: empty = no readable text and almost no edges; a smooth gradient or a flat color is empty)
           if (t < 0.6) { let edge = 0; for (let i = 0; i < g.length; i++) if ((i % GW < GW - 1 && Math.abs(g[i] - g[i + 1]) > 12) || (i + GW < g.length && Math.abs(g[i] - g[i + GW]) > 12)) edge++; openFrames.push({ t, empty: edge / g.length < 0.01 && !(a.maxFont >= 24) }); }
@@ -550,7 +550,7 @@ export async function check(input, opts = {}) {
       push(list.filter((i) => opts.at != null || nb.has(key(i)) || i.code === 'image-broken'), t);
     }
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
-    const logs = groupLogs(await ctx.page.evaluate('window.mw && mw.__logs ? mw.__logs(0) : []'));
+    const logs = groupLogs(await ctx.page.evaluate('window.gm && gm.__logs ? gm.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
     if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second shows only the background. The first frame is often the thumbnail, and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
     // Almost nothing on screen for a second or more in the middle (a camera between two far-apart parts, a gap
@@ -585,7 +585,7 @@ export async function check(input, opts = {}) {
   }
 }
 
-/** mw.log() lines: the same message at neighbouring times becomes one line with a time range and a count. */
+/** gm.log() lines: the same message at neighbouring times becomes one line with a time range and a count. */
 export function groupLogs(list) {
   const out = [];
   for (const l of list || []) {

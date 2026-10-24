@@ -1,9 +1,9 @@
 <!-- block:
 description: Word-by-word captions (TikTok/Reels style) from a word-timed JSON file or an .srt file. The spoken word is highlighted.
 params: file (captions.json or .srt), words (max words per line, default 5), accent (color), position (bottom|center|top), size (px at 1080p, default 64)
-usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>   JSON: [{"word":"Hello","start":0.2,"end":0.5}, …] (times in seconds, relative to the block's start)
+usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>   JSON: [{"word":"Hello","start":0.2,"end":0.5}, …] (times in seconds, relative to the block's start)
 -->
-<div class="mwb-cap mwb-cap--{{position|bottom}}" style="--accent:{{accent|#ffd23f}};--size:{{size|64}}" data-file="{{file}}" data-words="{{words|5}}"><div class="mwb-cap__line"></div></div>
+<div class="gmb-cap gmb-cap--{{position|bottom}}" style="--accent:{{accent|#ffd23f}};--size:{{size|64}}" data-file="{{file}}" data-words="{{words|5}}"><div class="gmb-cap__line"></div></div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
@@ -36,7 +36,7 @@ usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>
     }
     return out.map((ws) => ({ start: ws[0].start, end: ws[ws.length - 1].end, words: ws }));
   };
-  mw.wait(fetch(file).then((r) => { if (!r.ok) throw new Error('captions file not found: ' + file); return r.text(); }).then((txt) => {
+  gm.wait(fetch(file).then((r) => { if (!r.ok) throw new Error('captions file not found: ' + file); return r.text(); }).then((txt) => {
     let words;
     if (/\.srt$/i.test(file)) {
       words = [];
@@ -52,11 +52,11 @@ usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>
     pages = build(words);
   }));
   let shown = -1;
-  mw.onFrame(root, (t) => {
+  gm.onFrame(root, (t) => {
     let pi = pages.findIndex((p, i) => t >= p.start - 0.05 && t < (pages[i + 1] ? Math.min(pages[i + 1].start - 0.05, p.end + 0.8) : p.end + 0.8));
     if (pi !== shown) {
       shown = pi;
-      line.innerHTML = pi < 0 ? '' : pages[pi].words.map((w) => `<span class="mwb-cap__w">${w.word.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`).join(' ');
+      line.innerHTML = pi < 0 ? '' : pages[pi].words.map((w) => `<span class="gmb-cap__w">${w.word.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`).join(' ');
     }
     if (pi < 0) return;
     const p = pages[pi];
@@ -64,23 +64,23 @@ usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>
     p.words.forEach((w, i) => {
       const s = spans[i];
       const on = t >= w.start && t < (p.words[i + 1] ? p.words[i + 1].start : w.end + 0.8);
-      const pop = mw.interpolate(t - w.start, [0, 0.12], [0.92, 1], { easing: 'out-back' });
+      const pop = gm.interpolate(t - w.start, [0, 0.12], [0.92, 1], { easing: 'out-back' });
       s.classList.toggle('is-on', on);
       s.classList.toggle('is-past', t >= w.end && !on);
       s.style.scale = on ? pop : 1;
       s.style.opacity = t < w.start ? 0.55 : 1;
     });
-    const enter = mw.interpolate(t - p.start, [0, 0.18], [0, 1], { easing: 'out-cubic' });
+    const enter = gm.interpolate(t - p.start, [0, 0.18], [0, 1], { easing: 'out-cubic' });
     line.style.opacity = enter;
     line.style.translate = `0 ${(1 - enter) * 16}px`;
   });
 })();
 </script>
 <style>
-.mwb-cap{position:absolute;left:0;right:0;display:flex;justify-content:center;padding:0 calc(var(--px)*120);pointer-events:none;z-index:20}
-.mwb-cap--bottom{bottom:calc(var(--px)*120)} .mwb-cap--top{top:calc(var(--px)*120)} .mwb-cap--center{top:50%;translate:0 -50%}
-.mwb-cap__line{max-width:22ch;text-align:center;font-size:calc(var(--px)*var(--size));font-weight:800;line-height:1.18;color:#fff;letter-spacing:-.01em;
+.gmb-cap{position:absolute;left:0;right:0;display:flex;justify-content:center;padding:0 calc(var(--px)*120);pointer-events:none;z-index:20}
+.gmb-cap--bottom{bottom:calc(var(--px)*120)} .gmb-cap--top{top:calc(var(--px)*120)} .gmb-cap--center{top:50%;translate:0 -50%}
+.gmb-cap__line{max-width:22ch;text-align:center;font-size:calc(var(--px)*var(--size));font-weight:800;line-height:1.18;color:#fff;letter-spacing:-.01em;
   text-shadow:0 calc(var(--px)*4) calc(var(--px)*18) rgba(0,0,0,.55),0 0 2px rgba(0,0,0,.6);text-wrap:balance}
-.mwb-cap__w{display:inline-block;padding:0 .12em;border-radius:.18em;transition:none}
-.mwb-cap__w.is-on{color:#111;background:var(--accent);text-shadow:none}
+.gmb-cap__w{display:inline-block;padding:0 .12em;border-radius:.18em;transition:none}
+.gmb-cap__w.is-on{color:#111;background:var(--accent);text-shadow:none}
 </style>

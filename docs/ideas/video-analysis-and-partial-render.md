@@ -2,7 +2,7 @@
 
 Status: ideas only, from Leo (Oct 2026). Not built. Ask Leo before starting either one.
 
-## 1. `motionwright analyze`: help an agent see a video
+## 1. `givemotion analyze`: help an agent see a video
 
 ### The problem
 An agent cannot watch a video. Given a reference video ("make ours look like this"), it would grab a few
@@ -13,7 +13,7 @@ The same gap hurts self-review: today the agent only sees still frames of its ow
 One command turns any video (a reference, or our own render) into a report an agent can read:
 
 ```bash
-npx motionwright analyze reference.mp4      # writes analysis/report.json, report.md and pictures
+npx givemotion analyze reference.mp4      # writes analysis/report.json, report.md and pictures
 ```
 
 What it could measure (all with ffmpeg and Chrome, which we already use, so no new paid tools):

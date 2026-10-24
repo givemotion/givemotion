@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Product promo for a fictional app. Shows: sequences + transitions, blocks, typing, SVG line drawing,
-     a cursor with clicks, counters, a music bed. Render: npx motionwright render examples/product-promo/index.html -o out/promo.mp4 -->
+     a cursor with clicks, counters, a music bed. Render: npx givemotion render examples/product-promo/index.html -o out/promo.mp4 -->
 <html data-width="1920" data-height="1080" data-fps="30">
 <head>
 <meta charset="utf-8">
@@ -20,7 +20,7 @@
             display: flex; align-items: center; padding: 0 30px; gap: 20px; font-size: 34px; color: #e9ecf5; }
   .prompt .spark { font-size: 36px; }
   .run { margin-left: auto; padding: 16px 32px; border-radius: 14px; background: var(--accent); color: #0b0d12; font-weight: 800; font-size: 28px; flex: none; }
-  .run[data-mw-hover] { filter: brightness(1.15); }
+  .run[data-gm-hover] { filter: brightness(1.15); }
   .canvas { position: absolute; left: 0; right: 0; top: 240px; bottom: 0; }
   .canvas svg { position: absolute; inset: 0; width: 100%; height: 100%; }
   .wire { fill: none; stroke: #8ea2ff; stroke-width: 4; stroke-dasharray: 1 1; }
@@ -45,19 +45,19 @@
 <main data-sequence>
   <!-- 1. Logo -->
   <section class="scene" data-duration="3.2">
-    <mw-include src="../../blocks/gradient-bg.html" c1="#3b4bd8" c2="#0ea5a4" c3="#7c3aed"></mw-include>
-    <mw-include src="../../blocks/logo-reveal.html" logo="assets/logo.svg" tagline="Automations that build themselves" size="150"></mw-include>
+    <gm-include src="../../blocks/gradient-bg.html" c1="#3b4bd8" c2="#0ea5a4" c3="#7c3aed"></gm-include>
+    <gm-include src="../../blocks/logo-reveal.html" logo="assets/logo.svg" tagline="Automations that build themselves" size="150"></gm-include>
   </section>
 
   <!-- 2. Headline -->
   <section class="scene" data-duration="3.4" data-transition="blur 0.7">
-    <mw-include src="../../blocks/grid-bg.html" glow="#5b6cff"></mw-include>
-    <mw-include src="../../blocks/title-card.html" kicker="Introducing Flowline AI" title="Describe it. We build the workflow." accent="#8ea2ff"></mw-include>
+    <gm-include src="../../blocks/grid-bg.html" glow="#5b6cff"></gm-include>
+    <gm-include src="../../blocks/title-card.html" kicker="Introducing Flowline AI" title="Describe it. We build the workflow." accent="#8ea2ff"></gm-include>
   </section>
 
   <!-- 3. Product demo -->
   <section class="scene" data-duration="7.2" data-transition="slide-left 0.8 in-out-cubic">
-    <mw-include src="../../blocks/grid-bg.html" glow="#3b82f6" pattern="dots"></mw-include>
+    <gm-include src="../../blocks/grid-bg.html" glow="#3b82f6" pattern="dots"></gm-include>
     <div class="app" data-enter="rise 0.8">
       <div class="app__top"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp;&nbsp;<b>Flowline</b> Workflows › New</div>
       <div class="prompt"><span class="spark">✨</span><span data-type="34" data-type-delay="0.6" data-type-caret>When a new lead signs up, enrich it and post to Slack</span><div class="run" id="run">Build</div></div>
@@ -74,12 +74,12 @@
         <div class="ok" data-start="2.2" data-enter="fade-up 0.5">✓ Workflow live · first run in 1.2s</div>
       </div>
     </div>
-    <mw-include src="../../blocks/cursor.html" points="1500,980 #run! 1500,840" times="0.3 2.5 5.4"></mw-include>
+    <gm-include src="../../blocks/cursor.html" points="1500,980 #run! 1500,840" times="0.3 2.5 5.4"></gm-include>
   </section>
 
   <!-- 4. Numbers -->
   <section class="scene" data-duration="3.6" data-transition="zoom 0.6">
-    <mw-include src="../../blocks/gradient-bg.html" c1="#1e3a8a" c2="#0f766e" c3="#4c1d95"></mw-include>
+    <gm-include src="../../blocks/gradient-bg.html" c1="#1e3a8a" c2="#0f766e" c3="#4c1d95"></gm-include>
     <div class="nums">
       <div class="num" data-enter="fade-up 0.6"><div class="v" data-count="0 12" data-count-suffix="h"></div><div class="l">saved per week</div></div>
       <div class="num" data-enter="fade-up 0.6 0.15"><div class="v" data-count="0 4.8" data-count-decimals="1" data-count-suffix="×"></div><div class="l">faster to ship</div></div>
@@ -89,14 +89,14 @@
 
   <!-- 5. Quote -->
   <section class="scene" data-duration="4.2" data-transition="fade 0.6">
-    <mw-include src="../../blocks/grid-bg.html" glow="#7c3aed"></mw-include>
-    <mw-include src="../../blocks/quote.html" text="We replaced three tools and a weekly meeting with one prompt." author="Maya Chen" role="Ops Lead, Northwind (fictional)" accent="#8ea2ff"></mw-include>
+    <gm-include src="../../blocks/grid-bg.html" glow="#7c3aed"></gm-include>
+    <gm-include src="../../blocks/quote.html" text="We replaced three tools and a weekly meeting with one prompt." author="Maya Chen" role="Ops Lead, Northwind (fictional)" accent="#8ea2ff"></gm-include>
   </section>
 
   <!-- 6. End card -->
   <section class="scene" data-duration="4" data-transition="iris 0.8">
-    <mw-include src="../../blocks/gradient-bg.html"></mw-include>
-    <mw-include src="../../blocks/end-card.html" logo="assets/logo.svg" title="Build your first flow in a minute" cta="Start free" url="flowline.example"></mw-include>
+    <gm-include src="../../blocks/gradient-bg.html"></gm-include>
+    <gm-include src="../../blocks/end-card.html" logo="assets/logo.svg" title="Build your first flow in a minute" cta="Start free" url="flowline.example"></gm-include>
   </section>
 </main>
 

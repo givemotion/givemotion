@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Scores `motionwright analyze` against compositions whose true scene changes we know.
+// Scores `givemotion analyze` against compositions whose true scene changes we know.
 // For every case: render it (cached in bench/analyze/out/, only redone when the HTML is newer), take the truth from
 // `inspect` (transitions with start/end; hard cuts = scene clips that start where no transition is), run analyze,
 // match detections to the truth and print precision / recall of scene changes and transition-type accuracy.

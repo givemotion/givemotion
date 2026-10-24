@@ -1,40 +1,40 @@
 <!-- block:
 description: A clean browser window frame. Shows an image (image=…) or any HTML you put between the tags. Optional slow scroll.
 params: url, image (path), width (px at 1080p; scales with the short side, default 1500), height (default 860), scroll (pixels to scroll the page over the clip, default 0), theme (dark|light)
-usage: <mw-include src="blocks/browser-window.html" url="example.com/pricing" image="assets/site.png" scroll="600" data-duration="5"></mw-include>
+usage: <gm-include src="blocks/browser-window.html" url="example.com/pricing" image="assets/site.png" scroll="600" data-duration="5"></gm-include>
 -->
-<div class="mwb-browser mwb-browser--{{theme|dark}}" style="--w:{{width|1500}};--h:{{height|860}}" data-scroll="{{scroll|0}}" data-enter="rise 0.9">
-  <div class="mwb-browser__bar"><i></i><i></i><i></i><div class="mwb-browser__url"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z"/></svg>{{url|example.com}}</div></div>
-  <div class="mwb-browser__view"><div class="mwb-browser__page"><img class="mwb-browser__img" src="{{image}}" alt="">{{content}}</div></div>
+<div class="gmb-browser gmb-browser--{{theme|dark}}" style="--w:{{width|1500}};--h:{{height|860}}" data-scroll="{{scroll|0}}" data-enter="rise 0.9">
+  <div class="gmb-browser__bar"><i></i><i></i><i></i><div class="gmb-browser__url"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z"/></svg>{{url|example.com}}</div></div>
+  <div class="gmb-browser__view"><div class="gmb-browser__page"><img class="gmb-browser__img" src="{{image}}" alt="">{{content}}</div></div>
 </div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
-  const img = root.querySelector('.mwb-browser__img');
+  const img = root.querySelector('.gmb-browser__img');
   if (!img.getAttribute('src')) img.remove();
   const px = parseFloat(root.dataset.scroll) || 0;
   if (px) {
-    const page = root.querySelector('.mwb-browser__page');
-    mw.onFrame(root, (t, f) => {
-      const p = mw.interpolate(t, [0.8, Math.max(1.2, f.clipDuration - 0.8)], [0, 1], { easing: 'in-out-cubic' });
-      page.style.translate = `0 ${-p * px * mw.px}px`;
+    const page = root.querySelector('.gmb-browser__page');
+    gm.onFrame(root, (t, f) => {
+      const p = gm.interpolate(t, [0.8, Math.max(1.2, f.clipDuration - 0.8)], [0, 1], { easing: 'in-out-cubic' });
+      page.style.translate = `0 ${-p * px * gm.px}px`;
     });
   }
 })();
 </script>
 <style>
-.mwb-browser{width:calc(var(--px)*var(--w));max-width:calc(var(--stage-w,1920px) - var(--px)*120);border-radius:calc(var(--px)*20);overflow:hidden;background:#0f1218;
+.gmb-browser{width:calc(var(--px)*var(--w));max-width:calc(var(--stage-w,1920px) - var(--px)*120);border-radius:calc(var(--px)*20);overflow:hidden;background:#0f1218;
   border:1px solid rgba(255,255,255,.12);box-shadow:0 calc(var(--px)*50) calc(var(--px)*140) rgba(0,0,0,.5)}
-.mwb-browser__bar{display:flex;align-items:center;gap:calc(var(--px)*12);height:calc(var(--px)*66);padding:0 calc(var(--px)*24);background:#1a1e27;border-bottom:1px solid rgba(255,255,255,.06)}
-.mwb-browser__bar i{width:calc(var(--px)*16);height:calc(var(--px)*16);border-radius:50%;background:#ff5f57}
-.mwb-browser__bar i:nth-child(2){background:#febc2e} .mwb-browser__bar i:nth-child(3){background:#28c840}
-.mwb-browser__url{flex:1;max-width:calc(var(--px)*720);margin:0 auto;display:flex;align-items:center;justify-content:center;gap:calc(var(--px)*10);height:calc(var(--px)*40);border-radius:99px;background:#0f1218;color:#a3acbd;font:500 calc(var(--px)*24)/1 Inter,system-ui,sans-serif}
-.mwb-browser__url svg{width:calc(var(--px)*18);height:calc(var(--px)*18);fill:none;stroke:currentColor;stroke-width:2}
-.mwb-browser__view{position:relative;height:calc(var(--px)*var(--h));overflow:hidden;background:#fff}
-.mwb-browser--dark .mwb-browser__view{background:#0b0d12}
-.mwb-browser__page{position:relative}
-.mwb-browser__img{display:block;width:100%;height:auto}
-.mwb-browser--light{background:#fff;border-color:rgba(0,0,0,.08)}
-.mwb-browser--light .mwb-browser__bar{background:#f3f4f6;border-color:rgba(0,0,0,.06)}
-.mwb-browser--light .mwb-browser__url{background:#fff;color:#6b7280}
+.gmb-browser__bar{display:flex;align-items:center;gap:calc(var(--px)*12);height:calc(var(--px)*66);padding:0 calc(var(--px)*24);background:#1a1e27;border-bottom:1px solid rgba(255,255,255,.06)}
+.gmb-browser__bar i{width:calc(var(--px)*16);height:calc(var(--px)*16);border-radius:50%;background:#ff5f57}
+.gmb-browser__bar i:nth-child(2){background:#febc2e} .gmb-browser__bar i:nth-child(3){background:#28c840}
+.gmb-browser__url{flex:1;max-width:calc(var(--px)*720);margin:0 auto;display:flex;align-items:center;justify-content:center;gap:calc(var(--px)*10);height:calc(var(--px)*40);border-radius:99px;background:#0f1218;color:#a3acbd;font:500 calc(var(--px)*24)/1 Inter,system-ui,sans-serif}
+.gmb-browser__url svg{width:calc(var(--px)*18);height:calc(var(--px)*18);fill:none;stroke:currentColor;stroke-width:2}
+.gmb-browser__view{position:relative;height:calc(var(--px)*var(--h));overflow:hidden;background:#fff}
+.gmb-browser--dark .gmb-browser__view{background:#0b0d12}
+.gmb-browser__page{position:relative}
+.gmb-browser__img{display:block;width:100%;height:auto}
+.gmb-browser--light{background:#fff;border-color:rgba(0,0,0,.08)}
+.gmb-browser--light .gmb-browser__bar{background:#f3f4f6;border-color:rgba(0,0,0,.06)}
+.gmb-browser--light .gmb-browser__url{background:#fff;color:#6b7280}
 </style>

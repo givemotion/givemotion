@@ -7,7 +7,7 @@ scored all six videos together from 2 fps sheets.
 | group | runs | what the agents had |
 |---|---|---|
 | baseline | 2 | the engine before this work (no sketch tools, no hand font) |
-| new | 2 | `data-sketch` / `mw.sketch`, built-in `Caveat`, `write` preset, `mw.connect`, check fixes (first version) |
+| new | 2 | `data-sketch` / `gm.sketch`, built-in `Caveat`, `write` preset, `gm.connect`, check fixes (first version) |
 | other | 2 | another code-to-video framework (React), installed and ready; free to add npm packages (both added a rough-drawing library) |
 
 ## Results
@@ -26,9 +26,9 @@ What is clear:
 - **Less code, no home-made rough-shape kit.** Baseline agents wrote 60-90 lines of their own rough-stroke code each;
   the new runs wrote none (`data-sketch` on plain SVG shapes) and had half the code. The other framework's agents wrote ~600 lines:
   roughjs wrapping, their own draw-on, their own camera, their own font loading.
-- **Render speed:** for the same kind of video motionwright rendered in 31-47 s, the other framework in 66-67 s on the same machine.
+- **Render speed:** for the same kind of video givemotion rendered in 31-47 s, the other framework in 66-67 s on the same machine.
 - **Friction in the other framework:** both runs lost a render to Google Fonts timing out in headless Chrome, and both had to build a
-  camera over a big canvas and hand-drawn draw-on themselves. motionwright has both built in.
+  camera over a big canvas and hand-drawn draw-on themselves. givemotion has both built in.
 - **Why the new runs did not score higher:** judges called their ink "thin, low-contrast, too light and uniform" and their
   overview labels tiny. Both runs copied the docs' example `stroke-width="3"`; in the final pull-back (world at ~half size)
   that is 1.5 px. The baseline winner used bold strokes. That was a docs gap (now: 5-7 px strokes, labels ≥ 48 px in
@@ -37,11 +37,11 @@ What is clear:
 ## Engine and docs changes from this test
 
 From the baseline friction logs (before the tools existed):
-- `data-sketch` (any SVG shape or a whole `<svg>`/`<g>`) and `mw.sketch.*`: seeded rough strokes drawn twice, hatch,
+- `data-sketch` (any SVG shape or a whole `<svg>`/`<g>`) and `gm.sketch.*`: seeded rough strokes drawn twice, hatch,
   cross-hatch and solid fills, arrows, underline. Our own algorithm (no Rough.js code).
 - `Caveat` handwriting font built in (OFL, ~105 KB, loaded only when used; inlined by `bundle`).
 - `write` enter preset (pen-speed reveal, duration from text length), `draw` now eases at pen speed by default.
-- `mw.connect` (live arrows between elements, sketchable, drawn on) and `mw.rect` (box in world coordinates).
+- `gm.connect` (live arrows between elements, sketchable, drawn on) and `gm.rect` (box in world coordinates).
 - `check`: text behind a clip-path wipe that has not started is hidden (a 0.4 px sliver counted as visible before);
   labels the camera passes over while it moves are not crop warnings; snapshot picks a moment per camera shot.
 - Typewriter caret hidden before typing starts. Docs: camera shot time = when the move starts; `data-enter` delay
@@ -52,7 +52,7 @@ From the new-engine friction logs (fixed after the round, not yet tested by agen
   own path and strokes and hatching are continuous, so drawing runs at an even pace.
 - Solid sketch fills showed before their draw started: they now fade in with the drawing.
 - `data-sketch-arrow`, travel along a sketched route (hidden exact guide path), `fit: 'all'`, a warning when a camera
-  shot target matches nothing, `mw.connect` `from`/`to` sides and `label`, `data-type-caret="0.8"`, no contrast
+  shot target matches nothing, `gm.connect` `from`/`to` sides and `label`, `data-type-caret="0.8"`, no contrast
   judgement on text cut by the frame.
 
 ## Round 2 (r6): 3 more runs with the fixed tools
@@ -98,7 +98,7 @@ tables, since judges calibrate to what they see; compare ranks within a table.) 
 entirely on the first try" and spent their time on content, not on writing a rough-stroke kit.
 
 What r7's makers still hit, now fixed or open:
-- `mw.connect` labels came out in the page's default font: now handwriting for sketched arrows, and a `font` option.
+- `gm.connect` labels came out in the page's default font: now handwriting for sketched arrows, and a `font` option.
 - Lines running through labels were not caught: new `text-over-line` check (it finds the cases they saw by eye).
 - Predicting what a `fit` shot shows: `inspect` now lists each shot's visible world area and zoom.
 - Open: labels are placed by hand in world px apart from their shapes (a `data-anchor="#server bottom"` idea); the

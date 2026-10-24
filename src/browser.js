@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import { launchChrome } from './cdp.js';
 
-export const CACHE_DIR = process.env.MOTIONWRIGHT_CACHE || join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'motionwright');
+export const CACHE_DIR = process.env.GIVEMOTION_CACHE || join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'givemotion');
 const CFT_JSON = 'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json';
 
 function cftPlatform() {
@@ -36,8 +36,8 @@ function findInDir(dir, name, depth = 4) {
 
 /** Returns { path, kind: 'shell' | 'chrome' } or null. */
 export function findChrome(explicit) {
-  const env = explicit || process.env.MOTIONWRIGHT_CHROME || process.env.CHROME_PATH;
-  if (env) return { path: env, kind: /headless[-_]shell/i.test(env) || process.env.MOTIONWRIGHT_CHROME_KIND === 'shell' ? 'shell' : (process.env.MOTIONWRIGHT_CHROME_KIND || 'chrome') };
+  const env = explicit || process.env.GIVEMOTION_CHROME || process.env.CHROME_PATH;
+  if (env) return { path: env, kind: /headless[-_]shell/i.test(env) || process.env.GIVEMOTION_CHROME_KIND === 'shell' ? 'shell' : (process.env.GIVEMOTION_CHROME_KIND || 'chrome') };
   const own = findInDir(join(CACHE_DIR, 'chrome-headless-shell'), shellBinaryName());
   if (own) return { path: own, kind: 'shell' };
   const pup = findInDir(join(homedir(), '.cache', 'puppeteer', 'chrome-headless-shell'), shellBinaryName(), 5);
@@ -61,7 +61,7 @@ export function findChrome(explicit) {
 /** Download chrome-headless-shell (Chrome for Testing, stable) into the cache. */
 export async function installChrome({ log = console.error } = {}) {
   const plat = cftPlatform();
-  if (!plat) throw new Error(`No Chrome build for ${platform()}/${arch()}. Set MOTIONWRIGHT_CHROME to a Chrome or Chromium binary.`);
+  if (!plat) throw new Error(`No Chrome build for ${platform()}/${arch()}. Set GIVEMOTION_CHROME to a Chrome or Chromium binary.`);
   log(`Downloading chrome-headless-shell for ${plat}…`);
   const res = await fetch(CFT_JSON);
   if (!res.ok) throw new Error(`Could not reach ${CFT_JSON} (${res.status}).`);
@@ -71,7 +71,7 @@ export async function installChrome({ log = console.error } = {}) {
   if (!dl) throw new Error(`No chrome-headless-shell download for ${plat}.`);
   const dir = join(CACHE_DIR, 'chrome-headless-shell', `${plat}-${stable.version}`);
   mkdirSync(dir, { recursive: true });
-  const zip = join(tmpdir(), `mw-chrome-${process.pid}.zip`);
+  const zip = join(tmpdir(), `gm-chrome-${process.pid}.zip`);
   const r = await fetch(dl.url);
   if (!r.ok) throw new Error(`Download failed (${r.status}): ${dl.url}`);
   await pipeline(Readable.fromWeb(r.body), createWriteStream(zip));
@@ -89,13 +89,13 @@ export async function installChrome({ log = console.error } = {}) {
 export async function ensureChrome(opts = {}) {
   const found = findChrome(opts.chrome);
   if (found) return found;
-  if (opts.install === false) throw new Error('Chrome not found. Run `npx motionwright install` or set MOTIONWRIGHT_CHROME.');
+  if (opts.install === false) throw new Error('Chrome not found. Run `npx givemotion install` or set GIVEMOTION_CHROME.');
   return installChrome(opts);
 }
 
 function hasGPU() {
   if (platform() !== 'linux') return true;
-  return existsSync('/dev/dri') && !process.env.MOTIONWRIGHT_NO_GPU;
+  return existsSync('/dev/dri') && !process.env.GIVEMOTION_NO_GPU;
 }
 
 export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
@@ -114,14 +114,14 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
     // the result then depends on the frame history (1 worker != N workers by a pixel or two). Costs no measurable speed.
     '--disable-partial-raster',
   ];
-  if (platform() === 'linux' && (process.getuid && process.getuid() === 0 || process.env.MOTIONWRIGHT_NO_SANDBOX)) args.push('--no-sandbox');
+  if (platform() === 'linux' && (process.getuid && process.getuid() === 0 || process.env.GIVEMOTION_NO_SANDBOX)) args.push('--no-sandbox');
   const mode = gl === 'auto' ? (hasGPU() ? 'gpu' : 'swiftshader') : gl;
   // No real GPU: WebGL still runs on SwiftShader, but page compositing stays in Chrome's software
   // path, which is 1.5-4x faster than compositing through an emulated GPU.
   if (mode === 'swiftshader') args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-compositing');
   else if (mode === 'none') args.push('--disable-gpu');
   else args.push('--ignore-gpu-blocklist', '--enable-gpu-rasterization');
-  if (process.env.MOTIONWRIGHT_CHROME_ARGS) args.push(...process.env.MOTIONWRIGHT_CHROME_ARGS.split(/\s+/).filter(Boolean));
+  if (process.env.GIVEMOTION_CHROME_ARGS) args.push(...process.env.GIVEMOTION_CHROME_ARGS.split(/\s+/).filter(Boolean));
   if (beginFrame) {
     args.push('--deterministic-mode', '--enable-begin-frame-control', '--disable-threaded-animation', '--disable-threaded-scrolling',
       '--disable-checker-imaging', '--disable-new-content-rendering-timeout', '--run-all-compositor-stages-before-draw', '--disable-image-animation-resync');
@@ -132,7 +132,7 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * A browser + one page, driving the motionwright runtime.
+ * A browser + one page, driving the givemotion runtime.
  */
 export class FramePage {
   constructor(opts) {
@@ -184,7 +184,7 @@ export class FramePage {
             e.message = base + ` (${file} line ${n + 1})`;
           }
           const l = lines[n]; if (l && l.trim()) e.message += `: ${l.trim().slice(0, 140)}`;
-          // The served page has <mw-include> files expanded, so its line numbers can be ahead of the file you wrote:
+          // The served page has <gm-include> files expanded, so its line numbers can be ahead of the file you wrote:
           // find the same line in the file itself.
           if (l && l.trim() && /\.html?$/i.test(file)) {
             const k = lines.slice(0, n).filter((x) => x.trim() === l.trim()).length;
@@ -254,7 +254,7 @@ export class FramePage {
   async open(url, config) {
     const s = this.s;
     this.interval = 1000 / (config.fps || 30);
-    await s('Page.addScriptToEvaluateOnNewDocument', { source: `window.__MW_CONFIG = ${JSON.stringify(config)};` });
+    await s('Page.addScriptToEvaluateOnNewDocument', { source: `window.__GM_CONFIG = ${JSON.stringify(config)};` });
     const loaded = this.browser.once('Page.loadEventFired', this.sessionId, this.opts.timeoutMs || 60000);
     const nav = await s('Page.navigate', { url });
     if (nav.errorText) throw new Error(`Could not open ${url}: ${nav.errorText}`);
@@ -268,16 +268,16 @@ export class FramePage {
         if (Date.now() - t0 > (this.opts.timeoutMs || 60000)) throw new Error('Timed out loading page');
       }
     } else await loaded;
-    const hasRuntime = await this.evaluate('!!(window.mw && window.mw.__runtime)');
-    if (!hasRuntime) throw new Error('The motionwright runtime did not load in the page.');
-    return this.evaluate('mw.ready()');
+    const hasRuntime = await this.evaluate('!!(window.gm && window.gm.__runtime)');
+    if (!hasRuntime) throw new Error('The givemotion runtime did not load in the page.');
+    return this.evaluate('gm.ready()');
   }
   async setViewport(width, height) {
     await this.s('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: this.opts.scale || 1, mobile: false });
   }
   /** Seek to time t (seconds). Returns {dirty, needsReload}. */
   async seek(t) {
-    return this.evaluate(`mw.seek(${t})`);
+    return this.evaluate(`gm.seek(${t})`);
   }
   /** Capture the current frame. format: 'jpeg' | 'png' */
   async capture(format = 'jpeg', quality = 92) {

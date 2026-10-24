@@ -39,20 +39,20 @@ Engine: refs/heads/main @ ad2f88a7ae. Runs set up 2026-10-24T12:38:51.427Z. 18 j
 - code-explainer-1 [engine] check false positives on SVG text over a filled SVG circle
 - code-explainer-1 [agent] last camera shot never landed before the transition
 - code-explainer-1 [docs] arrows to a code mark run over neighbouring punctuation
-- code-explainer-1 [docs] `mw.burst` x/y units
+- code-explainer-1 [docs] `gm.burst` x/y units
 - code-explainer-1 [docs] timeline opacity vs `data-enter` on the same element
 - code-explainer-1 [engine] render speed
 - code-explainer-2 [engine] code-window `⟦ ⟧` marks are shifted by one character per line
 - code-explainer-2 [engine] marks have no ids and no timed highlight
 - code-explainer-2 [engine] `still` warning during an intentional pause / small-element motion
-- code-explainer-2 [docs] `mw.burst` x/y units unclear
-- code-explainer-2 [docs] `mw.connect` curve and side attachment for short arrows
+- code-explainer-2 [docs] `gm.burst` x/y units unclear
+- code-explainer-2 [docs] `gm.connect` curve and side attachment for short arrows
 - code-explainer-2 [docs] default snapshot moment for the title scene is mid-animation
 - code-explainer-2 [agent] note labels too close to the code
 - code-explainer-2 [agent] camera follow cropped the lane labels
 - code-explainer-2 [docs] code-window title text is tiny once the window is scaled
 - data-story-1 [engine] Tween renders its *natural* (end-ish) state on the exact frame it starts
-- data-story-1 [engine] `mw.burst(..., { from: '#head' })` inside a camera world spawns at the wrong place
+- data-story-1 [engine] `gm.burst(..., { from: '#head' })` inside a camera world spawns at the wrong place
 - data-story-1 [engine] No chart primitive for a "live" data line (camera-follow, rescaling axis)
 - data-story-1 [engine] check `text-over-line` fires for gridline labels and for the chart line passing under a HUD with a scrim
 - data-story-1 [docs] Unclear whether the camera `follow` sees elements I move in `onFrame`
@@ -93,7 +93,7 @@ Engine: refs/heads/main @ ad2f88a7ae. Runs set up 2026-10-24T12:38:51.427Z. 18 j
 - hand-drawn-1 [docs] does `fit` include hidden (not yet written) labels?
 - hand-drawn-2 [docs] White fill under data-sketch rendered as pink hatching
 - hand-drawn-2 [engine] text-offscreen warnings for neighbours in a camera world
-- hand-drawn-2 [engine] mw.connect label placement hard to control
+- hand-drawn-2 [engine] gm.connect label placement hard to control
 - hand-drawn-2 [agent] Arrow from the URL bar ran through the step-1 label
 - hand-drawn-2 [docs] connect `label.offset` unexplained
 - hand-drawn-2 [engine] Render speed
@@ -103,7 +103,7 @@ Engine: refs/heads/main @ ad2f88a7ae. Runs set up 2026-10-24T12:38:51.427Z. 18 j
 - logo-sting-1 [engine] render is slow for a short sting
 - logo-sting-1 [docs] draw segment tween semantics guessed
 - logo-sting-1 [engine] biggest hit had to be copied by hand
-- logo-sting-2 [engine] `mw.burst` `behind` does not layer the sparks under the element
+- logo-sting-2 [engine] `gm.burst` `behind` does not layer the sparks under the element
 - logo-sting-2 [engine] Burst sparks are too small to read as a hit at 1080p
 - logo-sting-2 [docs] `fromTo` start values showed my hidden shockwave rings from frame 0
 - logo-sting-2 [agent] Chars overlapped the mark while it slid left
@@ -161,7 +161,7 @@ Engine: refs/heads/main @ ad2f88a7ae. Runs set up 2026-10-24T12:38:51.427Z. 18 j
 - year-recap-1 [engine] Extra top-level statement makes a scene lose its background
 - year-recap-1 [engine] zoom-through transition looks broken at the midpoint
 - year-recap-1 [docs] Timeline transform overrides SVG `transform="rotate()"`: sun rays collapsed
-- year-recap-1 [docs] mw.burst tuning without units/defaults
+- year-recap-1 [docs] gm.burst tuning without units/defaults
 - year-recap-1 [agent] Cream number on orange failed contrast
 - year-recap-2 [engine] zoom-through transition looks broken on solid-color scenes
 - year-recap-2 [engine] check missed a label crossing a dashed SVG ring

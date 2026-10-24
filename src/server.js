@@ -1,5 +1,5 @@
 // Local HTTP server: serves the project folder, injects the runtime into HTML,
-// expands <mw-include>, and serves video frames decoded by ffmpeg.
+// expands <gm-include>, and serves video frames decoded by ffmpeg.
 import http from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync, mkdirSync, readdirSync, watch } from 'node:fs';
 import { join, extname, resolve, dirname, sep, normalize, basename } from 'node:path';
@@ -26,17 +26,17 @@ export function readRuntime() {
   return { js: ['runtime.js', 'motion.js', 'sketch.js', 'audio.js', 'chart.js'].filter((f) => existsSync(join(RUNTIME_DIR, f))).map((f) => readFileSync(join(RUNTIME_DIR, f), 'utf8')).join('\n;\n'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
 }
 
-/** Expand <mw-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */
+/** Expand <gm-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */
 export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
   if (depth > 12) return html;
-  // <mw-include src="x.html" a="1"/>  or  <mw-include src="x.html" a="1">inner HTML</mw-include>
-  return html.replace(/<mw-include\b((?:[^>"']|"[^"]*"|'[^']*')*?)(?:\/>|>([\s\S]*?)<\/mw-include>)/gi, (m, attrStr, inner) => {
+  // <gm-include src="x.html" a="1"/>  or  <gm-include src="x.html" a="1">inner HTML</gm-include>
+  return html.replace(/<gm-include\b((?:[^>"']|"[^"]*"|'[^']*')*?)(?:\/>|>([\s\S]*?)<\/gm-include>)/gi, (m, attrStr, inner) => {
     const attrs = parseAttrs(attrStr);
-    if (!attrs.src) return `<!-- mw-include without src -->`;
+    if (!attrs.src) return `<!-- gm-include without src -->`;
     const file = resolve(fileDir, attrs.src);
     // Includes are read here on the server, so they may live outside the served folder (../blocks).
-    if (!existsSync(file) || !statSync(file).isFile()) return `<div data-mw-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">mw-include not found: ${esc(attrs.src)}</div>`;
-    if (seen.includes(file)) return `<!-- circular mw-include ${esc(attrs.src)} -->`;
+    if (!existsSync(file) || !statSync(file).isFile()) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include not found: ${esc(attrs.src)}</div>`;
+    if (seen.includes(file)) return `<!-- circular gm-include ${esc(attrs.src)} -->`;
     let body = readFileSync(file, 'utf8');
     // Drop the block's documentation comment
     body = body.replace(/<!--\s*block:[\s\S]*?-->\s*/, '');
@@ -53,7 +53,7 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     // The wrapper takes no space in layout (display: contents) unless it needs its own box
     // for animation or styling (data-enter/exit, class or style on the include).
     const needsBox = ['data-enter', 'data-exit', 'class', 'style'].some((k) => k in attrs);
-    return `<div data-mw-include="${esc(attrs.src)}"${needsBox ? '' : ' style="display:contents"'} ${passthrough}>${body}</div>`;
+    return `<div data-gm-include="${esc(attrs.src)}"${needsBox ? '' : ' style="display:contents"'} ${passthrough}>${body}</div>`;
   });
 }
 function parseAttrs(s) {
@@ -67,12 +67,12 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').repl
 
 /**
  * Replace {{data.path}} / {{data.path|default}} with values from the render data
- * (--data / --props, or the page's <script type="application/json" id="mw-data">).
+ * (--data / --props, or the page's <script type="application/json" id="gm-data">).
  * Arrays become comma lists, objects become JSON. Values are HTML-escaped.
  */
 export function applyData(html, data) {
   if (data == null) {
-    const m = /<script[^>]*id=["']mw-data["'][^>]*>([\s\S]*?)<\/script>/i.exec(html);
+    const m = /<script[^>]*id=["']gm-data["'][^>]*>([\s\S]*?)<\/script>/i.exec(html);
     if (m) { try { data = JSON.parse(m[1]); } catch { data = null; } }
   }
   const missing = new Set();
@@ -85,12 +85,12 @@ export function applyData(html, data) {
   });
   // Tell the page which templates came out empty, so `check` can say so.
   if (!missing.size) return out;
-  const tag = `<script type="application/json" id="mw-missing-data">${JSON.stringify({ keys: [...missing], noData: data == null })}</script>`;
+  const tag = `<script type="application/json" id="gm-missing-data">${JSON.stringify({ keys: [...missing], noData: data == null })}</script>`;
   return /<\/body>/i.test(out) ? out.replace(/<\/body>/i, tag + '</body>') : out + tag;
 }
 
 export function injectRuntime(html, { inlineConfig } = {}) {
-  const tags = `<link rel="stylesheet" href="/__mw/preset.css" data-mw-preset><script>window.__MW_CONFIG = window.__MW_CONFIG || ${JSON.stringify(inlineConfig || { mode: 'preview' })};</script><script src="/__mw/runtime.js"></script>`;
+  const tags = `<link rel="stylesheet" href="/__gm/preset.css" data-gm-preset><script>window.__GM_CONFIG = window.__GM_CONFIG || ${JSON.stringify(inlineConfig || { mode: 'preview' })};</script><script src="/__gm/runtime.js"></script>`;
   const head = /<head\b[^>]*>/i.exec(html);
   if (head) return html.slice(0, head.index + head[0].length) + tags + html.slice(head.index + head[0].length);
   const htmlTag = /<html\b[^>]*>/i.exec(html);
@@ -162,23 +162,23 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
     try {
       const u = new URL(req.url, 'http://localhost');
       let path = decodeURIComponent(u.pathname);
-      if (path === '/__mw/runtime.js') return send(res, 200, MIME['.js'], runtime().js);
-      if (path.startsWith('/__mw/fonts/')) {
+      if (path === '/__gm/runtime.js') return send(res, 200, MIME['.js'], runtime().js);
+      if (path.startsWith('/__gm/fonts/')) {
         const f = join(RUNTIME_DIR, 'fonts', basename(path));
         if (!/\.woff2?$/.test(f) || !existsSync(f)) return send(res, 404, 'text/plain', 'no such font');
         res.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=31536000, immutable' });
         return createReadStream(f).pipe(res);
       }
-      if (path === '/__mw/player.js') return send(res, 200, MIME['.js'], readFileSync(join(HERE, 'player', 'mw-player.js'), 'utf8'));
-      if (path === '/__mw/preset.css') return send(res, 200, MIME['.css'], runtime().css);
-      if (path === '/__mw/events') {
+      if (path === '/__gm/player.js') return send(res, 200, MIME['.js'], readFileSync(join(HERE, 'player', 'gm-player.js'), 'utf8'));
+      if (path === '/__gm/preset.css') return send(res, 200, MIME['.css'], runtime().css);
+      if (path === '/__gm/events') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write('retry: 500\n\n');
         clients.add(res);
         req.on('close', () => clients.delete(res));
         return;
       }
-      if (path === '/__mw/vframe') {
+      if (path === '/__gm/vframe') {
         const src = u.searchParams.get('src');
         const fps = parseFloat(u.searchParams.get('fps')) || 30;
         const i = parseInt(u.searchParams.get('i'), 10) || 0;
@@ -188,14 +188,14 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'max-age=31536000, immutable' });
         return createReadStream(f).pipe(res);
       }
-      if (path === '/__mw_analyze') {
-        // Tiny page used by `motionwright audio <file>`
+      if (path === '/__gm_analyze') {
+        // Tiny page used by `givemotion audio <file>`
         const src = JSON.stringify(u.searchParams.get('src') || '');
         const fps = parseFloat(u.searchParams.get('fps')) || 30;
-        return send(res, 200, MIME['.html'], injectRuntime(`<!doctype html><html data-width="320" data-height="180" data-fps="${fps}" data-duration="1"><body><script>window.__mwA = mw.audio(${src});</script></body></html>`, { inlineConfig: { mode: 'render' } }), { 'Cache-Control': 'no-store' });
+        return send(res, 200, MIME['.html'], injectRuntime(`<!doctype html><html data-width="320" data-height="180" data-fps="${fps}" data-duration="1"><body><script>window.__gmA = gm.audio(${src});</script></body></html>`, { inlineConfig: { mode: 'render' } }), { 'Cache-Control': 'no-store' });
       }
-      if (path === '/__mw/pcm') {
-        // Mono 32-bit float PCM of any audio/video file, for in-page analysis (mw.audio).
+      if (path === '/__gm/pcm') {
+        // Mono 32-bit float PCM of any audio/video file, for in-page analysis (gm.audio).
         const src = u.searchParams.get('src');
         const sr = Math.min(48000, Math.max(8000, parseInt(u.searchParams.get('sr'), 10) || 22050));
         const file = safeJoin(root, decodeURIComponent(new URL(src, 'http://x').pathname));
@@ -205,8 +205,8 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'max-age=31536000, immutable', 'Access-Control-Allow-Origin': '*' });
         return res.end(buf);
       }
-      if (path.startsWith('/__mw/studio')) {
-        const rel = path.slice('/__mw/studio'.length).replace(/^\/+/, '') || 'index.html';
+      if (path.startsWith('/__gm/studio')) {
+        const rel = path.slice('/__gm/studio'.length).replace(/^\/+/, '') || 'index.html';
         const f = safeJoin(STUDIO_DIR, rel);
         if (!f || !existsSync(f)) return send(res, 404, 'text/plain', 'not found');
         return send(res, 200, MIME[extname(f)] || 'application/octet-stream', readFileSync(f));
@@ -229,8 +229,8 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         let html = readFileSync(file, 'utf8');
         html = expandIncludes(html, dirname(file), root);
         html = applyData(html, data);
-        // Pages that host <mw-player>, or are already bundled, are normal web pages: no runtime.
-        if (!u.searchParams.has('raw') && !/<mw-player\b|data-mw-preset>|<meta[^>]+name=["']motionwright["'][^>]+off/i.test(html)) html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });
+        // Pages that host <gm-player>, or are already bundled, are normal web pages: no runtime.
+        if (!u.searchParams.has('raw') && !/<gm-player\b|data-gm-preset>|<meta[^>]+name=["']givemotion["'][^>]+off/i.test(html)) html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });
         return send(res, 200, MIME[ext], html, { 'Cache-Control': 'no-store' });
       }
       return serveFile(req, res, file, MIME[ext] || 'application/octet-stream');

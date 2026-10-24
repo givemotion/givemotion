@@ -1,11 +1,11 @@
 <!doctype html>
 <!-- One template, many videos. Values come from --props / --data (or the defaults below).
-     npx motionwright render examples/personalized/index.html --props '{"name":"Ada","plan":"Pro","color":"#22c55e"}' -o out/ada.mp4
+     npx givemotion render examples/personalized/index.html --props '{"name":"Ada","plan":"Pro","color":"#22c55e"}' -o out/ada.mp4
      Batch from Node:  for (const p of people) await render('index.html', { data: p, output: `out/${p.name}.mp4` }) -->
 <html data-width="1080" data-height="1080" data-fps="30" data-duration="5">
 <head>
 <meta charset="utf-8">
-<script type="application/json" id="mw-data">{ "name": "Friend", "plan": "Starter", "color": "#8ea2ff", "days": 30 }</script>
+<script type="application/json" id="gm-data">{ "name": "Friend", "plan": "Starter", "color": "#8ea2ff", "days": 30 }</script>
 <style>
   body { background: #0b0d14; color: #fff; font-family: Inter, system-ui, sans-serif; }
   .wrap { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; text-align: center; padding: 0 90px; }

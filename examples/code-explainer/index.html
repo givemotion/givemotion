@@ -18,7 +18,7 @@
   #s1 { display: grid; place-items: center; }
   #s1 .title { text-align: center; }
   #s1 h1 { font: 800 150px/1.02 Inter, sans-serif; letter-spacing: -0.04em; margin: 0; }
-  #s1 h1 .mw-word { display: inline-block; }
+  #s1 h1 .gm-word { display: inline-block; }
   #s1 h1 .api { color: var(--amber); }
   #s1 .l2 { display: flex; align-items: center; justify-content: center; gap: 34px; margin-top: 30px;
             font: 600 84px/1 Inter, sans-serif; letter-spacing: -0.03em; color: var(--mute); }
@@ -97,7 +97,7 @@
 
     <!-- 1. Hook -->
     <section class="scene" id="s1" data-camera="push 1.07">
-      <mw-include src="../../blocks/grid-bg.html" glow="#3b5bdb"></mw-include>
+      <gm-include src="../../blocks/grid-bg.html" glow="#3b5bdb"></gm-include>
       <div class="title">
         <h1 data-split="words">Retry any <span class="api">API</span> call</h1>
         <div class="l2">
@@ -116,14 +116,14 @@
 
     <!-- 2. Code is written, then the camera flies to the idea -->
     <section class="scene" id="s2" data-transition="zoom-through 0.6">
-      <mw-include src="../../blocks/grid-bg.html" glow="#3b5bdb"></mw-include>
+      <gm-include src="../../blocks/grid-bg.html" glow="#3b5bdb"></gm-include>
       <div id="world">
         <svg id="link" viewBox="0 0 2400 1900">
           <path id="linkpath" pathLength="1" d="M0 0" fill="none" stroke="#ffb547" stroke-width="5" stroke-linecap="round" />
           <circle id="linkdot" r="9" fill="#ffb547" opacity="0"/>
         </svg>
         <div id="codewrap">
-          <mw-include data-check="crop-ok" src="../../blocks/code-window.html" title="retry.ts" lang="ts" typing="70" delay="0.4" width="1400" size="34">
+          <gm-include data-check="crop-ok" src="../../blocks/code-window.html" title="retry.ts" lang="ts" typing="70" delay="0.4" width="1400" size="34">
 export async function retry<T>(fn: () => Promise<T>, tries = 3) {
   for (let i = 0; ; i++) {
     try { return await fn(); }
@@ -133,7 +133,7 @@ export async function retry<T>(fn: () => Promise<T>, tries = 3) {
     }
   }
 }
-          </mw-include>
+          </gm-include>
           <div class="tag" id="tag">back-off</div>
         </div>
 
@@ -170,10 +170,10 @@ export async function retry<T>(fn: () => Promise<T>, tries = 3) {
 
     <!-- 3. Recap: the idea maps back onto the code -->
     <section class="scene" id="s3" data-transition="push-up 0.6" data-camera="push 1.04">
-      <mw-include src="../../blocks/grid-bg.html" glow="#3b5bdb"></mw-include>
+      <gm-include src="../../blocks/grid-bg.html" glow="#3b5bdb"></gm-include>
       <div class="head"><span class="num" id="lcount">0</span> lines<span class="dim">. Any API.</span></div>
       <div class="rcode">
-        <mw-include src="../../blocks/code-window.html" title="retry.ts" lang="ts" typing="0" width="1220" size="28">
+        <gm-include src="../../blocks/code-window.html" title="retry.ts" lang="ts" typing="0" width="1220" size="28">
 export async function retry<T>(fn: () => Promise<T>, tries = 3) {
   for (let i = 0; ; i++) {
     try { return await fn(); }
@@ -183,7 +183,7 @@ export async function retry<T>(fn: () => Promise<T>, tries = 3) {
     }
   }
 }
-        </mw-include>
+        </gm-include>
       </div>
       <svg class="wires" viewBox="0 0 1920 1080">
         <path id="wr1" pathLength="1" d=""/>
@@ -197,15 +197,15 @@ export async function retry<T>(fn: () => Promise<T>, tries = 3) {
   </main>
 
 <script>
-/* ---- every code line is a .mw-line element (code-window block); name them .ln and mark the back-off expression ---- */
-document.querySelectorAll('.mwb-code code .mw-line').forEach((l) => {
+/* ---- every code line is a .gm-line element (code-window block); name them .ln and mark the back-off expression ---- */
+document.querySelectorAll('.gmb-code code .gm-line').forEach((l) => {
   l.classList.add('ln');
   if (l.dataset.line === '6') l.innerHTML = l.innerHTML.replace(/(<span class="n">2<\/span>[\s\S]*?<span class="n">250<\/span>)/, '<span class="expr">$1</span>');
 });
 
 /* ================= scene 1 ================= */
-mw.timeline('#s1')
-  .from('h1 .mw-word', { yPercent: 110, opacity: 0, rotate: 6, duration: 0.7, stagger: 0.07, ease: 'expo.out' }, 0.05)
+gm.timeline('#s1')
+  .from('h1 .gm-word', { yPercent: 110, opacity: 0, rotate: 6, duration: 0.7, stagger: 0.07, ease: 'expo.out' }, 0.05)
   .from('.l2 .in', { y: 40, opacity: 0, duration: 0.5, ease: 'expo.out' }, 0.55)
   .from('.six', { scale: 0, rotate: -90, duration: 0.7, ease: 'back.out(2)' }, 0.9)      // lands on the beat at 1.06s
   .from('.ring .arc', { draw: 0, duration: 0.7, ease: 'power3.inOut' }, 0.95)
@@ -222,7 +222,7 @@ const HOP = 0.06, DWELL = 0.148;
 const CX = [150, 446, 942, 1838];                                  // node centres (diagram px)
 const SEG = [[198, 398], [494, 894], [990, 1790]];
 
-mw.camera('#world', { global: true })
+gm.camera('#world', { global: true })
   .shot(0,    { fit: '#codewrap', padding: 150 })
   .shot(4.2,  { fit: '#codewrap', padding: 110, duration: 2, ease: 'in-out-sine' })
   .shot(6.41, { fit: ['.ln[data-line="6"] .k', '.ln[data-line="6"] .c'], padding: 110, duration: 0.7, ease: 'in-out-cubic' })
@@ -233,7 +233,7 @@ mw.camera('#world', { global: true })
 const line6 = document.querySelector('#s2 .ln[data-line="6"]');
 const otherLines = [...document.querySelectorAll('#s2 .ln')].filter((l) => l !== line6);
 
-const tl = mw.timeline('#s2', { global: true });
+const tl = gm.timeline('#s2', { global: true });
 tl
   .set('.node .ic path', { draw: 0, opacity: 0 }, 0)
   .set('.wait, .iexp, .status', { opacity: 0 }, 0)
@@ -293,7 +293,7 @@ function worldPos(el) {
 const linkPath = document.getElementById('linkpath');
 const linkDot = document.getElementById('linkdot');
 const tag = document.getElementById('tag');
-mw.onLayout('#s2', () => {
+gm.onLayout('#s2', () => {
   const ex = document.querySelector('#s2 .expr');
   const p = worldPos(ex);
   const sx = p.x + ex.offsetWidth / 2, sy = p.y + ex.offsetHeight + 22 + tag.offsetHeight + 12;
@@ -323,7 +323,7 @@ notesLine.forEach((ln, i) => {
 });
 const core = [1, 2, 3, 4, 5, 6].map((n) => document.querySelector(`#s3 .ln[data-line="${n}"]`));
 const braces = [7, 8, 9].map((n) => document.querySelector(`#s3 .ln[data-line="${n}"]`));
-const s3 = mw.timeline('#s3')
+const s3 = gm.timeline('#s3')
   .to(braces, { opacity: 0.3, duration: 0.4 }, 0.15)
   .fromTo('#lcount', { textContent: 0 }, { textContent: 6, duration: 0.6, ease: 'none' }, 0.15)
   .from('.head', { y: 40, opacity: 0, duration: 0.6, ease: 'expo.out' }, 0.25);

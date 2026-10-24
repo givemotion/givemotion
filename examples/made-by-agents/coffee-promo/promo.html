@@ -34,13 +34,13 @@
   <main data-sequence data-transition="fade 0.5">
     <!-- 1: kinetic type -->
     <section class="scene" data-duration="3.4">
-      <mw-include src="blocks/gradient-bg.html" c1="#8a4b22" c2="#e8a25a" c3="#3b1f10" base="#1a110b"></mw-include>
-      <mw-include src="blocks/word-pop.html" text="Mornings|are|*better*|at|*Bean There*" every="0.55" size="200" accent="#ffcf8a"></mw-include>
+      <gm-include src="blocks/gradient-bg.html" c1="#8a4b22" c2="#e8a25a" c3="#3b1f10" base="#1a110b"></gm-include>
+      <gm-include src="blocks/word-pop.html" text="Mornings|are|*better*|at|*Bean There*" every="0.55" size="200" accent="#ffcf8a"></gm-include>
     </section>
 
     <!-- 2: steaming cup (JS-driven) -->
     <section class="scene" id="cupScene" data-duration="4.6">
-      <mw-include src="blocks/gradient-bg.html" c1="#3b1f10" c2="#8a4b22" c3="#c7773b" base="#140c07"></mw-include>
+      <gm-include src="blocks/gradient-bg.html" c1="#3b1f10" c2="#8a4b22" c3="#c7773b" base="#140c07"></gm-include>
       <div class="cupwrap">
         <svg viewBox="0 0 320 380" data-enter="rise 0.8">
           <defs>
@@ -61,7 +61,7 @@
 
     <!-- 3: price count-up -->
     <section class="scene" data-duration="4">
-      <mw-include src="blocks/gradient-bg.html" c1="#7a3f1c" c2="#3b1f10" c3="#a8622f" base="#140c07"></mw-include>
+      <gm-include src="blocks/gradient-bg.html" c1="#7a3f1c" c2="#3b1f10" c3="#a8622f" base="#140c07"></gm-include>
       <div class="price">
         <div class="kicker" data-enter="fade-down 0.5">Today only</div>
         <div class="tag" data-enter="pop 0.6 0.1"><span data-count="0 3.50" data-count-decimals="2" data-count-prefix="$" data-count-duration="1.4" data-count-delay="0.2"></span></div>
@@ -71,7 +71,7 @@
 
     <!-- 4: end card -->
     <section class="scene" data-duration="4.5">
-      <mw-include src="blocks/gradient-bg.html" c1="#8a4b22" c2="#3b1f10" c3="#e8a25a" base="#140c07"></mw-include>
+      <gm-include src="blocks/gradient-bg.html" c1="#8a4b22" c2="#3b1f10" c3="#e8a25a" base="#140c07"></gm-include>
       <div class="end">
         <img src="assets/logo.svg" alt="" data-enter="pop 0.7">
         <h1 data-split="chars" data-enter="rise 0.6 0.3" data-stagger="0.04">Bean There</h1>
@@ -80,11 +80,11 @@
     </section>
   </main>
 
-  <mw-include src="blocks/captions.html" file="assets/captions.json" position="bottom" size="46" words="3" accent="#ffcf8a"></mw-include>
+  <gm-include src="blocks/captions.html" file="assets/captions.json" position="bottom" size="46" words="3" accent="#ffcf8a"></gm-include>
 
 <script>
   const paths = document.querySelectorAll('#steam .s');
-  mw.onFrame('#cupScene', (t) => {
+  gm.onFrame('#cupScene', (t) => {
     paths.forEach((p, i) => {
       const x0 = 110 + i * 50;
       const phase = t * 2.2 + i * 1.7;

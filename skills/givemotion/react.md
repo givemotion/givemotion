@@ -1,12 +1,12 @@
-# motionwright with React (JSX)
+# givemotion with React (JSX)
 
 A composition can be a React component in a `.jsx` (or `.tsx`) file. The engine is the same as for HTML:
-everything in SKILL.md (clips, sequences, transitions, `data-enter`, `data-camera`, `data-morph`, `mw.timeline`,
+everything in SKILL.md (clips, sequences, transitions, `data-enter`, `data-camera`, `data-morph`, `gm.timeline`,
 audio, check, snapshot, render) works, because React just renders normal HTML elements with those attributes.
-Run every command on the `.jsx` file: `npx motionwright check video.jsx`, `snapshot video.jsx`, `render video.jsx -o out.mp4`.
+Run every command on the `.jsx` file: `npx givemotion check video.jsx`, `snapshot video.jsx`, `render video.jsx -o out.mp4`.
 
 ```jsx
-import { Sequence, Scene, Clip, useTime, interpolate, useTimeline } from 'motionwright/react';
+import { Sequence, Scene, Clip, useTime, interpolate, useTimeline } from 'givemotion/react';
 
 export const config = { width: 1920, height: 1080, fps: 30 };   // optional: duration, background
 
@@ -35,7 +35,7 @@ export default function Video({ data }) {                  // data = --data / --
 }
 ```
 
-## API (`import … from 'motionwright/react'`)
+## API (`import … from 'givemotion/react'`)
 
 | | |
 |---|---|
@@ -43,17 +43,17 @@ export default function Video({ data }) {                  // data = --data / --
 | `<Scene duration={3} start? transition? camera? enter? exit?>` | Full-frame clip (`class="scene"`). Props map to the `data-*` attributes. |
 | `<Clip start={1} duration={2} as="span">` | Any element that exists only for that time, relative to its parent clip. Also `loop` `freeze` `speed`. |
 | `useTime()` | Seconds since the nearest Clip/Scene started (re-renders every frame). `useFrame()`, `useGlobalTime()`. |
-| `useTimeline((tl, el) => …)` | Returns a ref. Builds a seekable `mw.timeline` scoped to that element, once. |
+| `useTimeline((tl, el) => …)` | Returns a ref. Builds a seekable `gm.timeline` scoped to that element, once. |
 | `useOnLayout((t) => …)` | Returns a ref. Runs after layout each frame (measure/follow elements). |
-| `useAudio('music.mp3')` or `useAudio('#music')` | Audio analysis: `.level(t)`, `.bands(t, n)`, `.beat(t)`, `.beats`, `.downbeats`, `.bpm`. Add an `<audio>` element for the sound itself. Run `npx motionwright audio music.mp3` to see the beats first. |
+| `useAudio('music.mp3')` or `useAudio('#music')` | Audio analysis: `.level(t)`, `.bands(t, n)`, `.beat(t)`, `.beats`, `.downbeats`, `.bpm`. Add an `<audio>` element for the sound itself. Run `npx givemotion audio music.mp3` to see the beats first. |
 | `useVideoConfig()`, `useData()` | Size/fps/duration; the `--data` JSON. |
-| `interpolate`, `spring`, `noise`, `easing`, `clamp`, `lerp`, `random`, `rng`, `shape`, `path`, `color` | Same as `mw.*` (easing names: `out-expo`, `in-out-cubic`, `spring`, `power2.out`, `back.out(1.7)`…). `random('seed')` → the same number in [0,1) every time. |
+| `interpolate`, `spring`, `noise`, `easing`, `clamp`, `lerp`, `random`, `rng`, `shape`, `path`, `color` | Same as `gm.*` (easing names: `out-expo`, `in-out-cubic`, `spring`, `power2.out`, `back.out(1.7)`…). `random('seed')` → the same number in [0,1) every time. |
 
 ## Rules
 
 - Any `data-*` attribute from SKILL.md works in JSX: `<h1 data-split="words" data-enter="mask-up" data-stagger="0.06">`.
 - Keep elements mounted and control when they show with `<Clip start duration>`; don't mount/unmount based on time.
-- `ref` works on `<Scene>` and `<Clip>` (e.g. `<Scene ref={useTimeline(...)}>`). `mw.camera(...)` and `mw.path.travel(...)` from SKILL.md work too: call them in a `useLayoutEffect` once.
+- `ref` works on `<Scene>` and `<Clip>` (e.g. `<Scene ref={useTimeline(...)}>`). `gm.camera(...)` and `gm.path.travel(...)` from SKILL.md work too: call them in a `useLayoutEffect` once.
 - Computing styles from `useTime()` is fine (it is pure). Prefer CSS animations, `data-enter` and `useTimeline` for most motion: they are cheaper than re-rendering every frame.
 - Put CSS in a `<style>` element or a `style` prop. Import other `.jsx` files and npm packages normally; files are bundled for you.
 - Paths to images, video and audio are relative to the `.jsx` file.

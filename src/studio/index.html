@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>motionwright studio</title>
+<title>givemotion studio</title>
 <style>
 :root{--bg:#0e0f12;--panel:#16181d;--line:#262a33;--text:#e7e9ee;--dim:#8b92a1;--accent:#7c9cff;--warn:#f5b041;--err:#ff6b6b;--ok:#4cd39b}
 *{box-sizing:border-box}
@@ -74,18 +74,18 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
   const file = qs.get('file') || '/index.html';
   const $ = (id) => document.getElementById(id);
   const frame = $('frame'), stage = $('stage'), wrap = $('stageWrap');
-  let info = null, mw = null, t = parseFloat(qs.get('t') || '0') || 0, playing = false, loop = true, speed = 1, busy = false, pendingT = null;
+  let info = null, gm = null, t = parseFloat(qs.get('t') || '0') || 0, playing = false, loop = true, speed = 1, busy = false, pendingT = null;
   $('name').textContent = file.split('/').pop();
 
   function load(keepT) {
     $('loading').style.display = 'grid';
     const sep = file.includes('?') ? '&' : '?';
-    frame.src = file + sep + 'mw-preview=' + Date.now();
+    frame.src = file + sep + 'gm-preview=' + Date.now();
     frame.onload = async () => {
       const w = frame.contentWindow;
-      if (!w.mw) { $('loading').textContent = 'The runtime did not load in this page.'; return; }
-      mw = w.mw;
-      try { info = await mw.ready(); } catch (e) { $('loading').textContent = 'Error: ' + e.message; return; }
+      if (!w.gm) { $('loading').textContent = 'The runtime did not load in this page.'; return; }
+      gm = w.gm;
+      try { info = await gm.ready(); } catch (e) { $('loading').textContent = 'Error: ' + e.message; return; }
       frame.width = info.width; frame.height = info.height;
       frame.style.width = info.width + 'px'; frame.style.height = info.height + 'px';
       $('meta').textContent = `${info.width}×${info.height} · ${info.fps}fps · ${info.duration.toFixed(2)}s · ${info.frames} frames`;
@@ -108,13 +108,13 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
 
   function quant(x) { return Math.round(x * info.fps) / info.fps; }
   async function seek(x, force) {
-    if (!mw || !info) return;
+    if (!gm || !info) return;
     x = Math.max(0, Math.min(x, info.duration - 1 / info.fps));
     x = quant(x);
     if (busy) { pendingT = x; return; }
     busy = true;
     try {
-      let r = mw.seek(x);
+      let r = gm.seek(x);
       if (r && typeof r.then === 'function') r = await r;
       if (r && r.needsReload) { busy = false; return load(x); }
       t = x;
@@ -164,7 +164,7 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
     const b = $('badge');
     b.className = 'badge ' + (e ? 'err' : w ? 'warn' : 'ok');
     b.textContent = e ? `${e} error${e > 1 ? 's' : ''}` + (w ? `, ${w} warning${w > 1 ? 's' : ''}` : '') : w ? `${w} warning${w > 1 ? 's' : ''}` : 'no problems';
-    $('issues').innerHTML = issues.length ? issues.map((i) => `<div class="i"><div class="c ${i.severity === 'error' ? 'e' : 'w'}">[${i.code}] ${esc(i.selector || '')}</div><div>${esc(i.message)}</div>${i.fix ? `<div class="f">fix: ${esc(i.fix)}</div>` : ''}</div>`).join('') + '<div class="f" style="padding-top:8px">Run <b>motionwright check</b> for layout and contrast checks.</div>' : '<div class="f">No problems found in the timeline. Run <b>motionwright check</b> for layout and contrast checks.</div>';
+    $('issues').innerHTML = issues.length ? issues.map((i) => `<div class="i"><div class="c ${i.severity === 'error' ? 'e' : 'w'}">[${i.code}] ${esc(i.selector || '')}</div><div>${esc(i.message)}</div>${i.fix ? `<div class="f">fix: ${esc(i.fix)}</div>` : ''}</div>`).join('') + '<div class="f" style="padding-top:8px">Run <b>givemotion check</b> for layout and contrast checks.</div>' : '<div class="f">No problems found in the timeline. Run <b>givemotion check</b> for layout and contrast checks.</div>';
   }
   const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   $('badge').onclick = () => $('issues').classList.toggle('open');
@@ -200,10 +200,10 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
   // Real audio while playing (volume curves and ducking come from the runtime)
   let audioSynced = 0;
   function syncAudio(on, at) {
-    if (!mw || !mw.__syncMedia) return;
+    if (!gm || !gm.__syncMedia) return;
     if (on && performance.now() - audioSynced < 250 && at == null) return;
     audioSynced = performance.now();
-    mw.__syncMedia(on, at ?? t, { rate: speed });
+    gm.__syncMedia(on, at ?? t, { rate: speed });
   }
 
   $('play').onclick = () => (playing ? pause() : play());
@@ -225,7 +225,7 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
 
   // Live reload
   try {
-    const es = new EventSource('/__mw/events');
+    const es = new EventSource('/__gm/events');
     es.onmessage = (e) => { const m = JSON.parse(e.data); if (m.type === 'reload') { const was = playing; pause(); load(t); if (was) setTimeout(play, 300); } };
   } catch (e) {}
   load();

@@ -1,27 +1,27 @@
 <!-- block:
 description: Plays a Lottie animation (After Effects / LottieFiles JSON), frame-exact on the video clock. Uses lottie-web (MIT), loaded from a CDN by default; pass lib="path/to/lottie.min.js" for offline renders.
 params: file (path to the .json), width, height (px at 1080p, default 600), loop (true|false, default true), speed (default 1), start (seconds into the animation, default 0), renderer (svg|canvas, default svg), lib (lottie-web script URL)
-usage: <mw-include src="blocks/lottie.html" file="assets/rocket.json" width="500" height="500"></mw-include>
+usage: <gm-include src="blocks/lottie.html" file="assets/rocket.json" width="500" height="500"></gm-include>
 -->
-<div class="mwb-lottie" style="--w:{{width|600}};--h:{{height|600}}" data-src="{{file}}" data-loop="{{loop|true}}" data-speed="{{speed|1}}" data-start="0" data-offset="{{start|0}}" data-renderer="{{renderer|svg}}" data-lib="{{lib|https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie.min.js}}"></div>
+<div class="gmb-lottie" style="--w:{{width|600}};--h:{{height|600}}" data-src="{{file}}" data-loop="{{loop|true}}" data-speed="{{speed|1}}" data-start="0" data-offset="{{start|0}}" data-renderer="{{renderer|svg}}" data-lib="{{lib|https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie.min.js}}"></div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
   root.removeAttribute('data-start'); // not a clip: plays with its parent clip
   const d = root.dataset;
-  const loadLib = () => window.lottie ? Promise.resolve(window.lottie) : (window.__mwLottieLib ||= new Promise((res, rej) => {
+  const loadLib = () => window.lottie ? Promise.resolve(window.lottie) : (window.__gmLottieLib ||= new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = d.lib; s.onload = () => res(window.lottie); s.onerror = () => rej(new Error('Could not load lottie-web from ' + d.lib)); document.head.appendChild(s);
   }));
   let anim = null, fr = 30, total = 0;
-  if (!d.src) { mw.__report('error', 'lottie', 'The lottie block needs file="path/to/animation.json".', root); return; }
-  mw.wait(loadLib().then((lottie) => new Promise((res, rej) => {
+  if (!d.src) { gm.__report('error', 'lottie', 'The lottie block needs file="path/to/animation.json".', root); return; }
+  gm.wait(loadLib().then((lottie) => new Promise((res, rej) => {
     anim = lottie.loadAnimation({ container: root, renderer: d.renderer, loop: false, autoplay: false, path: d.src, rendererSettings: { preserveAspectRatio: 'xMidYMid meet', progressiveLoad: false } });
     anim.addEventListener('DOMLoaded', () => { fr = anim.frameRate || 30; total = anim.totalFrames; res(); });
     anim.addEventListener('data_failed', () => rej(new Error('Could not load Lottie file ' + d.src)));
-  })).catch((e) => mw.__report('error', 'lottie', String(e.message || e), root, 'Check the src path, and pass lib="…/lottie.min.js" if there is no internet.')));
+  })).catch((e) => gm.__report('error', 'lottie', String(e.message || e), root, 'Check the src path, and pass lib="…/lottie.min.js" if there is no internet.')));
   const loop = d.loop !== 'false', speed = parseFloat(d.speed) || 1, offset = parseFloat(d.offset) || 0;
   let last = -1;
-  mw.onFrame(root, (t) => {
+  gm.onFrame(root, (t) => {
     if (!anim || !total) return;
     let f = (t * speed + offset) * fr;
     f = loop ? ((f % total) + total) % total : Math.min(Math.max(0, f), total - 1);
@@ -31,4 +31,4 @@ usage: <mw-include src="blocks/lottie.html" file="assets/rocket.json" width="500
   });
 })();
 </script>
-<style>.mwb-lottie{width:calc(var(--px)*var(--w));height:calc(var(--px)*var(--h))}.mwb-lottie svg{display:block}</style>
+<style>.gmb-lottie{width:calc(var(--px)*var(--w));height:calc(var(--px)*var(--h))}.gmb-lottie svg{display:block}</style>

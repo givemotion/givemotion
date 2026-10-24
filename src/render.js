@@ -39,7 +39,7 @@ export function resolveInput(input) {
   let root = dirname(file);
   let cur = root;
   for (let i = 0; i < 4; i++) {
-    if (existsSync(join(cur, 'package.json')) || existsSync(join(cur, 'motionwright.json'))) { root = cur; break; }
+    if (existsSync(join(cur, 'package.json')) || existsSync(join(cur, 'givemotion.json'))) { root = cur; break; }
     const up = dirname(cur);
     if (up === cur) break;
     cur = up;
@@ -64,7 +64,7 @@ export async function openComposition(input, opts = {}) {
   // No --data and the page has no data of its own: use data.json next to the HTML if there is one.
   if (opts.data == null && /\.html?$/i.test(file)) {
     const dj = join(dirname(file), 'data.json');
-    if (existsSync(dj) && !/id=["']mw-data["']/i.test(readFileSync(file, 'utf8'))) { try { opts = { ...opts, data: JSON.parse(readFileSync(dj, 'utf8')) }; } catch (e) { throw new Error(`data.json next to the composition is not valid JSON: ${e.message}`); } }
+    if (existsSync(dj) && !/id=["']gm-data["']/i.test(readFileSync(file, 'utf8'))) { try { opts = { ...opts, data: JSON.parse(readFileSync(dj, 'utf8')) }; } catch (e) { throw new Error(`data.json next to the composition is not valid JSON: ${e.message}`); } }
   }
   const chrome = await ensureChrome({ chrome: opts.chrome, log: opts.log });
   const server = await startServer({ root, maxW: 3840, maxH: 2160, data: opts.data ?? null });
@@ -79,7 +79,7 @@ export async function openComposition(input, opts = {}) {
     if (info.width !== page.opts.width || info.height !== page.opts.height) {
       page.opts.width = info.width; page.opts.height = info.height;
       await page.setViewport(info.width, info.height);
-      info = await page.evaluate('mw.inspect()');
+      info = await page.evaluate('gm.inspect()');
     }
   } catch (e) {
     // do not leave Chrome and the server running (the process would never exit)
@@ -166,7 +166,7 @@ export async function render(input, opts = {}) {
   if (AUDIO_FORMATS[extname(out).toLowerCase()] && !opts.format) return renderAudioOnly(input, out, AUDIO_FORMATS[extname(out).toLowerCase()], opts, log, t0);
   const ctx = await openComposition(input, { ...opts, mode: 'render', log });
   const cleanup = [];
-  const tmp = mkdtempSync(join(opts.tmpdir || tmpdir(), 'mw-render-'));
+  const tmp = mkdtempSync(join(opts.tmpdir || tmpdir(), 'gm-render-'));
   cleanup.push(() => rmSync(tmp, { recursive: true, force: true }));
   const pages = [ctx.page];
   try {
@@ -193,7 +193,7 @@ export async function render(input, opts = {}) {
     let ranges, parts = null;
     if (useParts) {
       const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
-      const dir = keepParts ? join(dirname(out), '.mw-parts', basename(out)) : join(tmp, 'parts');
+      const dir = keepParts ? join(dirname(out), '.gm-parts', basename(out)) : join(tmp, 'parts');
       const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
       const old = keepParts ? readJson(join(dir, 'parts.json')) : null;
@@ -229,19 +229,19 @@ export async function render(input, opts = {}) {
     const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`motionwright: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
       } else if (keepParts && parts.why && parts.why !== 'first render') log(`  redoing every part: ${parts.why}`);
     }
 
-    if (process.env.MOTIONWRIGHT_PROFILE) log(`  setup ${Date.now() - t0}ms`);
+    if (process.env.GIVEMOTION_PROFILE) log(`  setup ${Date.now() - t0}ms`);
     // Start other workers in parallel
     const extra = todoFrames ? await Promise.all(Array.from({ length: nWorkers - 1 }, () => newWorker(ctx, opts))) : [];
     pages.push(...extra);
     if (Object.keys(media.durations).length) {
-      await Promise.all(pages.map((p) => p.evaluate(`(() => { const d = ${JSON.stringify(media.durations)}; mw.__setVideoDurations && mw.__setVideoDurations(d); })()`)));
+      await Promise.all(pages.map((p) => p.evaluate(`(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()`)));
     }
 
     let done = 0, reused = 0;
@@ -307,7 +307,7 @@ export async function render(input, opts = {}) {
         await Promise.allSettled(ending);
         throw e;
       }
-      if (process.env.MOTIONWRIGHT_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${group.reduce((s, g) => s + g.b - g.a, 0)} frames`);
+      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${group.reduce((s, g) => s + g.b - g.a, 0)} frames`);
     }));
     const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);
@@ -323,7 +323,7 @@ export async function render(input, opts = {}) {
         for (const f of readdirSync(parts.dir)) if (/^part-\d+\./.test(f) && !parts.list.some((p) => basename(p.file) === f)) rmSync(join(parts.dir, f), { force: true });
       }
     }
-    if (process.env.MOTIONWRIGHT_PROFILE) log(`  finalize ${Date.now() - tLoop}ms, total ${Date.now() - t0}ms`);
+    if (process.env.GIVEMOTION_PROFILE) log(`  finalize ${Date.now() - tLoop}ms, total ${Date.now() - t0}ms`);
     const elapsed = (Date.now() - t0) / 1000;
     const summary = {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
@@ -394,7 +394,7 @@ async function dependencyPrints(ctx) {
     try { url = new URL(u); } catch { continue; }
     if (url.origin !== origin) { files.add('remote:' + u); continue; }
     let p = decodeURIComponent(url.pathname);
-    if (p.startsWith('/__mw/')) { const s2 = url.searchParams.get('src'); if (!s2) continue; p = decodeURIComponent(new URL(s2, url).pathname); }
+    if (p.startsWith('/__gm/')) { const s2 = url.searchParams.get('src'); if (!s2) continue; p = decodeURIComponent(new URL(s2, url).pathname); }
     files.add(p);
   }
   const fileHash = [...files].sort().map((p) => {

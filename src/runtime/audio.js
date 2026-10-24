@@ -1,11 +1,11 @@
-/* motionwright audio analysis: mw.audio(src) gives loudness, frequency bands, beats and
+/* givemotion audio analysis: gm.audio(src) gives loudness, frequency bands, beats and
  * waveform for any moment, so visuals can react to music and voice. MIT License.
  */
 (function () {
   'use strict';
-  const mw = window.mw;
-  if (!mw || !mw.__internal || mw.audio) return;
-  const I = mw.__internal;
+  const gm = window.gm;
+  if (!gm || !gm.__internal || gm.audio) return;
+  const I = gm.__internal;
   const SR = 22050;
   const N = 2048; // FFT size
   const BANDS = 32;
@@ -185,10 +185,10 @@
   async function loadPCM(src) {
     const u = new URL(src, location.href);
     try {
-      const r = await fetch('/__mw/pcm?sr=' + SR + '&src=' + encodeURIComponent(u.pathname + u.search));
+      const r = await fetch('/__gm/pcm?sr=' + SR + '&src=' + encodeURIComponent(u.pathname + u.search));
       if (r.ok) return new Float32Array(await r.arrayBuffer());
     } catch (e) {}
-    // No motionwright server (standalone page): decode in the browser
+    // No givemotion server (standalone page): decode in the browser
     const buf = await (await fetch(u.href)).arrayBuffer();
     const ctx = new OfflineAudioContext(1, SR, SR);
     const ab = await ctx.decodeAudioData(buf);
@@ -204,7 +204,7 @@
   function audio(spec, opts = {}) {
     const key = spec instanceof Element ? spec : String(spec);
     if (handles.has(key)) return handles.get(key);
-    if (I.initialized) I.report('warning', 'audio-late', 'mw.audio() was called after the video started, so its data may be missing in the first frames.', null, 'Call mw.audio(...) once at the top level of your script (or useAudio in React), not inside onFrame.');
+    if (I.initialized) I.report('warning', 'audio-late', 'gm.audio() was called after the video started, so its data may be missing in the first frames.', null, 'Call gm.audio(...) once at the top level of your script (or useAudio in React), not inside onFrame.');
     const h = {
       src: null, el: null, isReady: false, data: null, pcm: null,
       // composition time → seconds into the audio file (null when it is not playing)
@@ -287,7 +287,7 @@
     h.ready = (async () => {
       await waitDom();
       resolve();
-      if (!h.src) { I.report('error', 'audio-not-found', `mw.audio("${spec}") found no <audio> element or file.`, null, 'Pass a file path ("music.mp3") or the selector of an <audio> element ("#music").'); return h; }
+      if (!h.src) { I.report('error', 'audio-not-found', `gm.audio("${spec}") found no <audio> element or file.`, null, 'Pass a file path ("music.mp3") or the selector of an <audio> element ("#music").'); return h; }
       try {
         h.pcm = await loadPCM(h.src);
         h.data = analyze(h.pcm, I.comp.fps);
@@ -297,9 +297,9 @@
       return h;
     })();
     h.loaded = h.ready;
-    mw.wait(h.ready);
+    gm.wait(h.ready);
     handles.set(key, h);
     return h;
   }
-  mw.audio = audio;
+  gm.audio = audio;
 })();

@@ -1,4 +1,4 @@
-# motionwright: read this first (every session)
+# givemotion: read this first (every session)
 
 This file is the source of truth for WHAT we are building and HOW decisions are made.
 It is written for Claude Code sessions that continue this work. Keep it short and keep it true.
@@ -23,7 +23,7 @@ Leo gives feedback on the videos he sees. For every problem, first decide where 
 
 1. **Engine gap**: the AI could not do the right thing because the engine lacked a tool or did it badly.
    Fix the engine (new primitive, better default, better checker). This is the main job.
-2. **Prompt / docs gap**: the engine can do it, but the docs (skills/motionwright/SKILL.md, block docs)
+2. **Prompt / docs gap**: the engine can do it, but the docs (skills/givemotion/SKILL.md, block docs)
    led the AI to the wrong result. Fix the docs.
 3. Usually check both. Prefer engine fixes that make the mistake impossible or caught by `check`.
 
@@ -55,4 +55,4 @@ Ask before going ahead if a change would drift from the goal above, for example:
 - Open work: docs/NEXT.md (start here when continuing). Several sessions may run at once: one branch per task,
   pull main and run `npm test` before merging, keep changes to shared files small. Past test rounds and what they changed: docs/experiments/.
 
-See AGENTS.md for the code layout and contributor rules. User-facing docs: README.md, skills/motionwright/SKILL.md.
+See AGENTS.md for the code layout and contributor rules. User-facing docs: README.md, skills/givemotion/SKILL.md.

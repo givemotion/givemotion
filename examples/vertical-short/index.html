@@ -13,8 +13,8 @@
   #progress { position: absolute; left: 0; top: 0; height: 10px; width: 100%; background: rgba(255,255,255,.12); z-index: 50; }
   #progress i { position: absolute; inset: 0; background: var(--lime); transform-origin: left center; transform: scaleX(0);
     box-shadow: 0 0 18px rgba(200,255,61,.8); }
-  .mwb-cap--bottom { bottom: 430px !important; }
-  .mwb-cap__line { font-family: Inter, sans-serif; font-weight: 900 !important; text-transform: uppercase; letter-spacing: -0.02em !important; }
+  .gmb-cap--bottom { bottom: 430px !important; }
+  .gmb-cap__line { font-family: Inter, sans-serif; font-weight: 900 !important; text-transform: uppercase; letter-spacing: -0.02em !important; }
 
   main { z-index: 5; }
   .scene { overflow: hidden; }
@@ -58,7 +58,7 @@
   .spark { width: 100px; height: 100px; overflow: visible; }
   .codewrap { width: 960px; }
 
-  /* ---------- scene 4: motionwright renders every frame ---------- */
+  /* ---------- scene 4: givemotion renders every frame ---------- */
   .brand { font-size: 150px; font-weight: 900; letter-spacing: -0.05em; line-height: 1; }
   .brand .m { color: var(--lime); }
   .strip { position: relative; margin-top: 90px; height: 420px; width: 100%; }
@@ -99,7 +99,7 @@
 
   <!-- always-on background -->
   <div class="scene" id="bg">
-    <mw-include src="../../blocks/gradient-bg.html" c1="#3a1f8f" c2="#0f3d52" c3="#5a1640" base="#0d0c14" speed="2.2" grain="0.08"></mw-include>
+    <gm-include src="../../blocks/gradient-bg.html" c1="#3a1f8f" c2="#0f3d52" c3="#5a1640" base="#0d0c14" speed="2.2" grain="0.08"></gm-include>
   </div>
   <div id="flash"></div>
 
@@ -145,17 +145,17 @@
           <span class="ai" id="w-ai">AI</span><span id="w-writes">WRITES</span>
         </div>
         <div class="codewrap">
-          <mw-include src="../../blocks/code-window.html" title="video.html" lang="html" typing="150" delay="0.15" width="960" size="44">
+          <gm-include src="../../blocks/code-window.html" title="video.html" lang="html" typing="150" delay="0.15" width="960" size="44">
 <section class="scene">
   <h1 data-enter="pop">
     Make this video
   </h1>
-</section></mw-include>
+</section></gm-include>
         </div>
       </div>
     </section>
 
-    <!-- 4: MOTIONWRIGHT RENDERS EVERY FRAME -->
+    <!-- 4: GIVEMOTION RENDERS EVERY FRAME -->
     <section class="scene" id="s4" data-transition="push-left 0.3">
       <div class="stage">
         <div class="brand" id="brand"><span class="m">motion</span>wright</div>
@@ -195,30 +195,30 @@
         </svg></div>
         <div class="endname" id="endname"><span class="m">motion</span>wright</div>
         <div class="tags"><span class="tag" id="t1">open source</span><span class="tag" id="t2">MIT</span><span class="tag" id="t3">AI-first</span></div>
-        <div class="cmd mono" id="cmd"><span class="p">$</span> npx motionwright init</div>
+        <div class="cmd mono" id="cmd"><span class="p">$</span> npx givemotion init</div>
       </div>
     </section>
   </main>
 
   <!-- always-on overlays -->
-  <mw-include src="../../blocks/captions.html" file="assets/captions.json" words="3" size="76" accent="#c8ff3d" position="bottom"></mw-include>
+  <gm-include src="../../blocks/captions.html" file="assets/captions.json" words="3" size="76" accent="#c8ff3d" position="bottom"></gm-include>
   <div id="progress"><i id="bar"></i></div>
 
 <script>
-  const music = mw.audio('#music');
+  const music = gm.audio('#music');
   const bar = document.getElementById('bar');
   const tc = document.getElementById('tc');
   const root = document.documentElement;
 
-  mw.onFrame((t) => {
-    bar.style.transform = `scaleX(${t / mw.duration})`;
+  gm.onFrame((t) => {
+    bar.style.transform = `scaleX(${t / gm.duration})`;
     root.style.setProperty('--beat', music.beat(t, 0.3).toFixed(3));
     const f = Math.floor(t * 30);
     tc.textContent = `00:${String(Math.floor(t)).padStart(2, '0')}:${String(f % 30).padStart(2, '0')}`;
   });
 
   // ---------- scene 1 (global times = voice) ----------
-  mw.timeline('#s1', { global: true })
+  gm.timeline('#s1', { global: true })
     .from('.vf b', { scale: 1.35, duration: 0.35, ease: 'expo.out', stagger: 0.04 }, 0)
     .from('.rec, .tc', { y: -20, duration: 0.3 }, 0)
     .from(".kicker", { scale: 1.25, rotate: 6, duration: 0.4, ease: 'back.out(2)' }, 0.0)
@@ -229,7 +229,7 @@
     .to('.stack', { rotate: -3, duration: 0.4, ease: 'expo.out' }, 1.12);
 
   // ---------- scene 2 ----------
-  mw.timeline('#s2', { global: true })
+  gm.timeline('#s2', { global: true })
     .from('#file', { y: -900, rotate: -14, duration: 0.45, ease: 'back.out(1.4)' }, 1.5)
     .from('#glyph', { scale: 0, rotate: -30, duration: 0.35, ease: 'back.out(2.5)' }, 1.92)
     .from('#ext', { scale: 0, duration: 0.3, ease: 'back.out(2)' }, 2.0)
@@ -237,8 +237,8 @@
     .from('#w-file', { y: 160, opacity: 0, duration: 0.3, ease: 'expo.out' }, 2.40)
     .to('#file', { scale: 1.08, duration: 0.12, yoyo: true, repeat: 1, ease: 'power2.out' }, 2.40);
   const rays = document.getElementById('rays');
-  rays.setAttribute('d', mw.shape.star(18, 900, 120));
-  mw.onFrame('#s2', (t) => { rays.parentNode.style.rotate = `${t * 25}deg`; });
+  rays.setAttribute('d', gm.shape.star(18, 900, 120));
+  gm.onFrame('#s2', (t) => { rays.parentNode.style.rotate = `${t * 25}deg`; });
   // impact on "file.": shockwave ring + 12 rays shooting out from behind the file
   const pop = document.getElementById('pop');
   for (let k = 0; k < 12; k++) {
@@ -247,7 +247,7 @@
     l.setAttribute('x2', Math.cos(a) * 470); l.setAttribute('y2', Math.sin(a) * 470);
     l.setAttribute('class', 'ray'); document.getElementById('rays2').appendChild(l);
   }
-  mw.timeline('#s2', { global: true })
+  gm.timeline('#s2', { global: true })
     .set('#pop', { opacity: 0 }, 0)
     .set('#pop', { opacity: 1 }, 2.40)
     .fromTo('#rays2', { scale: 0.7 }, { scale: 1.2, duration: 0.45, ease: 'expo.out', immediateRender: false }, 2.40)
@@ -256,32 +256,32 @@
 
   // ---------- scene 3 ----------
   const star = document.getElementById('star');
-  mw.onFrame('#s3', (t) => { star.setAttribute('d', mw.shape.star(4, 58, 16)); star.parentNode.style.rotate = `${t * 140}deg`; });
-  mw.timeline('#s3', { global: true })
+  gm.onFrame('#s3', (t) => { star.setAttribute('d', gm.shape.star(4, 58, 16)); star.parentNode.style.rotate = `${t * 140}deg`; });
+  gm.timeline('#s3', { global: true })
     .from('.spark', { scale: 0, duration: 0.35, ease: 'back.out(2)' }, 3.2)
     .from('#w-ai', { scale: 0, rotate: -12, duration: 0.3, ease: 'back.out(2.2)' }, 3.38)
     .from('#w-writes', { x: 120, opacity: 0, duration: 0.3, ease: 'expo.out' }, 3.68);
 
   // ---------- scene 4 ----------
-  mw.timeline('#s4', { global: true })
+  gm.timeline('#s4', { global: true })
     .from('#brand', { scale: 1.6, opacity: 0, filter: 'blur(20px)', duration: 0.35, ease: 'expo.out' }, 4.78)
     .fromTo('#film', { x: 0 }, { x: -4300, duration: 2.2, ease: 'power2.in' }, 4.75)
     ;
   const count = document.getElementById('count');
-  mw.onFrame('#s4', (lt, info) => {
-    const n = Math.round(mw.interpolate(info.time, [5.3, 6.85], [0, 330], { easing: 'in-quad' }));
+  gm.onFrame('#s4', (lt, info) => {
+    const n = Math.round(gm.interpolate(info.time, [5.3, 6.85], [0, 330], { easing: 'in-quad' }));
     count.textContent = String(n).padStart(3, '0');
   });
 
   // ---------- scene 5 ----------
-  mw.timeline('#s5', { global: true })
+  gm.timeline('#s5', { global: true })
     .from('#io1', { yPercent: 110, duration: 0.35, ease: 'expo.out' }, 6.95)
     .fromTo('#arrow', { draw: 0 }, { draw: 1, duration: 0.35, ease: 'power2.out' }, 7.25)
     .from('#io2', { yPercent: 110, duration: 0.35, ease: 'expo.out' }, 7.48)
     .to('#io2', { scale: 1.06, duration: 0.15, yoyo: true, repeat: 1 }, 8.02);
 
   // ---------- scene 6 ----------
-  mw.timeline('#s6', { global: true })
+  gm.timeline('#s6', { global: true })
     .fromTo('#lg-l, #lg-r', { draw: 0 }, { draw: 1, duration: 0.45, ease: 'power3.out' }, 8.6)
     .from('#lg-play', { scale: 0, rotate: -90, duration: 0.45, ease: 'back.out(2)' }, 8.75)
     .from('#endname', { y: 80, opacity: 0, duration: 0.45, ease: 'expo.out' }, 9.0)
@@ -289,7 +289,7 @@
     .from('#cmd', { y: 60, opacity: 0, duration: 0.4, ease: 'expo.out' }, 9.7)
     .to('#endname', { scale: 1.08, duration: 0.14, yoyo: true, repeat: 1, ease: 'power2.out' }, 10.698);
   const ring = document.getElementById('ring'), logo = document.getElementById('logo');
-  mw.onFrame('#s6', (lt, info) => {
+  gm.onFrame('#s6', (lt, info) => {
     const b = music.beat(info.time ?? lt, 0.4);
     ring.style.scale = 1 + b * 0.18;
     ring.style.opacity = 0.25 + b * 0.75;

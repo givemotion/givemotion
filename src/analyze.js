@@ -1,4 +1,4 @@
-// `motionwright analyze <video>`: turn any video (a reference, or our own render) into a report an agent can read.
+// `givemotion analyze <video>`: turn any video (a reference, or our own render) into a report an agent can read.
 // Cuts and shot lengths, transitions, camera moves, pacing, palette, music sync and contact sheets.
 // Everything is computed from small decoded frames, so the same video always gives the same report.
 import { spawn, spawnSync } from 'node:child_process';
@@ -803,7 +803,7 @@ function panDir(dx, dy) {
   return (dy > 0 ? 'down' : 'up') + '-' + (dx > 0 ? 'right' : 'left');
 }
 
-/** A short "style recipe" in motionwright terms. */
+/** A short "style recipe" in givemotion terms. */
 function recipe(r) {
   const s = r.summary, out = [];
   const kinds = Object.entries(s.transitions).sort((a, b) => b[1] - a[1]);
@@ -811,13 +811,13 @@ function recipe(r) {
   out.push(`${s.shotCount} shots, ${s.averageShot} s on average (median ${s.medianShot} s, ${s.shortestShot}-${s.longestShot} s): ${s.medianShot < 1 ? 'very fast cutting' : s.medianShot < 2 ? 'fast cutting' : s.medianShot < 4 ? 'medium pace' : 'slow, long holds'}.`);
   if (total) {
     const map = { cut: 'hard cuts (no data-transition)', fade: 'data-transition="fade"', dip: 'data-transition="dip"', 'zoom-in': 'data-transition="zoom-through"', 'zoom-out': 'data-transition="zoom"', iris: 'data-transition="iris"', 'iris-in': 'a closing iris (custom clip-path)', clock: 'data-transition="clock"', other: 'custom transitions (morph, shapes, or something the analysis cannot name)' };
-    out.push('Scene changes: ' + kinds.map(([k, v]) => `${v} ${k}`).join(', ') + '. In motionwright: ' + kinds.slice(0, 3).map(([k]) => map[k] || `data-transition="${k}"`).join('; ') + '.');
+    out.push('Scene changes: ' + kinds.map(([k, v]) => `${v} ${k}`).join(', ') + '. In givemotion: ' + kinds.slice(0, 3).map(([k]) => map[k] || `data-transition="${k}"`).join('; ') + '.');
   }
-  if (r.music && r.music.bpm) out.push(`Music at ${r.music.bpm} BPM${r.music.cuts ? `; ${r.music.cutsOnBeat} of ${r.music.cuts} scene changes land on a beat (${r.music.cutsOnBar} on a bar start)` : ''}${r.music.shotBeats ? `; a typical shot lasts ${r.music.shotBeats} beats` : ''}. Plan with \`motionwright audio\` and data-cuts.`);
+  if (r.music && r.music.bpm) out.push(`Music at ${r.music.bpm} BPM${r.music.cuts ? `; ${r.music.cutsOnBeat} of ${r.music.cuts} scene changes land on a beat (${r.music.cutsOnBar} on a bar start)` : ''}${r.music.shotBeats ? `; a typical shot lasts ${r.music.shotBeats} beats` : ''}. Plan with \`givemotion audio\` and data-cuts.`);
   const cams = {};
   for (const sh of r.shots) { const k = sh.camera.label.split(' ').slice(0, 2).join(' '); cams[k] = (cams[k] || 0) + sh.length; }
   const camTop = Object.entries(cams).sort((a, b) => b[1] - a[1]);
-  if (camTop.length) out.push('Camera: ' + camTop.slice(0, 3).map(([k, v]) => `${k} (${Math.round((v / r.duration) * 100)}% of the time)`).join(', ') + '. "move-left" means the picture slides left (as data-camera names it). In motionwright: data-camera="push 1.06", "move-left 200", "handheld", or mw.camera shots.');
+  if (camTop.length) out.push('Camera: ' + camTop.slice(0, 3).map(([k, v]) => `${k} (${Math.round((v / r.duration) * 100)}% of the time)`).join(', ') + '. "move-left" means the picture slides left (as data-camera names it). In givemotion: data-camera="push 1.06", "move-left 200", "handheld", or gm.camera shots.');
   const c = r.colors;
   out.push(`Colors: ${c.theme} look, background ${c.background}${c.accents.length ? ', accents ' + c.accents.join(' ') : ''}; main colors ${c.palette.slice(0, 5).map((p) => `${p.hex} ${Math.round(p.share * 100)}%`).join(', ')}.`);
   out.push(`Pacing: ${Math.round(s.activity * 100)}% of the picture changes per half second on average${s.stillStretches.length ? `; still stretches at ${s.stillStretches.map(([a, b]) => `${a}-${b} s`).join(', ')}` : '; no still stretches'}.`);

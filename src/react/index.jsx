@@ -1,9 +1,9 @@
-// motionwright/react: write compositions as React components.
+// givemotion/react: write compositions as React components.
 // The engine (clock, clips, transitions, timeline, camera, audio, render) is the same as for HTML;
-// these helpers just connect React to it. Import from 'motionwright/react'.
+// these helpers just connect React to it. Import from 'givemotion/react'.
 import React, { createContext, useContext, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 
-const mw = () => window.mw;
+const gm = () => window.gm;
 let now = 0;
 const subs = new Set();
 const subscribe = (cb) => { subs.add(cb); return () => subs.delete(cb); };
@@ -19,14 +19,14 @@ export function useTime() {
   const g = useGlobalTime();
   const ref = useContext(ClipContext);
   const el = ref && ref.current;
-  if (!el || !mw().__internal) return g;
-  const c = mw().__internal.nearestClip(el);
-  return c ? mw().__internal.mapT(el, g) - c.start : g;
+  if (!el || !gm().__internal) return g;
+  const c = gm().__internal.nearestClip(el);
+  return c ? gm().__internal.mapT(el, g) - c.start : g;
 }
 /** Current frame number inside the nearest clip. */
-export function useFrame() { return Math.round(useTime() * mw().fps); }
-export function useVideoConfig() { const m = mw(); return { width: m.width, height: m.height, fps: m.fps, duration: m.duration }; }
-export function useData() { return mw().data; }
+export function useFrame() { return Math.round(useTime() * gm().fps); }
+export function useVideoConfig() { const m = gm(); return { width: m.width, height: m.height, fps: m.fps, duration: m.duration }; }
+export function useData() { return gm().data; }
 
 function timeAttrs(p) {
   const a = {};
@@ -70,28 +70,28 @@ export function Sequence({ transition, gap, cuts, children, as = 'div', ...p }) 
  */
 export function useTimeline(build, opts) {
   const ref = useRef(null);
-  useLayoutEffect(() => { const tl = mw().timeline(ref.current, opts); build(tl, ref.current); }, []);
+  useLayoutEffect(() => { const tl = gm().timeline(ref.current, opts); build(tl, ref.current); }, []);
   return ref;
 }
 /** Run code on every frame after layout (to measure or follow elements). */
 export function useOnLayout(fn) {
   const ref = useRef(null);
   const f = useRef(fn); f.current = fn;
-  useLayoutEffect(() => { mw().onLayout(ref.current, (t, info) => f.current(t, info)); }, []);
+  useLayoutEffect(() => { gm().onLayout(ref.current, (t, info) => f.current(t, info)); }, []);
   return ref;
 }
 /** Loudness, bands and beats of an audio file: const music = useAudio('music.mp3') */
-export function useAudio(src) { const r = useRef(null); if (!r.current) r.current = mw().audio(src); return r.current; }
+export function useAudio(src) { const r = useRef(null); if (!r.current) r.current = gm().audio(src); return r.current; }
 
-// Math helpers (same as window.mw)
-export const interpolate = (...a) => mw().interpolate(...a);
-export const spring = (...a) => mw().spring(...a);
-export const noise = (...a) => mw().noise(...a);
-export const easing = (...a) => mw().easing(...a);
-export const clamp = (...a) => mw().clamp(...a);
-export const lerp = (...a) => mw().lerp(...a);
-export const random = (...a) => mw().random(...a);
-export const rng = (...a) => mw().rng(...a);
-export const shape = new Proxy({}, { get: (_, k) => mw().shape[k] });
-export const path = new Proxy({}, { get: (_, k) => mw().path[k] });
-export const color = new Proxy({}, { get: (_, k) => mw().color[k] });
+// Math helpers (same as window.gm)
+export const interpolate = (...a) => gm().interpolate(...a);
+export const spring = (...a) => gm().spring(...a);
+export const noise = (...a) => gm().noise(...a);
+export const easing = (...a) => gm().easing(...a);
+export const clamp = (...a) => gm().clamp(...a);
+export const lerp = (...a) => gm().lerp(...a);
+export const random = (...a) => gm().random(...a);
+export const rng = (...a) => gm().rng(...a);
+export const shape = new Proxy({}, { get: (_, k) => gm().shape[k] });
+export const path = new Proxy({}, { get: (_, k) => gm().path[k] });
+export const color = new Proxy({}, { get: (_, k) => gm().color[k] });

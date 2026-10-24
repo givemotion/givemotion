@@ -9,8 +9,8 @@ snapshots/
 !docs/media/*.gif
 .DS_Store
 benchmarks/**/node_modules/
-benchmarks/vs-hyperframes/mw/
+benchmarks/vs-hyperframes/gm/
 benchmarks/vs-hyperframes/hf/
 bench/agents/runs/
-.mw-parts/
+.gm-parts/
 __pycache__/

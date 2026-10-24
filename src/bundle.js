@@ -1,5 +1,5 @@
-// `motionwright bundle`: a standalone copy of a composition that plays in any browser
-// (no server, no Node), plus <mw-player> to embed it in web pages.
+// `givemotion bundle`: a standalone copy of a composition that plays in any browser
+// (no server, no Node), plus <gm-player> to embed it in web pages.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, copyFileSync } from 'node:fs';
 import { join, dirname, resolve, relative, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,12 +38,12 @@ export function bundle(input, opts = {}) {
   for (const f of files) while (!(f + sep).startsWith(base + sep) && dirname(base) !== base) base = dirname(base);
   const rt = readRuntime();
   const config = { mode: 'preview', data: opts.data ?? null, bundled: true };
-  // built-in fonts: inlined when the page uses them (a bundle has no motionwright server)
-  const css = rt.css.replace(/url\(\/__mw\/fonts\/([\w.-]+)\)/g, (m, name) => {
+  // built-in fonts: inlined when the page uses them (a bundle has no givemotion server)
+  const css = rt.css.replace(/url\(\/__gm\/fonts\/([\w.-]+)\)/g, (m, name) => {
     const f = join(HERE, 'runtime', 'fonts', name);
     return /caveat/i.test(html) && existsSync(f) ? `url(data:font/woff2;base64,${readFileSync(f).toString('base64')})` : 'url(about:blank)';
   });
-  const tags = `<style data-mw-preset>${css}</style><script>window.__MW_CONFIG=${JSON.stringify(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
+  const tags = `<style data-gm-preset>${css}</style><script>window.__GM_CONFIG=${JSON.stringify(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
   const head = /<head\b[^>]*>/i.exec(html);
   html = head ? html.slice(0, head.index + head[0].length) + tags + html.slice(head.index + head[0].length) : tags + html;
   const pageRel = relative(base, file).split(sep).join('/').replace(/\.html?$/i, '') + '.html';
@@ -57,11 +57,11 @@ export function bundle(input, opts = {}) {
     copyFileSync(f, join(outDir, rel));
     copied++;
   }
-  copyFileSync(join(HERE, 'player', 'mw-player.js'), join(outDir, 'mw-player.js'));
+  copyFileSync(join(HERE, 'player', 'gm-player.js'), join(outDir, 'gm-player.js'));
   writeFileSync(join(outDir, 'player.html'), `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0c10}mw-player{width:min(960px,94vw);border-radius:12px;box-shadow:0 20px 60px #0008}</style>
-<script src="mw-player.js"></script>
-<mw-player src="${pageRel}" controls></mw-player>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0c10}gm-player{width:min(960px,94vw);border-radius:12px;box-shadow:0 20px 60px #0008}</style>
+<script src="gm-player.js"></script>
+<gm-player src="${pageRel}" controls></gm-player>
 `);
   return { outDir, page: join(outDir, pageRel), player: join(outDir, 'player.html'), files: copied };
 }

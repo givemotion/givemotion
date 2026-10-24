@@ -12,19 +12,19 @@ second. Do not reformat files you are not changing.
 - **Test harness** `bench/agents/` (briefs, maker/judge prompts, friction template, `round.js setup/render/sheets/add/pack/results`,
   frozen engine per round). How to run a round: `bench/agents/README.md`.
 - **T2** round-3 examples vs the old ones: 7.9 vs 3.7 (`docs/experiments/2026-10-t2-examples.md`).
-- **T3** hand-drawn: `data-sketch`, `mw.sketch`, `data-sketch-mark`, Caveat font, `write`, `mw.connect`, `mw.rect`,
+- **T3** hand-drawn: `data-sketch`, `gm.sketch`, `data-sketch-mark`, Caveat font, `write`, `gm.connect`, `gm.rect`,
   `fit: 'content'`, many check fixes. Three agent rounds; the last one beat the no-tools baseline on every judge
   (7.6 vs 6.7) and the versions made with another framework were behind both (`docs/experiments/2026-10-t3-hand-drawn.md`).
 - **T4** renders keep fixed parts with fingerprints; only changed parts re-render, byte-identical to a full render.
-- **T5** `motionwright analyze` (cuts, transitions, camera, pacing, palette, beat sync, sheets, `--compare`).
-- **T6** `mw.connect`, `mw.rect`, `data-safe-zone` / `unsafe-zone`, `mw.log`, `hideBefore`, `snapshot --grid`, `captions` command.
+- **T5** `givemotion analyze` (cuts, transitions, camera, pacing, palette, beat sync, sheets, `--compare`).
+- **T6** `gm.connect`, `gm.rect`, `data-safe-zone` / `unsafe-zone`, `gm.log`, `hideBefore`, `snapshot --grid`, `captions` command.
 - **T7** speed study (`docs/experiments/2026-10-t7-speed.md`): time is mostly software compositing; fixed an encoder stall
   and a determinism bug (Chrome partial raster).
 - **N2** labels that stay with their shapes: `data-anchor="#server bottom 12"` (HTML and SVG text, follows timeline/travel/
-  camera, chains), `data-sketch-mark-padding`, `mw.path.travel(el, mw.connect(...))` rides a live arrow. Not yet tried by
+  camera, chains), `data-sketch-mark-padding`, `gm.path.travel(el, gm.connect(...))` rides a live arrow. Not yet tried by
   a fresh agent round: the next hand-drawn round should check that makers use it and that moving a part is one edit.
 - **N1** round 8, all 9 briefs x 2 runs, 2 judges each: 7.1 average, no video under 6 (`docs/experiments/2026-10-r8.md`).
-  ~20 fixes from the friction logs and judge notes: code-window marks, `zoom-through`, `mw.burst` layering in camera
+  ~20 fixes from the friction logs and judge notes: code-window marks, `zoom-through`, `gm.burst` layering in camera
   worlds, a frame-start tween glitch, `fromTo` + keyframes, pop-in `fit`, many `check` false positives (SVG text,
   occluded lines, fades/scrims), new `camera-late`, `ghost-overlap`, `data-pulse`, beat `data-cuts`, shot `overview`.
 - Also: tests no longer hang, camera shots at elements that appear later frame correctly, `empty-frame` and
@@ -58,7 +58,7 @@ to get today's motion back (`<html data-motion="classic">` or similar), and keep
      of fixed beziers, unless an ease is given;
    - when no duration is given, duration scales with distance and size (bigger moves take a bit longer, not linearly);
    - back-to-back tweens on the same property carry their velocity through instead of stopping between them.
-4. **Arcs and follow-through:** `mw.fly` and x/y moves travel on a slight arc by default (`arc: 0` to turn off); things
+4. **Arcs and follow-through:** `gm.fly` and x/y moves travel on a slight arc by default (`arc: 0` to turn off); things
    that land settle (a small overshoot or squash); staggers get a small seeded variation in timing so a row of cards
    does not move like a machine.
 5. **Depth by default:** in camera worlds, background layers get mild automatic parallax; shadows grow and soften when
@@ -88,15 +88,15 @@ renders cost half the CPU time. Ideas, measured with `bench/agents` (tokens per 
 - count tokens per maker in `round.js results` (the agent transcripts have the usage) so every round reports it.
 
 ## N6. Open items from round 8 (each one came up in 2+ friction logs or judge notes)
-- ~~Live line chart~~ done (`task/live-chart`): `mw.chart.line` in `src/runtime/chart.js` (head element, `data-point` callouts, `data-chart-text`, holds, segment colors, `rescale`, `overview`, `timeOf`/`valueAt`/`pointAt`); `line-chart` block built on it; SKILL recipe. Not yet tried by a fresh data-story maker.
-- Done: **`mw.connect` labels**: `label: { at, side, offset }` placed on the geometric line, box clears the line; `from: 'top 0.25'`, corners, `fromAt`/`toAt` (`src/runtime/sketch.js`).
+- ~~Live line chart~~ done (`task/live-chart`): `gm.chart.line` in `src/runtime/chart.js` (head element, `data-point` callouts, `data-chart-text`, holds, segment colors, `rescale`, `overview`, `timeOf`/`valueAt`/`pointAt`); `line-chart` block built on it; SKILL recipe. Not yet tried by a fresh data-story maker.
+- Done: **`gm.connect` labels**: `label: { at, side, offset }` placed on the geometric line, box clears the line; `from: 'top 0.25'`, corners, `fromAt`/`toAt` (`src/runtime/sketch.js`).
 - Done: **Cursor block**: `times="video: …"`/`"beats: …"`/`"bars: …"`, `show="auto"`, lands through any camera zoom with no wrapper size (`blocks/cursor.html`).
 - Done: **Morph** between different shapes or texts: a pair whose content differs (text, SVG shapes, image src) hands
   over in flight (old out by 45%, new in from 30% to 75%, inline opacity so 1 worker == N stays exact); same-content
   pairs keep the old look. Inline `<span>` pairs now move at all (they were stuck: translate does nothing on inline
   boxes; that was the data-story "48,000" bug). `check`: ghost-overlap skips a morph pair and reads `filter: opacity()`.
   Open: a blur at the crossing looked better, but a filter on a scaled element is not byte-exact across workers.
-- Done: **Fly**: `mw.fly(el, { from, at, duration, ease, size })` / `tl.fly(el, vars, pos)`, a fromTo of x/y/scaleX/
+- Done: **Fly**: `gm.fly(el, { from, at, duration, ease, size })` / `tl.fly(el, vars, pos)`, a fromTo of x/y/scaleX/
   scaleY measured once at load where both boxes rest (animations taken off, hidden clips shown for the measure).
   `check` no longer reports text covered by something flying over it, and text-overlap / text-overflows-box need
   0.15 s (a tween's first frame was reported). **Ride**: no new API; SKILL.md has the recipe (one leg per vehicle,
@@ -141,7 +141,7 @@ Measured: `node bench/analyze/score.mjs` renders 13 videos with known scene chan
 81% / 65% of found (was 64% / 69% found, 61% / 50% typed); 30 s 1080p analyzes in 6 s (was 18 s).
 Results and the method: `docs/experiments/2026-10-analyze-accuracy.md`. Still open: see-through scenes whose content
 enters during a wipe/iris (direction taken from the entrances), dip on a dark shared background (reads as fade), `zoom`
-(reads as fade), flip/morph/clock, fast `mw.camera` pans and pull-outs over a world (read as push/zoom-out). Ideas:
+(reads as fade), flip/morph/clock, fast `gm.camera` pans and pull-outs over a world (read as push/zoom-out). Ideas:
 a "see-through transition" model, OCR as an optional extra, per-minute summaries for long videos.
 Files: `src/analyze.js`, `bench/analyze/`.
 

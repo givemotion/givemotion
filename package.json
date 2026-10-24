@@ -1,12 +1,17 @@
 {
-  "name": "motionwright",
+  "name": "givemotion",
   "version": "0.1.0",
   "description": "Make videos with AI, free and open source (MIT). A code-to-video engine built for AI agents like Claude Code, Cursor and Codex: the agent writes HTML/CSS, checks and previews its own video, and renders MP4.",
   "type": "module",
   "license": "MIT",
+  "homepage": "https://givemotion.org",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leonardogrig/givemotion.git"
+  },
+  "bugs": "https://github.com/leonardogrig/givemotion/issues",
   "bin": {
-    "motionwright": "src/cli.js",
-    "mw": "src/cli.js"
+    "givemotion": "src/cli.js"
   },
   "main": "src/api.js",
   "exports": {

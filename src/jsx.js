@@ -17,7 +17,7 @@ export async function compileJsx(file) {
     stdin: { contents: entry, resolveDir: dirname(file), loader: 'jsx' },
     bundle: true, write: false, format: 'iife', platform: 'browser', target: 'chrome120',
     jsx: 'automatic', loader: { '.js': 'jsx', '.png': 'dataurl', '.jpg': 'dataurl', '.jpeg': 'dataurl', '.webp': 'dataurl', '.svg': 'text', '.json': 'json', '.css': 'css' },
-    alias: { 'motionwright/react': join(HERE, 'react', 'index.jsx') },
+    alias: { 'givemotion/react': join(HERE, 'react', 'index.jsx') },
     nodePaths: [join(PKG, 'node_modules'), join(dirname(file), 'node_modules')].filter((p) => existsSync(p)),
     define: { 'process.env.NODE_ENV': '"production"' },
     minify: false, sourcemap: 'inline', logLevel: 'silent',
@@ -35,7 +35,7 @@ export async function jsxPage(file) {
   const esc = (s) => s.replace(/<\/script/gi, '<\\/script');
   if (r.error) {
     const msg = JSON.stringify('JSX compile error:\n' + r.error);
-    return `<!doctype html><html data-duration="1"><head><meta charset="utf-8"></head><body><pre style="color:#f55;font:20px monospace;white-space:pre-wrap;padding:30px">${r.error.replace(/</g, '&lt;')}</pre><script>window.mw && mw.__report('error','jsx-compile',${msg},null,'Fix the code at the line shown.');</script></body></html>`;
+    return `<!doctype html><html data-duration="1"><head><meta charset="utf-8"></head><body><pre style="color:#f55;font:20px monospace;white-space:pre-wrap;padding:30px">${r.error.replace(/</g, '&lt;')}</pre><script>window.gm && gm.__report('error','jsx-compile',${msg},null,'Fix the code at the line shown.');</script></body></html>`;
   }
   return `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="display:contents"></div><script>${esc(r.js)}</script></body></html>`;
 }

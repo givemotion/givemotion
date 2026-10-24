@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- analyze benchmark (tuning): camera moves inside shots that must NOT count as scene changes.
-     Shot 1: mw.camera over a big world (fits, a fast pan, a pull out to everything) with cards entering.
+     Shot 1: gm.camera over a big world (fits, a fast pan, a pull out to everything) with cards entering.
      Shot 2 (fade in): push + float with a big title sliding in. Shot 3 (hard cut): a long move-left over a strip.
      True scene changes: 2. -->
 <html data-width="1280" data-height="720" data-fps="30">
@@ -46,7 +46,7 @@
   </section>
 </main>
 <script>
-mw.camera('#world')
+gm.camera('#world')
   .shot(0, { fit: '#ca', padding: 120 })
   .shot(1.2, { fit: '#cb', padding: 120, duration: 1 })
   .shot(3.2, { fit: '#cc', padding: 120, duration: 0.7, ease: 'in-out-quart' })

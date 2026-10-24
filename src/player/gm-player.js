@@ -1,16 +1,16 @@
-/* <mw-player>: play a motionwright composition inside any web page, with controls and sound.
+/* <gm-player>: play a givemotion composition inside any web page, with controls and sound.
  * MIT License. No dependencies.
  *
- *   <script src="mw-player.js"></script>
- *   <mw-player src="video/index.html" controls autoplay loop muted></mw-player>
+ *   <script src="gm-player.js"></script>
+ *   <gm-player src="video/index.html" controls autoplay loop muted></gm-player>
  *
- * src must be a page made with `motionwright bundle` (or served by `motionwright dev`).
- * Attributes: src, controls, autoplay, loop, muted, rate, data (JSON for mw.data / data-bind)
+ * src must be a page made with `givemotion bundle` (or served by `givemotion dev`).
+ * Attributes: src, controls, autoplay, loop, muted, rate, data (JSON for gm.data / data-bind)
  * Methods: play(), pause(), seekTo(seconds), toggle(). Properties: currentTime, duration, paused, info
  * Events: ready, play, pause, timeupdate, ended
  */
 (function () {
-  if (customElements.get('mw-player')) return;
+  if (customElements.get('gm-player')) return;
   const CSS = `
 :host{display:block;position:relative;background:#000;overflow:hidden;border-radius:inherit;font:13px/1.2 system-ui,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
 .box{position:relative;width:100%}
@@ -45,7 +45,7 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
         <div class="bar hidden"><button class="pp" aria-label="Play">${ICON.play}</button><input type="range" min="0" max="1000" value="0" aria-label="Seek"><span class="time">0:00 / 0:00</span><button class="mu" aria-label="Mute">${ICON.vol}</button><button class="fs" aria-label="Full screen">${ICON.full}</button></div></div>`;
       this.$ = (s) => r.querySelector(s);
       this._t = 0; this._paused = true; this.info = null; this._busy = false; this._seq = 0; this._wait = new Map();
-      this._onMsg = (e) => { const m = e.data; if (m && m.mwReply != null && this._wait.has(m.mwReply) && e.source === this.$('iframe').contentWindow) { this._wait.get(m.mwReply)(m); this._wait.delete(m.mwReply); } };
+      this._onMsg = (e) => { const m = e.data; if (m && m.gmReply != null && this._wait.has(m.gmReply) && e.source === this.$('iframe').contentWindow) { this._wait.get(m.gmReply)(m); this._wait.delete(m.gmReply); } };
       this.$('.pp').onclick = () => this.toggle();
       this.$('.big').onclick = () => this.play();
       this.$('.mu').onclick = () => { this.muted = !this.muted; };
@@ -86,10 +86,10 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
       const f = this.$('iframe');
       let src = this.getAttribute('src') || '';
       const data = this.getAttribute('data');
-      if (data) src += (src.includes('#') ? '&' : '#') + 'mw-data=' + encodeURIComponent(data);
+      if (data) src += (src.includes('#') ? '&' : '#') + 'gm-data=' + encodeURIComponent(data);
       f.onload = async () => {
-        const r = await this._call({ mw: 'ready' });
-        if (!r.info) { this._error('Could not start the composition. Make it with `motionwright bundle`.'); return; }
+        const r = await this._call({ gm: 'ready' });
+        if (!r.info) { this._error('Could not start the composition. Make it with `givemotion bundle`.'); return; }
         this.info = r.info;
         this._fit();
         this.$('.bar').classList.toggle('hidden', !this.hasAttribute('controls'));
@@ -115,7 +115,7 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
       this.$('.time').textContent = fmt(this._t) + ' / ' + fmt(this.info.duration);
       this.$('.pp').innerHTML = this._paused ? ICON.play : ICON.pause;
     }
-    _media() { if (this.info) this._call({ mw: 'media', playing: !this._paused, t: this._t, muted: this.muted, rate: this.rate }); }
+    _media() { if (this.info) this._call({ gm: 'media', playing: !this._paused, t: this._t, muted: this.muted, rate: this.rate }); }
     async seekTo(t) {
       if (!this.info) return;
       const fps = this.info.fps, D = this.info.duration;
@@ -124,7 +124,7 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
       if (!this._paused) { this._t0 = t; this._p0 = performance.now(); }
       if (this._busy) { this._pending = t; return; }
       this._busy = true;
-      await this._call({ mw: 'seek', t, playing: this._paused ? false : undefined, muted: this.muted, rate: this.rate });
+      await this._call({ gm: 'seek', t, playing: this._paused ? false : undefined, muted: this.muted, rate: this.rate });
       this._busy = false;
       this._ui();
       this.dispatchEvent(new Event('timeupdate'));
@@ -135,7 +135,7 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
       if (this._t >= this.info.duration - 1.5 / this.info.fps) this._t = 0;
       this._paused = false; this._t0 = this._t; this._p0 = performance.now();
       this.$('.big').classList.add('hidden');
-      this._call({ mw: 'media', playing: true, t: this._t, muted: this.muted, rate: this.rate });
+      this._call({ gm: 'media', playing: true, t: this._t, muted: this.muted, rate: this.rate });
       let lastSync = 0;
       const step = async () => {
         if (this._paused) return;
@@ -150,7 +150,7 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
           const sync = now - lastSync > 250;
           if (sync) lastSync = now;
           this._t = Math.round(x * this.info.fps) / this.info.fps;
-          await this._call({ mw: 'seek', t: this._t, playing: sync ? true : undefined, muted: this.muted, rate: this.rate });
+          await this._call({ gm: 'seek', t: this._t, playing: sync ? true : undefined, muted: this.muted, rate: this.rate });
           this._busy = false;
           this._ui();
           this.dispatchEvent(new Event('timeupdate'));
@@ -171,5 +171,5 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
     }
     toggle() { this._paused ? this.play() : this.pause(); }
   }
-  customElements.define('mw-player', MwPlayer);
+  customElements.define('gm-player', MwPlayer);
 })();

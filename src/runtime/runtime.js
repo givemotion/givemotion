@@ -1,12 +1,12 @@
-/* motionwright runtime — injected into every composition page.
+/* givemotion runtime — injected into every composition page.
  * Turns a normal HTML page into a seekable, deterministic video timeline.
- * Exposes window.mw. MIT License.
+ * Exposes window.gm. MIT License.
  */
 (function () {
   'use strict';
-  if (window.mw && window.mw.__runtime) return;
+  if (window.gm && window.gm.__runtime) return;
 
-  const CONFIG = Object.assign({ mode: 'preview', seed: 1, data: null }, window.__MW_CONFIG || {});
+  const CONFIG = Object.assign({ mode: 'preview', seed: 1, data: null }, window.__GM_CONFIG || {});
   const MODE = CONFIG.mode; // 'render' | 'preview' | 'check'
 
   // ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@
   };
 
   // ---------------------------------------------------------------------------
-  // Virtual clock. All time in this page is driven by mw.seek().
+  // Virtual clock. All time in this page is driven by gm.seek().
   // ---------------------------------------------------------------------------
   const EPOCH = Date.UTC(2026, 0, 1, 12, 0, 0);
   let now = 0; // seconds
@@ -97,7 +97,7 @@
       flushAnimations(now, 'event');
     }
   }
-  // While the page is still loading (waiting on mw.wait promises), libraries often poll with short
+  // While the page is still loading (waiting on gm.wait promises), libraries often poll with short
   // timers (fonts, Lottie, model loaders). The video clock is paused then, so run those short timers
   // for real. Long timers (likely meant as video events) still wait for their video time.
   function loadPump() {
@@ -120,7 +120,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Diagnostics collected for `motionwright check`
+  // Diagnostics collected for `givemotion check`
   // ---------------------------------------------------------------------------
   const issues = [];
   const issueKeys = new Set();
@@ -142,7 +142,7 @@
     while (cur && cur.nodeType === 1 && parts.length < 4) {
       let s = cur.tagName.toLowerCase();
       if (cur.id) { parts.unshift('#' + cur.id); break; }
-      const cls = [...cur.classList].filter((c) => !c.startsWith('mw-')).slice(0, 2);
+      const cls = [...cur.classList].filter((c) => !c.startsWith('gm-')).slice(0, 2);
       if (cls.length) s += '.' + cls.join('.');
       const parent = cur.parentElement;
       if (parent) {
@@ -558,7 +558,7 @@
   function beatGrid() {
     const h = document.documentElement;
     const bpm = parseFloat(h.getAttribute('data-bpm'));
-    if (!(bpm > 0)) report('warning', 'no-bpm', 'mw.beat()/mw.bar() need <html data-bpm="…">: using 120 BPM.', null, 'Run `npx motionwright audio music.mp3`: it prints the data-bpm, data-beat-offset and data-bar-offset to copy.');
+    if (!(bpm > 0)) report('warning', 'no-bpm', 'gm.beat()/gm.bar() need <html data-bpm="…">: using 120 BPM.', null, 'Run `npx givemotion audio music.mp3`: it prints the data-bpm, data-beat-offset and data-bar-offset to copy.');
     const period = 60 / (bpm > 0 ? bpm : 120);
     const offset = parseFloat(h.getAttribute('data-beat-offset')) || 0;
     const barOffset = h.hasAttribute('data-bar-offset') ? parseFloat(h.getAttribute('data-bar-offset')) || 0 : offset;
@@ -575,8 +575,8 @@
       const tt = hasRemap && c.outer.length ? applyChain(c.outer, T) : T;
       const on = tt >= c.start - 1e-9 && tt < c.end - 1e-9;
       sig += on ? '1' : '0';
-      if (on) { if (c.el.hasAttribute('data-mw-hidden')) c.el.removeAttribute('data-mw-hidden'); }
-      else if (!c.el.hasAttribute('data-mw-hidden')) c.el.setAttribute('data-mw-hidden', '');
+      if (on) { if (c.el.hasAttribute('data-gm-hidden')) c.el.removeAttribute('data-gm-hidden'); }
+      else if (!c.el.hasAttribute('data-gm-hidden')) c.el.setAttribute('data-gm-hidden', '');
     }
     const changed = sig !== lastVisible;
     lastVisible = sig;
@@ -621,7 +621,7 @@
       origin.set(a, mode === 'clip' ? cs : Math.max(t, cs));
       trimFill(a);
       if (inFrameCallbacks && mode !== 'clip') {
-        report('warning', 'non-seekable-animation', 'A CSS animation/transition started inside mw.onFrame(). It will not seek correctly when rendering in parallel.', tg, 'Inside onFrame, set styles directly from t (use mw.interpolate). To start a CSS animation at a time, use data-start on the element instead.', t);
+        report('warning', 'non-seekable-animation', 'A CSS animation/transition started inside gm.onFrame(). It will not seek correctly when rendering in parallel.', tg, 'Inside onFrame, set styles directly from t (use gm.interpolate). To start a CSS animation at a time, use data-start on the element instead.', t);
       }
     }
   }
@@ -738,7 +738,7 @@
     'wipe-down': () => [{ clipPath: 'inset(0 0 100% 0)' }, { clipPath: 'inset(0 0 0% 0)' }],
     'wipe-up': () => [{ clipPath: 'inset(100% 0 0 0)' }, { clipPath: 'inset(0% 0 0 0)' }],
     'diagonal': () => [{ clipPath: 'polygon(0% 0%, 0% 0%, -40% 100%, -40% 100%)' }, { clipPath: 'polygon(0% 0%, 140% 0%, 100% 100%, -40% 100%)' }],
-    'clock': () => [{ '--mw-clock': '0%' }, { '--mw-clock': '100%' }],
+    'clock': () => [{ '--gm-clock': '0%' }, { '--gm-clock': '100%' }],
     'iris': () => [{ clipPath: 'circle(0% at 50% 50%)' }, { clipPath: 'circle(75% at 50% 50%)' }],
     // (zoom-through: the new scene grows in behind the old one, which flies past the camera on top)
     // (it stays full size: a smaller scene would show a dark frame around it through the fading old one)
@@ -837,8 +837,8 @@
   }
   function applyEnterExit() {
     for (const el of document.querySelectorAll('[data-enter],[data-exit]')) {
-      if (el.__mwEE) continue;
-      el.__mwEE = true;
+      if (el.__gmEE) continue;
+      el.__gmEE = true;
       const stagger = parseTime(el.getAttribute('data-stagger'), el, 'data-stagger');
       let targets = [el];
       if (stagger != null) {
@@ -862,11 +862,11 @@
             if (m.name === 'clock') prepClock(tg);
             let kf = PRESETS[m.name]();
             // sketched solid fills fade in near the end of the drawing (a stroke dash cannot hide a fill)
-            if (m.name === 'draw' && tg.querySelector && (tg.matches('[data-mw-sketch-fill="solid"]') || tg.querySelector('[data-mw-sketch-fill="solid"]'))) kf = [{ ...kf[0], fillOpacity: 0 }, { offset: 0.6, fillOpacity: 0 }, { ...kf[1], fillOpacity: 1 }];
+            if (m.name === 'draw' && tg.querySelector && (tg.matches('[data-gm-sketch-fill="solid"]') || tg.querySelector('[data-gm-sketch-fill="solid"]'))) kf = [{ ...kf[0], fillOpacity: 0 }, { offset: 0.6, fillOpacity: 0 }, { ...kf[1], fillOpacity: 1 }];
             // reveals (clip, scale, dash) are also fully hidden before they start, not just clipped to a sliver
             if (kf && HIDDEN_AT_START.has(m.name)) kf = [{ ...kf[0], visibility: 'hidden' }, ...kf.slice(1)];
-            // (el.__mwEnterAt: a chart callout enters when the line reaches its point, its delay counts from there)
-            if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra + (el.__mwEnterAt || 0)) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
+            // (el.__gmEnterAt: a chart callout enters when the line reaches its point, its delay counts from there)
+            if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra + (el.__gmEnterAt || 0)) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
           }
         }
         if (ex) {
@@ -888,8 +888,8 @@
   }
   let clockReg = false;
   function prepClock(el) {
-    if (!clockReg) { clockReg = true; try { CSS.registerProperty({ name: '--mw-clock', syntax: '<percentage>', inherits: false, initialValue: '100%' }); } catch (e) {} }
-    el.style.maskImage = el.style.webkitMaskImage = 'conic-gradient(from 0deg, #000 var(--mw-clock), transparent var(--mw-clock))';
+    if (!clockReg) { clockReg = true; try { CSS.registerProperty({ name: '--gm-clock', syntax: '<percentage>', inherits: false, initialValue: '100%' }); } catch (e) {} }
+    el.style.maskImage = el.style.webkitMaskImage = 'conic-gradient(from 0deg, #000 var(--gm-clock), transparent var(--gm-clock))';
   }
   function prepDraw(el) {
     const shapes = el instanceof SVGGeometryElement ? [el] : [...el.querySelectorAll('path,line,polyline,polygon,circle,ellipse,rect')];
@@ -910,8 +910,8 @@
   const splitTargets = new WeakMap();
   function applySplit() {
     for (const el of document.querySelectorAll('[data-split]')) {
-      if (el.__mwSplit) continue;
-      el.__mwSplit = true;
+      if (el.__gmSplit) continue;
+      el.__gmSplit = true;
       const mode = (el.getAttribute('data-split') || 'words').trim();
       const pieces = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -925,13 +925,13 @@
           if (!p) continue;
           if (/^\s+$/.test(p)) { frag.appendChild(document.createTextNode(p)); continue; }
           const w = document.createElement('span');
-          w.className = 'mw-word';
+          w.className = 'gm-word';
           w.style.setProperty('--i', String(wi));
           w.style.setProperty('--wi', String(wi++));
           if (mode === 'chars') {
             for (const ch of Array.from(p)) {
               const c = document.createElement('span');
-              c.className = 'mw-char';
+              c.className = 'gm-char';
               c.textContent = ch;
               c.style.setProperty('--i', String(ci));
               c.style.setProperty('--ci', String(ci++));
@@ -958,7 +958,7 @@
         el.style.setProperty('--n', String(line + 1));
         // stagger targets: one entry per line → use first word? we animate each word with its line index.
         splitTargets.set(el, words);
-        el.__mwLineIndex = true;
+        el.__gmLineIndex = true;
       } else splitTargets.set(el, pieces);
     }
   }
@@ -995,8 +995,8 @@
   const typers = [];
   function setupCountersAndTypers() {
     for (const el of document.querySelectorAll('[data-count]')) {
-      if (el.__mwCount) continue;
-      el.__mwCount = true;
+      if (el.__gmCount) continue;
+      el.__gmCount = true;
       const parts = el.getAttribute('data-count').trim().split(/\s+/).map(Number);
       const from = parts.length > 1 ? parts[0] : 0;
       const to = parts.length > 1 ? parts[1] : parts[0];
@@ -1015,8 +1015,8 @@
       });
     }
     for (const el of document.querySelectorAll('[data-type]')) {
-      if (el.__mwType) continue;
-      el.__mwType = true;
+      if (el.__gmType) continue;
+      el.__gmType = true;
       const nodes = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) nodes.push({ node: walker.currentNode, text: walker.currentNode.data });
@@ -1024,7 +1024,7 @@
       const v = el.getAttribute('data-type').trim();
       const cps = v ? parseFloat(v) : 30;
       const caret = el.hasAttribute('data-type-caret') ? document.createElement('span') : null;
-      if (caret) caret.className = 'mw-caret';
+      if (caret) caret.className = 'gm-caret';
       // Reserve the final size so the layout doesn't jump while typing (block-level elements).
       const disp = getComputedStyle(el).display;
       if (disp !== 'inline' && el.offsetHeight > 0 && !el.style.minHeight) el.style.minHeight = el.offsetHeight + 'px';
@@ -1069,10 +1069,10 @@
         }
         ty.last = n;
       }
-      if (typing) ty.el.setAttribute('data-mw-typing', ''); else ty.el.removeAttribute('data-mw-typing');
+      if (typing) ty.el.setAttribute('data-gm-typing', ''); else ty.el.removeAttribute('data-gm-typing');
       // no caret before typing starts (a stray blinking bar on an empty line looks like a mistake)
       const wait = lt < 0 || (ty.keep != null && lt > ty.total / ty.cps + ty.keep);
-      if (wait !== ty.el.hasAttribute('data-mw-type-wait')) { changed = true; if (wait) ty.el.setAttribute('data-mw-type-wait', ''); else ty.el.removeAttribute('data-mw-type-wait'); }
+      if (wait !== ty.el.hasAttribute('data-gm-type-wait')) { changed = true; if (wait) ty.el.setAttribute('data-gm-type-wait', ''); else ty.el.removeAttribute('data-gm-type-wait'); }
     }
     return changed;
   }
@@ -1087,11 +1087,11 @@
   function getData() {
     if (dataCache !== undefined) return dataCache;
     if (CONFIG.data != null) return (dataCache = CONFIG.data);
-    const hm = /[#&]mw-data=([^&]+)/.exec(location.hash);
-    if (hm) { try { return (dataCache = JSON.parse(decodeURIComponent(hm[1]))); } catch (e) { report('error', 'bad-data', 'Could not read #mw-data from the page address.', null); } }
-    const s = document.getElementById('mw-data');
+    const hm = /[#&]gm-data=([^&]+)/.exec(location.hash);
+    if (hm) { try { return (dataCache = JSON.parse(decodeURIComponent(hm[1]))); } catch (e) { report('error', 'bad-data', 'Could not read #gm-data from the page address.', null); } }
+    const s = document.getElementById('gm-data');
     if (!s) return null;
-    try { dataCache = JSON.parse(s.textContent); } catch (e) { report('error', 'bad-data', 'The <script id="mw-data"> block is not valid JSON: ' + e.message, s); dataCache = null; }
+    try { dataCache = JSON.parse(s.textContent); } catch (e) { report('error', 'bad-data', 'The <script id="gm-data"> block is not valid JSON: ' + e.message, s); dataCache = null; }
     return dataCache;
   }
   function applyBindings() {
@@ -1134,8 +1134,8 @@
   }
   function setupVideos() {
     for (const el of [...document.querySelectorAll('video')]) {
-      if (el.__mwVideo) continue;
-      el.__mwVideo = true;
+      if (el.__gmVideo) continue;
+      el.__gmVideo = true;
       const src = el.currentSrc || el.getAttribute('src') || (el.querySelector('source') && el.querySelector('source').getAttribute('src'));
       if (!src) { report('error', 'video-no-src', '<video> has no src.', el); continue; }
       const abs = new URL(src, location.href);
@@ -1183,7 +1183,7 @@
         if (fi === v.lastKey) continue;
         v.lastKey = fi;
         changed = true;
-        const url = '/__mw/vframe?src=' + encodeURIComponent(v.src) + '&fps=' + comp.fps + '&i=' + fi;
+        const url = '/__gm/vframe?src=' + encodeURIComponent(v.src) + '&fps=' + comp.fps + '&i=' + fi;
         const pre = new Image();
         pre.src = url;
         pendingWaits.push(pre.decode().then(() => { v.el.style.backgroundImage = 'url("' + url + '")'; v.keep = pre; }, () => { report('error', 'video-frame', `Could not load video frame ${fi} of ${v.src}.`, v.el, 'Check that the file exists and ffmpeg can read it.', T); }));
@@ -1244,16 +1244,16 @@
     }
     for (const v of videos) { if (!v.bg) { v.el.muted = livePlay.muted || v.timing.muted; v.el.volume = Math.max(0, Math.min(1, (v.timing.volume ?? 1) * livePlay.volume)); if (!on) v.el.pause(); } }
   }
-  // Same-origin pages can call mw directly; cross-origin embeds talk with postMessage.
+  // Same-origin pages can call gm directly; cross-origin embeds talk with postMessage.
   if (MODE === 'preview') {
     window.addEventListener('message', async (e) => {
       const m = e.data;
-      if (!m || typeof m !== 'object' || !m.mw) return;
-      const reply = (x) => { try { e.source && e.source.postMessage(Object.assign({ mwReply: m.id }, x), '*'); } catch (er) {} };
+      if (!m || typeof m !== 'object' || !m.gm) return;
+      const reply = (x) => { try { e.source && e.source.postMessage(Object.assign({ gmReply: m.id }, x), '*'); } catch (er) {} };
       try {
-        if (m.mw === 'ready') reply({ info: await ready() });
-        else if (m.mw === 'seek') { let r = seek(m.t); if (r && r.then) r = await r; if (m.playing != null) syncMedia(m.playing, m.t, m); reply({ t: m.t }); }
-        else if (m.mw === 'media') { syncMedia(m.playing, m.t, m); reply({}); }
+        if (m.gm === 'ready') reply({ info: await ready() });
+        else if (m.gm === 'seek') { let r = seek(m.t); if (r && r.then) r = await r; if (m.playing != null) syncMedia(m.playing, m.t, m); reply({ t: m.t }); }
+        else if (m.gm === 'media') { syncMedia(m.playing, m.t, m); reply({}); }
       } catch (er) { reply({ error: String(er && er.message || er) }); }
     });
   }
@@ -1358,8 +1358,8 @@
     setupCountersAndTypers();
     applyEnterExit();
     for (const h of hooks.init) { try { h(); } catch (e) { pageError(e); } }
-    { const md = document.getElementById('mw-missing-data'); if (md) { try { const j = JSON.parse(md.textContent); report('warning', 'data-missing', (j.keys.length === 1 ? '{{data.' + j.keys[0] + '}} is' : j.keys.slice(0, 5).map((k) => '{{data.' + k + '}}').join(', ') + (j.keys.length > 5 ? ' and ' + (j.keys.length - 5) + ' more are' : ' are')) + ' empty: ' + (j.noData ? 'no data was given.' : 'the data has no value there.'), null, j.noData ? 'Pass --data data.json (or --props \'{...}\'), or put a data.json next to the HTML, or add <script type="application/json" id="mw-data">{...}</script> with default data, or write {{data.title|Default text}}.' : 'Check the path, or give a default: {{data.title|Default text}}.'); } catch (e) {} } }
-    for (const el of document.querySelectorAll('[data-mw-include-error]')) report('error', 'include-not-found', `<mw-include src="${el.getAttribute('data-mw-include-error')}"> was not found.`, null, 'The path is relative to the HTML file that contains the include. Check the spelling, or run `npx motionwright add <block>` to copy a block into ./blocks.');
+    { const md = document.getElementById('gm-missing-data'); if (md) { try { const j = JSON.parse(md.textContent); report('warning', 'data-missing', (j.keys.length === 1 ? '{{data.' + j.keys[0] + '}} is' : j.keys.slice(0, 5).map((k) => '{{data.' + k + '}}').join(', ') + (j.keys.length > 5 ? ' and ' + (j.keys.length - 5) + ' more are' : ' are')) + ' empty: ' + (j.noData ? 'no data was given.' : 'the data has no value there.'), null, j.noData ? 'Pass --data data.json (or --props \'{...}\'), or put a data.json next to the HTML, or add <script type="application/json" id="gm-data">{...}</script> with default data, or write {{data.title|Default text}}.' : 'Check the path, or give a default: {{data.title|Default text}}.'); } catch (e) {} } }
+    for (const el of document.querySelectorAll('[data-gm-include-error]')) report('error', 'include-not-found', `<gm-include src="${el.getAttribute('data-gm-include-error')}"> was not found.`, null, 'The path is relative to the HTML file that contains the include. Check the spelling, or run `npx givemotion add <block>` to copy a block into ./blocks.');
     if (comp.background && !document.body.style.background) document.body.style.background = comp.background;
     for (const a of preInit) { const tg = targetOf(a); origin.set(a, tg ? clipStartOf(tg) : 0); }
     preInit.length = 0;
@@ -1393,7 +1393,7 @@
         real.setTimeout(pump, 4);
         const limit = (CONFIG.loadTimeout || 30) * 1000;
         await Promise.race([all, new Promise((r) => real.setTimeout(r, limit))]);
-        if (!done) { done = true; report('error', 'load-timeout', `Something passed to mw.wait() did not finish within ${limit / 1000}s.`, null, 'Check that every promise given to mw.wait() resolves (files exist, libraries load).'); }
+        if (!done) { done = true; report('error', 'load-timeout', `Something passed to gm.wait() did not finish within ${limit / 1000}s.`, null, 'Check that every promise given to gm.wait() resolves (files exist, libraries load).'); }
       }
       try { await document.fonts.ready; } catch (e) {}
       init();
@@ -1403,7 +1403,7 @@
       }
       // Fonts used only by split text etc.
       try { await document.fonts.ready; } catch (e) {}
-      return mw.inspect();
+      return gm.inspect();
     })();
     return readyPromise;
   }
@@ -1480,7 +1480,7 @@
     const ease = easing(opts.easing || 'linear');
     const clampL = opts.clamp !== false && opts.extrapolateLeft !== 'extend';
     const clampR = opts.clamp !== false && opts.extrapolateRight !== 'extend';
-    if (input.length !== output.length) throw new Error('mw.interpolate: input and output need the same length');
+    if (input.length !== output.length) throw new Error('gm.interpolate: input and output need the same length');
     let i = 1;
     while (i < input.length - 1 && t > input[i]) i++;
     const a = input[i - 1], b = input[i];
@@ -1529,7 +1529,7 @@
       frames: Math.max(1, Math.round(comp.duration * comp.fps)),
       clips: clips.map((c) => ({ selector: selectorOf(c.el), start: round(c.start), end: round(isFinite(c.end) ? c.end : comp.duration), scene: !!(c.el.classList.contains('scene') || (c.el.parentElement && c.el.parentElement.hasAttribute('data-sequence'))) })),
       transitions: transitionList.slice(),
-      cameraShots: mw.__cameraShots ? mw.__cameraShots().map((c) => ({ ...c, start: round(c.start), arrive: round(c.arrive), next: c.next == null ? null : round(c.next) })) : [],
+      cameraShots: gm.__cameraShots ? gm.__cameraShots().map((c) => ({ ...c, start: round(c.start), arrive: round(c.arrive), next: c.next == null ? null : round(c.next) })) : [],
       media: media(),
       usesRAF: usedRAF, frameCallbacks: frameFns.length,
       issues: issues.slice(),
@@ -1548,10 +1548,17 @@
     return out;
   }
 
+  // One switch for every "natural motion" default. Read at call time: the runtime can start before <html> is parsed.
+  function motionStyle() {
+    const v = (CONFIG.motion || document.documentElement.getAttribute('data-motion') || '').trim().toLowerCase();
+    return v === 'classic' ? 'classic' : 'natural';
+  }
+  const naturalMotion = () => motionStyle() === 'natural';
+
   // Read size/fps from <html> right away so CSS (--px, --stage-w) and early scripts see the right values.
   try { readSettings(); } catch (e) {}
 
-  const mw = {
+  const gm = {
     __runtime: true,
     get mode() { return MODE; },
     get time() { return now; },
@@ -1561,20 +1568,23 @@
     get duration() { return comp.duration; },
     get px() { return PX(); },
     get data() { return getData(); },
+    // 'natural' (default): physical easing, operator camera, adaptive motion blur, arcs.
+    // 'classic': the older motion (fixed beziers, cameras that stop between shots). <html data-motion="classic">.
+    get motion() { return motionStyle(); },
     onFrame(a, b) {
       if (typeof a === 'function') frameFns.push({ fn: a });
       else if (a && typeof b === 'function') frameFns.push({ el: typeof a === 'string' ? document.querySelector(a) : a, fn: b });
-      else throw new Error('mw.onFrame(fn) or mw.onFrame(element, fn)');
+      else throw new Error('gm.onFrame(fn) or gm.onFrame(element, fn)');
     },
     // Like onFrame, but runs after all animations are applied for this frame, so
     // getBoundingClientRect() returns where things really are. Use it to follow or aim at elements.
     onLayout(a, b) {
       if (typeof a === 'function') layoutFns.push({ fn: a });
       else if (a && typeof b === 'function') layoutFns.push({ el: typeof a === 'string' ? document.querySelector(a) : a, fn: b });
-      else throw new Error('mw.onLayout(fn) or mw.onLayout(element, fn)');
+      else throw new Error('gm.onLayout(fn) or gm.onLayout(element, fn)');
     },
     wait(p) { waits.push(typeof p === 'function' ? p() : p); return p; },
-    // Beat grid from <html data-bpm data-beat-offset data-bar-offset data-beats-per-bar> (printed by `motionwright audio`).
+    // Beat grid from <html data-bpm data-beat-offset data-bar-offset data-beats-per-bar> (printed by `givemotion audio`).
     beat(n = 0) { const g = beatGrid(); return g.offset + n * g.period; },
     bar(n = 0) { const g = beatGrid(); return g.barOffset + n * g.perBar * g.period; },
     timing(el) { if (typeof el === 'string') el = document.querySelector(el); if (!clips.length) { try { buildTimeline(); timelineDirty = true; } catch (e) {} } const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
@@ -1584,7 +1594,7 @@
     lerp: (a, b, p) => a + (b - a) * p,
     // random('dot-3') → the same number in [0,1) every time for that seed (strings or numbers).
     // random() → next value of the page's seeded Math.random. rng(seed) → a generator function.
-    // mw.log(...): like console.log, but check and inspect print it with the video time it happened at
+    // gm.log(...): like console.log, but check and inspect print it with the video time it happened at
     log: (...a) => { logs.push({ t: round(now), msg: a.map((x) => { if (typeof x === 'string') return x; try { return JSON.stringify(x); } catch (e) { return String(x); } }).join(' ').slice(0, 500) }); if (logs.length > 5000) logs.splice(0, 1000); },
     __logs: (since = 0) => logs.slice(since),
     __logCount: () => logs.length,
@@ -1604,14 +1614,14 @@
     __setVideoDurations(map) { for (const v of videos) if (map[v.src] != null) v.duration = map[v.src]; },
   };
   // Shared internals for runtime extensions (motion.js, audio.js). Not a public API.
-  mw.__internal = {
+  gm.__internal = {
     hooks, comp, real, PX, report, pageError, parseTime, easing, cssEasing, isEasingName, normEase,
     nearestClip, clipStartOf, clipEndOf, mapT, addOwn, transitions: () => transitionList, selectorOf, makeRandom, parseColor, mixColor, info, dropOwnMutations, noteMutations: () => handleRecords(mo.takeRecords()),
     morphPairs: () => morphPairs,
     addOwnAnim(a, originTime) { ownAnim.add(a); origin.set(a, originTime); known.add(a); },
     setColorMixer(fn) { colorMixer = fn; }, clips: () => clips, waits, pendingWaits, MODE, CONFIG, SKIP_TAGS,
-    get now() { return now; }, get initialized() { return initialized; },
+    get now() { return now; }, get initialized() { return initialized; }, motionStyle, naturalMotion,
   };
-  window.mw = mw;
-  window.motionwright = mw;
+  window.gm = gm;
+  window.givemotion = gm;
 })();

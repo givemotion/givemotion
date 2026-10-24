@@ -476,12 +476,16 @@
           })();
           const sub = new Timeline(this.scopeSpec, { defaults: Object.assign({}, this.defaults, { ease: timing.ease }) });
           tlList.splice(tlList.indexOf(sub), 1);
-          if (!Array.isArray(timing.keyframes)) {
-            const o = timing.keyframes; const first = {};
-            for (const k of Object.keys(o)) if (Array.isArray(o[k])) first[k] = o[k][0];
-            sub.set(op.t, first, 0);
-          }
-          for (const kf of kfs) sub.to(op.t, kf);
+          // start values: fromTo's from-vars and the first entry of { x: [a, b, c] } keyframes, shown before the start
+          // like any fromTo (unless immediateRender: false); hideBefore applies to the first step
+          const first = {};
+          if (op.type === 'fromTo') for (const k of Object.keys(op.a)) if (!RESERVED.has(k)) first[k] = op.a[k];
+          if (!Array.isArray(timing.keyframes)) { const o = timing.keyframes; for (const k of Object.keys(o)) if (Array.isArray(o[k])) first[k] = o[k][0]; }
+          const lead = { hideBefore: timing.hideBefore, immediateRender: op.type === 'fromTo' ? timing.immediateRender : false };
+          kfs.forEach((kf, i) => {
+            if (i === 0 && Object.keys(first).length) sub.fromTo(op.t, first, Object.assign({}, kf, lead));
+            else sub.to(op.t, i === 0 ? Object.assign({}, kf, lead) : kf);
+          });
           sub._build();
           const at = this._pos(op.pos, cursor) + (timing.delay || 0);
           for (const it of sub.items) this.items.push(Object.assign({}, it, { start: it.start + at }));

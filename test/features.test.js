@@ -211,3 +211,12 @@ test('timeline: a tween starting on a frame shows its start values there, even w
     <script>mw.timeline('#c').fromTo('#x', { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0);</script>`));
   assert.equal(await evalAt(f, 0.3, `getComputedStyle(document.getElementById('x')).opacity`), '0');
 });
+
+test('timeline: fromTo with keyframes shows its from-values before it starts; hideBefore works with keyframes', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="3"><b id="a" style="display:block">A</b><b id="b" style="display:block">B</b></div>
+    <script>mw.timeline().fromTo('#a', { opacity: 0 }, { keyframes: [{ opacity: 1, duration: 0.5 }, { scale: 1.2, duration: 0.2 }] }, 1)
+      .to('#b', { keyframes: [{ x: 50, duration: 0.5 }], hideBefore: true }, 1);</script>`));
+  assert.deepEqual(JSON.parse(await evalAt(f, 0.5, `JSON.stringify([getComputedStyle(document.getElementById('a')).opacity, getComputedStyle(document.getElementById('b')).visibility])`)), ['0', 'hidden']);
+  assert.deepEqual(JSON.parse(await evalAt(f, 2, `JSON.stringify([getComputedStyle(document.getElementById('a')).opacity, getComputedStyle(document.getElementById('b')).visibility])`)), ['1', 'visible']);
+});

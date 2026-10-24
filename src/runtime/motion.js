@@ -1073,7 +1073,7 @@
       cameras.push(this);
     }
     get world() { if (!this._w) { this._w = typeof this.spec === 'string' ? document.querySelector(this.spec) : this.spec; if (!this._w) I.report('error', 'camera-no-world', `gm.camera: "${this.spec}" matched nothing.`, null); } return this._w; }
-    shot(at, s) { this.shots.push(Object.assign({ at: +at || 0, duration: 1, ease: 'in-out-cubic', padding: 60 }, s)); this.shots.sort((a, b) => a.at - b.at); return this; }
+    shot(at, s) { this.shots.push(Object.assign({ at: +at || 0, duration: 1, ease: 'in-out-cubic', padding: 60, __ease: !!(s && s.ease) }, s)); this.shots.sort((a, b) => a.at - b.at); this._plan = null; return this; }
     shake(at, o = {}) { this.shakes.push(Object.assign({ at: +at || 0, duration: 0.4, amount: 10, freq: 18 }, o)); return this; }
     _markers() {
       const w = this.world;
@@ -1130,11 +1130,17 @@
       if (l === Infinity) return null;
       return { x: l, y: t, w: r - l, h: b - t };
     }
-    _state(sh, M, view) {
+    _state(sh, M, view, t) {
       // camera state = { cx, cy, zoom, rot } in world coordinates
+      // (t: natural motion only, for a follow shot that trails its target)
       const target = sh.fit ?? sh.follow ?? sh.center;
       const box = target != null ? this._box(target, M) : { x: view.w / 2, y: view.h / 2, w: 0, h: 0 };
       if (!box) return null;
+      if (t !== undefined && sh.__trail && sh.fit == null) {
+        const zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, sh.zoom ?? 1)), off = sh.offset || [0, 0];
+        const o = trailOffset(sh.__trail, t, view, zoom);
+        if (o) return { cx: box.x + box.w / 2 + o[0] + off[0], cy: box.y + box.h / 2 + o[1] + off[1], zoom, rot: sh.rotate || 0 };
+      }
       let zoom = sh.zoom;
       // with fit, zoom multiplies the fitted zoom (1.05 = a little closer)
       if (sh.fit != null) {
@@ -1151,28 +1157,43 @@
       const w = this.world;
       if (!w || !this.shots.length) return false;
       const c = I.nearestClip(w);
-      if (c) { const vt = I.mapT(c.parent || null, T); if (vt < c.start - 1e-9 || vt >= c.end - 1e-9) return false; }
+      if (c) { const vt = I.mapT(c.parent || null, T); if (vt < c.start - 1e-9 || vt >= c.end - 1e-9) { if (this.__bg) for (const b of this.__bg) if (b.el.style.transform) b.el.style.transform = ''; return false; } }
       const t = I.mapT(w, T) - (this.opts.global ? 0 : I.clipStartOf(w));
       const parent = w.offsetParent || w.parentElement;
       const view = { w: parent.clientWidth || I.comp.width, h: parent.clientHeight || I.comp.height };
+      const natural = I.naturalMotion(), lastTf = w.style.transform;
+      // (natural) measure with the camera off, so what it reads never depends on the frame drawn before (the
+      // smallest rounding difference would change a pixel between 1 and N workers)
+      if (natural && lastTf) w.style.transform = '';
       const M = this._markers();
-      // current shot and the one before it
-      let i = -1;
-      for (let k = 0; k < this.shots.length; k++) if (this.shots[k].at <= t + 1e-9) i = k;
-      const cur = this.shots[Math.max(0, i)];
-      this._cur = cur; // (check asks which shot is on, to judge only what it frames)
-      let st = this._state(cur, M, view);
-      if (!st) return false;
-      if (i > 0 && t < cur.at + cur.duration) {
-        const prevS = this._state(this.shots[i - 1], M, view);
-        if (prevS) {
-          const p = gm.easing(cur.ease)(Math.max(0, Math.min(1, (t - cur.at) / Math.max(0.001, cur.duration))));
-          // zoom blends in log space so it feels even
-          const z = Math.exp(Math.log(prevS.zoom) + (Math.log(st.zoom) - Math.log(prevS.zoom)) * p);
-          st = { cx: prevS.cx + (st.cx - prevS.cx) * p, cy: prevS.cy + (st.cy - prevS.cy) * p, zoom: z, rot: prevS.rot + (st.rot - prevS.rot) * p };
+      let st;
+      if (natural) st = this._natural(t, M, view);
+      else {
+        // current shot and the one before it
+        let i = -1;
+        for (let k = 0; k < this.shots.length; k++) if (this.shots[k].at <= t + 1e-9) i = k;
+        const cur = this.shots[Math.max(0, i)];
+        this._cur = cur; // (check asks which shot is on, to judge only what it frames)
+        st = this._state(cur, M, view);
+        if (!st) return false;
+        if (i > 0 && t < cur.at + cur.duration) {
+          const prevS = this._state(this.shots[i - 1], M, view);
+          if (prevS) {
+            const p = gm.easing(cur.ease)(Math.max(0, Math.min(1, (t - cur.at) / Math.max(0.001, cur.duration))));
+            // zoom blends in log space so it feels even
+            const z = Math.exp(Math.log(prevS.zoom) + (Math.log(st.zoom) - Math.log(prevS.zoom)) * p);
+            st = { cx: prevS.cx + (st.cx - prevS.cx) * p, cy: prevS.cy + (st.cy - prevS.cy) * p, zoom: z, rot: prevS.rot + (st.rot - prevS.rot) * p };
+          }
         }
       }
+      if (!st) { if (natural && lastTf) w.style.transform = lastTf; return false; }
       let sx = 0, sy = 0, sr = 0;
+      if (natural && this.opts.breathe !== false && this.opts.breathe !== 0) {
+        // breathing: a hand-held drift of a pixel or two (smooth seeded noise on the time alone), so a held shot is alive
+        const a = (typeof this.opts.breathe === 'number' ? this.opts.breathe : 1) * 0.0018 * Math.min(view.w, view.h), sd = 71 + cameras.indexOf(this) * 13;
+        sx += a * (gm.noise(t * 0.21, sd) * 2 - 1 + 0.45 * (gm.noise(t * 0.53, sd + 1) * 2 - 1));
+        sy += a * (gm.noise(t * 0.17, sd + 2) * 2 - 1 + 0.45 * (gm.noise(t * 0.47, sd + 3) * 2 - 1));
+      }
       for (const sk of this.shakes) {
         const lt = t - sk.at;
         if (lt < 0 || lt > sk.duration) continue;
@@ -1182,9 +1203,13 @@
       const ox = w.offsetLeft, oy = w.offsetTop;
       const tx = view.w / 2 - ox - st.zoom * st.cx + sx, ty = view.h / 2 - oy - st.zoom * st.cy + sy;
       const rot = st.rot + sr;
-      const tf = `translate(${r4(tx)}px, ${r4(ty)}px)` + (rot ? ` rotate(${r4(rot)}deg)` : '') + ` scale(${r4(st.zoom)})`;
+      // (natural) whole eighths of a pixel: a slow drift or a trailing follow moves the world by tiny amounts every frame,
+      // and Chrome then rasters a moving element inside it differently in a fresh worker; on this grid it does not
+      const p8 = natural ? (x) => Math.round(x * 8) / 8 : r4;
+      const tf = `translate(${p8(tx)}px, ${p8(ty)}px)` + (rot ? ` rotate(${r4(rot)}deg)` : '') + ` scale(${r4(st.zoom)})`;
       let changed = false;
-      if (w.style.transform !== tf) { w.style.transform = tf; changed = true; }
+      if (lastTf !== tf) changed = true;
+      if (w.style.transform !== tf) w.style.transform = tf;
       // parallax layers: siblings of the world (or inside its parent) with data-parallax
       for (const pl of parent.querySelectorAll('[data-parallax]')) {
         if (w.contains(pl)) continue;
@@ -1192,7 +1217,260 @@
         const ptf = `translate(${r4((view.w / 2 - st.zoom * st.cx - ox) * f + sx * f)}px, ${r4((view.h / 2 - st.zoom * st.cy - oy) * f + sy * f)}px) scale(${r4(1 + (st.zoom - 1) * f)})`;
         if (pl.style.transform !== ptf) { pl.style.transform = ptf; pl.style.transformOrigin = '50% 50%'; changed = true; }
       }
+      // depth (natural motion): background layers next to the world drift a little with the camera, as if far away
+      if (natural && this.__bg && this.__ref) {
+        const ref = this.__ref;
+        for (const b of this.__bg) {
+          const dx = -b.f * st.zoom * (st.cx - ref.cx), dy = -b.f * st.zoom * (st.cy - ref.cy);
+          let ptf;
+          if (b.cell) ptf = `translate(${p8((((dx % b.cell) - b.cell) % b.cell))}px, ${p8((((dy % b.cell) - b.cell) % b.cell))}px)`; // a repeating grid: any shift, no edge
+          else { const Lx = 0.04 * view.w, Ly = 0.04 * view.h; ptf = `translate(${p8(Lx * Math.tanh(dx / Lx))}px, ${p8(Ly * Math.tanh(dy / Ly))}px) scale(1.09)`; } // at most 4% of the frame, scaled up to cover it
+          if (b.el.style.transform !== ptf) { b.el.style.transform = ptf; changed = true; }
+        }
+      }
       return changed;
+    }
+    // natural motion: where the camera is at time t
+    _natural(t, M, view) {
+      const S = this.shots, plan = this._getPlan();
+      let i = -1;
+      for (let k = 0; k < S.length; k++) if (S[k].at <= t + 1e-9) i = k;
+      const cur = S[Math.max(0, i)];
+      this._cur = cur;
+      let st = null;
+      // inside a run of back-to-back moves: one continuous move through all their framings
+      const run = plan.runs.find((r) => r.keys.length > 2 && t >= r.tau[0] - 1e-9 && t < r.tau[r.tau.length - 1] - 1e-9);
+      if (run) {
+        const ks = run.keys.map((k) => this._state(S[k], M, view, t));
+        if (ks.every(Boolean)) st = splineState(run.tau, ks, t, run.prep && run.prep.every(Boolean) ? run.prep : ks);
+      }
+      if (!st) {
+        st = this._state(cur, M, view, t);
+        if (!st) return null;
+        if (i > 0 && t < cur.at + cur.duration) {
+          const prevS = this._state(S[i - 1], M, view, t);
+          if (prevS) {
+            const p = (cur.__ease ? gm.easing(cur.ease) : smoother)(Math.max(0, Math.min(1, (t - cur.at) / Math.max(0.001, cur.duration))));
+            const z = Math.exp(Math.log(prevS.zoom) + (Math.log(st.zoom) - Math.log(prevS.zoom)) * p);
+            st = { cx: prevS.cx + (st.cx - prevS.cx) * p, cy: prevS.cy + (st.cy - prevS.cy) * p, zoom: z, rot: prevS.rot + (st.rot - prevS.rot) * p };
+          }
+        }
+      }
+      // a fast zoom goes a touch past its framing and settles back (peak at the arrival, where the move has stopped)
+      for (const o of plan.settles) {
+        if (t <= o.e - o.S || t >= o.e + o.S) continue;
+        const a = this._state(S[o.from], M, view, t), b = this._state(S[o.k], M, view, t);
+        if (!a || !b) break;
+        const dl = Math.log(b.zoom) - Math.log(a.zoom);
+        if (Math.abs(dl) / o.dur < 0.6) break;
+        const x = (t - o.e) / o.S, bump = (1 - x * x) ** 3;
+        st = { cx: st.cx, cy: st.cy, zoom: st.zoom * Math.exp(Math.sign(dl) * Math.min(0.025, 0.05 * Math.abs(dl)) * bump), rot: st.rot };
+        break;
+      }
+      return st;
+    }
+    // runs of back-to-back moves (each starts at most CAM_GAP after the one before arrives) and the moves that settle
+    _getPlan() {
+      if (this._plan) return this._plan;
+      const S = this.shots, runs = [], settles = [];
+      let run = null;
+      for (let k = 1; k < S.length; k++) {
+        const s = S[k], d = Math.max(0, +s.duration || 0), prev = S[k - 1], pe = prev.at + Math.max(0, +prev.duration || 0);
+        if (d < 0.05 || s.blend === false) { run = null; continue; }
+        if (run && prev.blend !== false && s.at <= pe + CAM_GAP) {
+          const tk = (Math.min(pe, s.at) + s.at) / 2, last = run.tau.length - 1;
+          if (tk > run.tau[last - 1] + 0.05 && s.at + d > tk + 0.05) { run.tau[last] = tk; run.keys.push(k); run.tau.push(s.at + d); continue; }
+        }
+        run = { keys: [k - 1, k], tau: [s.at, s.at + d] };
+        runs.push(run);
+      }
+      for (const r of runs) {
+        const n = r.keys.length - 1, k = r.keys[n], s = S[k], nx = S[k + 1];
+        if (s.overshoot === false || /back|elastic|spring|bounce|wobbl/i.test(String(s.ease))) continue;
+        const e = r.tau[n], dur = r.tau[n] - r.tau[n - 1];
+        const room = nx ? nx.at - e : Infinity;
+        const Sx = Math.min(0.3, 0.45 * dur, room);
+        if (Sx > 0.08) settles.push({ k, from: r.keys[n - 1], e, dur, S: Sx });
+      }
+      return (this._plan = { runs, settles });
+    }
+  }
+  // natural camera ----------------------------------------------------------------------------------------------
+  const CAM_GAP = 0.25; // a pause shorter than this between two camera moves is not a hold: the camera flows through
+  // a single move with no ease given: starts and stops with no jolt (speed and acceleration both 0 at the ends)
+  const smoother = (s) => s * s * s * (10 + s * (6 * s - 15));
+  // One continuous move through the framings ks at times tau: at rest at both ends, never stopping in between. Per
+  // axis (center x, y, log zoom, rotation): knot speeds from a clamped cubic spline (smallest change of acceleration),
+  // limited so it barely swings past a framing and eased off a little, then quintic pieces whose acceleration is
+  // continuous and 0 at both ends. Speeds and accelerations come from pk, the framings measured while loading at the
+  // moments the camera passes them (so a later target that is still animating in does not shake the current move);
+  // positions come from ks, the framings now, so every framing is met exactly.
+  function splineState(tau, ks, t, pk) {
+    const n = tau.length - 1;
+    let j = 0;
+    while (j < n - 1 && t >= tau[j + 1]) j++;
+    const h = [], out = [];
+    for (let q = 0; q < n; q++) h.push(tau[q + 1] - tau[q]);
+    const s = Math.max(0, Math.min(1, (t - tau[j]) / h[j])), s2 = s * s, s3 = s2 * s, s4 = s3 * s, s5 = s4 * s;
+    const H0 = 1 - 10 * s3 + 15 * s4 - 6 * s5, H1 = s - 6 * s3 + 8 * s4 - 3 * s5, H2 = (s2 - 3 * s3 + 3 * s4 - s5) / 2;
+    const H3 = (s3 - 2 * s4 + s5) / 2, H4 = -4 * s3 + 7 * s4 - 3 * s5, H5 = 10 * s3 - 15 * s4 + 6 * s5;
+    for (const get of [(q) => q.cx, (q) => q.cy, (q) => Math.log(q.zoom), (q) => q.rot]) {
+      const v = ks.map(get), p = pk.map(get), d = [], m = new Array(n + 1).fill(0);
+      for (let q = 0; q < n; q++) d.push((p[q + 1] - p[q]) / h[q]);
+      if (n >= 2) {
+        // h[q] m[q-1] + 2 (h[q-1] + h[q]) m[q] + h[q-1] m[q+1] = 3 (h[q] d[q-1] + h[q-1] d[q]), m[0] = m[n] = 0
+        const a = [], b = [], c = [], r = [];
+        for (let q = 1; q < n; q++) { a.push(h[q]); b.push(2 * (h[q - 1] + h[q])); c.push(h[q - 1]); r.push(3 * (h[q] * d[q - 1] + h[q - 1] * d[q])); }
+        for (let q = 1; q < b.length; q++) { const w = a[q] / b[q - 1]; b[q] -= w * c[q - 1]; r[q] -= w * r[q - 1]; }
+        const x = new Array(b.length);
+        x[b.length - 1] = r[b.length - 1] / b[b.length - 1];
+        for (let q = b.length - 2; q >= 0; q--) x[q] = (r[q] - c[q] * x[q + 1]) / b[q];
+        for (let q = 1; q < n; q++) m[q] = x[q - 1];
+      }
+      for (let q = 1; q < n; q++) {
+        // same direction on both sides: no swing past the framing. An axis that holds or turns back (a corner, a zoom in
+        // then out) keeps a little speed and swings past by at most ~4% of the move, so the camera rounds the corner
+        // instead of stopping dead.
+        // (continuous in the keys: a framing that wobbles by a hair must not flip the camera's speed)
+        const lim = Math.max(d[q - 1] * d[q] > 0 ? 3 * Math.min(Math.abs(d[q - 1]), Math.abs(d[q])) : 0, (0.27 * Math.max(Math.abs(d[q - 1] * h[q - 1]), Math.abs(d[q] * h[q]))) / Math.max(h[q - 1], h[q]));
+        if (Math.abs(m[q]) > lim) m[q] = Math.sign(m[q]) * lim;
+        m[q] *= 0.8; // eases off a little as it passes each framing (so each one reads), without stopping
+      }
+      // acceleration at a knot: the smaller of the cubic pieces' on both sides, 0 if they disagree (a short fast move
+      // next to a long slow one must not make the slow one swing); 0 at both ends of the run
+      const acc = (q) => {
+        if (q <= 0 || q >= n) return 0;
+        const left = (-6 * d[q - 1] + 2 * m[q - 1] + 4 * m[q]) / h[q - 1], right = (6 * d[q] - 4 * m[q] - 2 * m[q + 1]) / h[q];
+        return left * right <= 0 ? 0 : Math.abs(left) < Math.abs(right) ? left : right;
+      };
+      const hh = h[j];
+      out.push(H0 * v[j] + H1 * m[j] * hh + H2 * acc(j) * hh * hh + H3 * acc(j + 1) * hh * hh + H4 * m[j + 1] * hh + H5 * v[j + 1]);
+    }
+    return { cx: out[0], cy: out[1], zoom: Math.exp(out[2]), rot: out[3] };
+  }
+  // Follow with lag: where the camera aims, relative to where the target is now. A weighted mean of the target's path
+  // over the last moments (weights t*e^(-t/s): an operator who reacts, then catches up; mean delay 2s), from samples
+  // taken while loading on a fixed time grid, so any frame gives the same answer. Kept within 22% of the frame.
+  function trailOffset(tr, t, view, zoom) {
+    const n = tr.xs.length, at = (t - tr.t0) / tr.h;
+    if (!(at >= 1 && at <= n - 2)) return null;
+    let sw = 0, sx = 0, sy = 0;
+    for (let k = Math.max(0, Math.ceil(at - tr.W / tr.h)); k <= Math.floor(at); k++) {
+      if (tr.xs[k] == null) continue;
+      const u = (at - k) * tr.h, w = u * Math.exp(-u / tr.s);
+      sw += w; sx += w * tr.xs[k]; sy += w * tr.ys[k];
+    }
+    if (!(sw > 0)) return null;
+    // the sampled path at t (Catmull-Rom between the samples, so the aim moves smoothly)
+    const k = Math.floor(at), f = at - k, P = (arr) => {
+      const p0 = arr[k - 1], p1 = arr[k], p2 = arr[k + 1], p3 = arr[k + 2] ?? arr[k + 1];
+      if (p0 == null || p1 == null || p2 == null || p3 == null) return null;
+      return p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
+    };
+    const qx = P(tr.xs), qy = P(tr.ys);
+    if (qx == null || qy == null) return null;
+    const Lx = (0.22 * view.w) / zoom, Ly = (0.22 * view.h) / zoom;
+    return [Lx * Math.tanh((sx / sw - qx) / Lx), Ly * Math.tanh((sy / sw - qy) / Ly)];
+  }
+  // While loading (natural motion): sample the path of every followed element, find background layers for depth.
+  function prepCameras() {
+    if (!I.naturalMotion() || !cameras.length) return;
+    const jobs = [], hidden = [];
+    const unhide = (e) => { for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); } };
+    const resolve = (c, tg) => (Array.isArray(tg) ? tg : [tg]).flatMap((x) => typeof x === 'string' ? [...c.world.querySelectorAll(x)] : x instanceof Element ? [(I.replaced && I.replaced.get(x)) || x] : []);
+    try {
+      for (const c of cameras) {
+        const w = c.world;
+        if (!w || !c.shots.length) continue;
+        unhide(w);
+        const clip = I.nearestClip(w), base = c.opts.global ? 0 : I.clipStartOf(w);
+        const endLocal = (clip && isFinite(clip.end) ? clip.end : I.comp.duration) - base;
+        c.shots.forEach((sh, k) => {
+          if (sh.follow == null || sh.fit != null || sh.lag === 0 || sh.lag === false) return;
+          let els;
+          try { els = resolve(c, sh.follow); } catch (e) { return; }
+          if (!els.length) return;
+          for (const e of els) unhide(e);
+          const lag = +sh.lag > 0 ? Math.min(1.5, +sh.lag) : 0.15, s = lag / 2, W = Math.min(2, 6 * s);
+          const nx = c.shots[k + 1], end = Math.min(endLocal, nx ? nx.at + Math.max(0, +nx.duration || 0) : endLocal);
+          const h = Math.max(1 / 30, (end - sh.at + W) / 900);
+          const a = Math.floor((sh.at - W) / h) - 2, b = Math.ceil(end / h) + 2;
+          if (b > a) jobs.push({ c, sh, els, a, b, h, s, W, base, xs: new Array(b - a + 1).fill(null), ys: new Array(b - a + 1).fill(null) });
+        });
+      }
+      const at = new Map(), want = (T, fn) => {
+        T = Math.max(0, Math.min(I.comp.duration, T));
+        const key = Math.round(T * 1e6);
+        if (!at.has(key)) at.set(key, { T, list: [] });
+        at.get(key).list.push(fn);
+      };
+      const r2 = (x) => Math.round(x * 100) / 100;
+      for (const jb of jobs) for (let k = jb.a; k <= jb.b; k++) {
+        const idx = k - jb.a;
+        want(jb.base + k * jb.h, () => {
+          const M = jb.c._markers();
+          let l = Infinity, tp = Infinity, r = -Infinity, bt = -Infinity;
+          for (const e of jb.els) { if (!e.getClientRects().length) continue; const q = e.getBoundingClientRect(); l = Math.min(l, q.left); tp = Math.min(tp, q.top); r = Math.max(r, q.right); bt = Math.max(bt, q.bottom); }
+          if (l === Infinity) return;
+          jb.xs[idx] = r2(((l + r) / 2 - M.ox) / M.k); jb.ys[idx] = r2(((tp + bt) / 2 - M.oy) / M.k);
+        });
+      }
+      // a run of back-to-back moves: each framing as it is when the camera passes it (for the speeds through it)
+      for (const c of cameras) {
+        const w = c.world;
+        if (!w || c.shots.length < 3) continue;
+        const base = c.opts.global ? 0 : I.clipStartOf(w), p = w.offsetParent || w.parentElement;
+        for (const run of c._getPlan().runs) {
+          if (run.keys.length < 3) continue;
+          run.prep = run.keys.map(() => null);
+          run.keys.forEach((k, q) => {
+            for (const e of (() => { try { return resolve(c, c.shots[k].fit ?? c.shots[k].follow ?? c.shots[k].center); } catch (er) { return []; } })()) unhide(e);
+            want(base + run.tau[q], () => {
+              const s = c._state(c.shots[k], c._markers(), { w: p.clientWidth || I.comp.width, h: p.clientHeight || I.comp.height });
+              if (s) run.prep[q] = { cx: r2(s.cx), cy: r2(s.cy), zoom: Math.round(s.zoom * 1e5) / 1e5, rot: s.rot };
+            });
+          });
+        }
+      }
+      if (at.size && I.probe) {
+        for (const { T, list } of [...at.values()].sort((x, y) => x.T - y.T)) { I.probe(T); for (const fn of list) fn(); }
+        I.probe(0);
+        for (const jb of jobs) jb.sh.__trail = { t0: jb.a * jb.h, h: jb.h, xs: jb.xs, ys: jb.ys, s: jb.s, W: jb.W };
+      }
+      // depth: background layers next to the world (outside it, in the same frame) drift with the camera, as if far
+      // away: the grid-bg and gradient-bg blocks, and full-frame layers behind the world without text. data-parallax
+      // on a layer (or around it) is the author's choice and wins; gm.camera(world, { depth: false }) turns it off.
+      for (const c of cameras) {
+        const w = c.world;
+        if (!w || !c.shots.length || c.opts.depth === false) continue;
+        const parent = w.offsetParent || w.parentElement;
+        if (!parent) continue;
+        const pr = parent.getBoundingClientRect(), list = [], seen = new Set();
+        const ok = (e) => e && !seen.has(e) && !w.contains(e) && !e.contains(w) && !e.closest('[data-parallax],[data-gm-internal]') && !e.querySelector('[data-parallax]');
+        for (const root of parent.querySelectorAll('.gmb-gridbg, .gmb-grad')) {
+          if (!ok(root)) continue;
+          const grid = root.querySelector('.gmb-gridbg__grid'), cv = root.querySelector('.gmb-grad__c');
+          if (grid) { const cell = parseFloat(getComputedStyle(grid).backgroundSize); if (cell > 1) { seen.add(root); list.push({ el: grid, f: 0.12, cell }); } }
+          else if (cv) { seen.add(root); list.push({ el: cv, f: 0.12 }); cv.style.transformOrigin = '50% 50%'; }
+        }
+        const wb = [...parent.children].find((e) => e.contains(w));
+        for (const e of parent.children) {
+          if (e === wb) break; // only layers before (behind) the world
+          if (!ok(e) || e.querySelector('.gmb-gridbg, .gmb-grad') || e.textContent.trim() || e.getAnimations().length || e.style.transform) continue;
+          const cs = getComputedStyle(e);
+          if (cs.position === 'static' || cs.transform !== 'none' || cs.translate !== 'none' || cs.scale !== 'none' || cs.display === 'none') continue;
+          const q = e.getBoundingClientRect();
+          const cover = Math.max(0, Math.min(q.right, pr.right) - Math.max(q.left, pr.left)) * Math.max(0, Math.min(q.bottom, pr.bottom) - Math.max(q.top, pr.top));
+          if (cover < 0.9 * pr.width * pr.height) continue;
+          seen.add(e); list.push({ el: e, f: 0.12 }); e.style.transformOrigin = '50% 50%';
+        }
+        if (!list.length) continue;
+        const view = { w: parent.clientWidth || I.comp.width, h: parent.clientHeight || I.comp.height };
+        const ref = c._state(c.shots[0], c._markers(), view);
+        if (ref) { c.__bg = list; c.__ref = ref; }
+      }
+    } finally {
+      for (const a of hidden) a.setAttribute('data-gm-hidden', '');
     }
   }
   // ---------------------------------------------------------------------------
@@ -1721,6 +1999,8 @@
       });
     }
   });
+  // (natural motion) after every other init step, so timelines, travels and charts are built when follow paths are sampled
+  I.hooks.init.push(() => I.hooks.init.push(() => { try { prepCameras(); } catch (e) { I.pageError(e); } }));
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
   I.hooks.post.push(updateCameras);
   I.hooks.post.push(updateMorphs);
@@ -1775,10 +2055,16 @@
     let M = null, view = null;
     try { if (c.world) { M = c._markers(); const p = c.world.offsetParent || c.world.parentElement; view = { w: p.clientWidth || I.comp.width, h: p.clientHeight || I.comp.height }; } } catch (e) {}
     const r1 = (x) => Math.round(x);
+    const sts = c.shots.map((s) => { try { return M && c._state(s, M, view); } catch (e) { return null; } });
+    const settles = I.naturalMotion() ? c._getPlan().settles : [];
     return c.shots.map((s, i) => {
       let shows = null;
-      try { const st = M && c._state(s, M, view); if (st) { const w = view.w / st.zoom, h = view.h / st.zoom; shows = { x: r1(st.cx - w / 2), y: r1(st.cy - h / 2), w: r1(w), h: r1(h), zoom: Math.round(st.zoom * 1000) / 1000 }; } } catch (e) {}
-      return { world: c.world ? gm.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null, shows };
+      const st = sts[i];
+      if (st) { const w = view.w / st.zoom, h = view.h / st.zoom; shows = { x: r1(st.cx - w / 2), y: r1(st.cy - h / 2), w: r1(w), h: r1(h), zoom: Math.round(st.zoom * 1000) / 1000 }; }
+      // natural motion: a fast zoom that settles back after a slight overshoot is at rest a moment later
+      const o = settles.find((x) => x.k === i), a = o && sts[o.from];
+      const settle = o && st && a && Math.abs(Math.log(st.zoom / a.zoom)) / o.dur >= 0.6 ? o.S : 0;
+      return { world: c.world ? gm.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0) + settle, next: c.shots[i + 1] ? base + c.shots[i + 1].at : null, shows };
     });
   });
   // what the current shot of each camera frames (its fit/follow target), in screen px; for check

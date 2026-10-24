@@ -594,3 +594,87 @@ test('speed: idle enter/exit and finished from-only CSS animations hold no layer
   assert.ok(fa.length >= 90);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
 });
+
+// natural camera (data-motion natural, the default): runs of back-to-back shots, follow lag, breathing, zoom overshoot, depth
+async function seekEach(file, times, expr) {
+  const ctx = await openComposition(file, { mode: 'render' });
+  try { const out = []; for (const t of times) { await ctx.page.seek(t); out.push(await ctx.page.evaluate(expr)); } return out; } finally { await ctx.page.close(); await ctx.server.close(); }
+}
+const camExpr = `(() => { const w = document.querySelector('#world'), m = new DOMMatrix(getComputedStyle(w).transform), z = Math.hypot(m.a, m.b);
+  const f = gm.__cameraFocus()[0], bg = document.querySelector('#bg'), pl = document.querySelector('#pl');
+  return { cx: (320 - m.e) / z, cy: (180 - m.f) / z, z, focus: f && !f.overview ? [(f.l + f.r) / 2, (f.t + f.b) / 2, f.t] : null, bg: bg ? bg.style.transform : null, pl: pl ? pl.style.transform : null }; })()`;
+const speeds = (rows) => rows.slice(1).map((r, i) => Math.hypot(r.cx - rows[i].cx, r.cy - rows[i].cy) * r.z + Math.abs(Math.log(r.z / rows[i].z)) * 367);
+
+test('natural camera: back-to-back shots flow through without stopping, the run ends framed exactly, a fast zoom settles after a slight overshoot, background layers get depth; classic unchanged; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), fc = join(d, 'c.html');
+  const body = `<section class="scene" data-duration="5.5" style="position:absolute;inset:0;overflow:hidden">
+    <div id="bg" style="position:absolute;inset:0;background:radial-gradient(circle at 30% 40%,#335,#111)"></div>
+    <div id="pl" data-parallax="0.3" style="position:absolute;inset:0"></div>
+    <div id="world" style="position:absolute;left:0;top:0;width:2400px;height:1400px">
+      <div id="a" style="position:absolute;left:100px;top:100px;width:200px;height:120px;background:#1971c2"></div>
+      <div id="b" style="position:absolute;left:900px;top:300px;width:200px;height:120px;background:#e8590c"></div>
+      <div id="c" style="position:absolute;left:1700px;top:200px;width:200px;height:120px;background:#2f9e44"></div>
+      <div id="d" style="position:absolute;left:1500px;top:1000px;width:200px;height:120px;background:#ae3ec9"></div>
+      <div id="e" style="position:absolute;left:1580px;top:1050px;width:24px;height:18px;background:#fff"></div>
+    </div></section>
+    <script>gm.camera('#world').shot(0, { fit: '#a' }).shot(1, { fit: '#b', duration: 0.8 }).shot(1.8, { fit: '#c', duration: 0.8 }).shot(2.6, { fit: '#d', duration: 0.8 }).shot(4.2, { fit: '#e', duration: 0.5 });</script>`;
+  writeFileSync(f, page(body));
+  writeFileSync(fc, page(body, 'data-width="640" data-height="360" data-fps="30" data-motion="classic"'));
+  const times = Array.from({ length: 79 }, (_, i) => 1 + i / 30); // 1 s .. 3.6 s, every frame
+  const nat = await seekEach(f, times, camExpr), cla = await seekEach(fc, times, camExpr);
+  const sn = speeds(nat), sc = speeds(cla), at = (s, t) => s[Math.round((t - 1) * 30) - 1];
+  const peakN = Math.max(...sn), peakC = Math.max(...sc);
+  for (const [t, k] of [[1.8, 0.3], [2.6, 0.1]]) { // at 2.6 s the path turns back (b, c, d): it slows to round the corner, no stop
+    assert.ok(at(sn, t) > k * peakN, `natural: still moving at ${t}s (${at(sn, t).toFixed(1)} vs peak ${peakN.toFixed(1)} px/frame)`);
+    assert.ok(at(sc, t) < 0.05 * peakC, `classic: stops at ${t}s (${at(sc, t).toFixed(1)} vs peak ${peakC.toFixed(1)})`);
+  }
+  assert.ok(peakN < peakC, 'one continuous move peaks lower than four separate ones');
+  // the run ends at rest, framed as asked: #d centered, the default 60 px padding (within the breathing drift, ~1 px)
+  const [held, before, arrive, settled] = await seekEach(f, [4, 4.69, 4.7, 5.1], camExpr);
+  assert.ok(Math.abs(held.focus[0] - 320) < 1.5 && Math.abs(held.focus[1] - 180) < 1.5 && Math.abs(held.focus[2] - 60) < 1.5, 'framed: ' + JSON.stringify(held.focus));
+  assert.match(held.bg, /^translate\(.+\) scale\(1\.09\)$/, 'background layer drifts with the camera');
+  assert.doesNotMatch(held.pl, /1\.09/, 'data-parallax keeps its own depth');
+  // fast zoom onto #e (x6.7 in 0.5 s): a touch past at the arrival, exact once settled
+  const zE = Math.min(520 / 24, 240 / 18);
+  assert.ok(arrive.z > zE * 1.015 && arrive.z < zE * 1.03, 'overshoot at the arrival: ' + arrive.z + ' vs ' + zE);
+  assert.ok(before.z < arrive.z, 'still zooming in just before');
+  assert.ok(Math.abs(settled.z - zE) < 1e-3, 'settled: ' + settled.z);
+  const [cArrive, cHeld] = await seekEach(fc, [4.7, 4], camExpr);
+  assert.ok(Math.abs(cArrive.z - zE) < 1e-3, 'classic: no overshoot');
+  assert.equal(cHeld.bg, '', 'classic: background stays still');
+  const shots = (await seekEach(f, [0], 'gm.__cameraShots()'))[0];
+  assert.ok(Math.abs(shots[4].arrive - 4.925) < 1e-6, 'the zoom shot is at rest after it settles: ' + shots[4].arrive);
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 165);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});
+
+test('natural camera: follow trails a moving element and settles on it (lag: 0 and classic lock on); 1 worker == 2', { skip }, async () => {
+  const d = tmp();
+  const mk = (name, shot, attrs) => {
+    const f = join(d, name);
+    writeFileSync(f, page(`<section class="scene" data-duration="3" style="position:absolute;inset:0;overflow:hidden">
+      <div id="world" style="position:absolute;left:0;top:0;width:1400px;height:400px"><div id="m" style="position:absolute;left:0;top:0;width:40px;height:40px;background:#fc3"></div></div></section>
+      <script>gm.path.travel('#m', 'M120 180 L920 180', { stops: [[0.5, 0], [1.5, 1]], ease: 'linear' }); gm.camera('#world').shot(0, ${shot});</script>`, attrs));
+    return f;
+  };
+  const expr = `(() => { const r = document.querySelector('#m').getBoundingClientRect(); return { dx: r.left + r.width / 2 - 320, dy: r.top + r.height / 2 - 180, cam: ${camExpr} }; })()`;
+  const f = mk('a.html', `{ follow: '#m' }`);
+  const [s0, s1, mid, late] = await seekEach(f, [0.5, 0.5 + 1 / 30, 1.0, 2.5], expr);
+  assert.ok(mid.dx > 40 && mid.dx < 141, 'the camera trails: the element leads by ' + mid.dx);
+  assert.ok(Math.abs(late.dx) < 1.5 && Math.abs(late.dy) < 1.5, 'settled on it a second after it stops: ' + JSON.stringify(late));
+  assert.ok((s1.cam.cx - s0.cam.cx) * 30 < 0.5 * 800, 'the camera picks up speed gradually (inertia)');
+  const [rigid] = await seekEach(mk('b.html', `{ follow: '#m', lag: 0 }`), [1.0], expr);
+  assert.ok(Math.abs(rigid.dx) < 1.5, 'lag: 0 locks on: ' + rigid.dx);
+  const [cl] = await seekEach(mk('c.html', `{ follow: '#m' }`, 'data-width="640" data-height="360" data-fps="30" data-motion="classic"'), [1.0], expr);
+  assert.ok(Math.abs(cl.dx) < 0.5, 'classic locks on: ' + cl.dx);
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 90);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});

@@ -1618,6 +1618,9 @@
     hooks, comp, real, PX, report, pageError, parseTime, easing, cssEasing, isEasingName, normEase,
     nearestClip, clipStartOf, clipEndOf, mapT, addOwn, transitions: () => transitionList, selectorOf, makeRandom, parseColor, mixColor, info, dropOwnMutations, noteMutations: () => handleRecords(mo.takeRecords()),
     morphPairs: () => morphPairs,
+    // the animated state of the page at time T (animations and seek hooks only: no timers, frame callbacks or post
+    // hooks). The camera samples the path of a followed element with it while loading, the same in every worker.
+    probe(T) { flushAnimations(T, 'clip'); seekAnimations(T); for (const h of hooks.seek) { try { h(T); } catch (e) { pageError(e); } } },
     addOwnAnim(a, originTime) { ownAnim.add(a); origin.set(a, originTime); known.add(a); },
     setColorMixer(fn) { colorMixer = fn; }, clips: () => clips, waits, pendingWaits, MODE, CONFIG, SKIP_TAGS,
     get now() { return now; }, get initialized() { return initialized; }, motionStyle, naturalMotion,

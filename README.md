@@ -82,18 +82,48 @@ thing without surprises elsewhere.
 
 ## How it compares
 
-| | motionwright | another framework |
-|---|---|---|
-| Price | Free for everyone (MIT) | Free for individuals and teams of up to 3; bigger companies pay (from $25 per person per month, or $0.01 per render with a $100/month minimum)¹ |
-| You write | HTML, CSS, JavaScript (React optional) | React |
-| Instructions for AI agents | Yes, installed with one command | Yes (another framework Agent Skills) |
-| Agent checks its own video (cut-off or covered text, pacing, broken files) and sees key frames | Yes (`check`, `snapshot`, `inspect`) | Not built in |
-| Fork and change anything | Yes, any use | Source is available; using it inside a company still needs a license |
-| Audio, video clips, transitions, captions, still frames, data-driven videos, parallel rendering, an embeddable player | Yes | Yes |
-| Cloud rendering service | No (render anywhere you run Node) | Yes (another framework Lambda) |
+Three open tools turn code into video: **motionwright**, **HyperFrames** (by HeyGen) and **another framework**.
+All three render in Chrome, encode with ffmpeg, give the same video every time, and come with instructions
+for AI agents. Here is where they differ, so you can pick the right one. Checked in October 2026 from each
+project's own docs and command-line help; tell us if something changed.
 
-¹ From another framework's [license FAQ](https://www.other.dev/docs/license/faq), October 2026. another framework is a great
-project and inspired this one; motionwright shares the idea, not the code.
+| | motionwright | HyperFrames | another framework |
+|---|---|---|---|
+| Made by | Independent open-source project | HeyGen | another framework (a company) |
+| License and price | MIT. Free for everyone, including companies | Apache 2.0. Free for everyone, including companies | Free for individuals and teams of up to 3. Bigger companies pay: $25 per person per month, or $0.01 per render with a $100 per month minimum¹ |
+| You write | HTML, CSS, JavaScript (React optional) | HTML, CSS, JavaScript | React |
+| Instructions for AI agents | Yes, one command (`npx motionwright skill`) | Yes, many skills (Claude Code, Codex, Cursor, Gemini CLI and more) | Yes, Agent Skills (Claude Code, Codex, Cursor and more) |
+| Agent checks its own video | Yes: cut-off, covered, overlapping, tiny and low-contrast text, broken files, script errors with line numbers, pacing (long still parts, empty first frame) | Yes: lint, script errors, layout overflow, motion, WCAG contrast | No built-in checks² |
+| Agent sees key frames | Yes: one picture with the key moments of every scene, or a frame-by-frame strip of one move | Yes: key frames, a review set around every cut, side by side with a reference video | Renders single frames (`still`) |
+| Music beats | Tempo, beats, bar starts, big hits | Beats, hits, loudness, silence | Audio data helpers |
+| Output | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3 | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR | MP4, WebM, ProRes, GIF, image sequences, audio |
+| Rendering in the cloud | No (renders wherever Node runs) | AWS Lambda, Google Cloud Run, HeyGen's cloud | AWS Lambda, Google Cloud Run |
+| Visual editor | Browser preview (scrub, frame-step, sound) | Desktop app (macOS, Linux) and browser preview | another framework Studio (browser) |
+| Built-in AI extras | None | Text to speech, transcription, background removal | Transcription with Whisper (package) |
+| Usage data sent home | None | Anonymous usage data, on by default (can be turned off) | Not checked |
+
+¹ another framework's [license FAQ](https://www.other.dev/docs/license/faq).
+² another framework's [Agent Skills page](https://www.other.dev/docs/ai/skills) lists none; the agent can preview in Studio and render stills.
+HyperFrames facts are from its [docs](https://hyperframes.heygen.com) and the help of `hyperframes` 0.8.191 on npm.
+
+**Speed.** In our one test (the same GSAP animation, 10 s at 1080p, on a small cloud machine with 2 CPUs and no
+GPU), motionwright rendered it in 22.2 s and HyperFrames in 36.8 to 40.0 s at the same quality. That is one
+animation on one machine; HyperFrames has a GPU capture path we could not test there. The script is in
+[`benchmarks/vs-hyperframes`](benchmarks/vs-hyperframes) so you can run it yourself. We have not benchmarked another framework yet.
+
+**Pick motionwright if** you want something small and fully free to fork (MIT, no npm dependencies, sends no data),
+checks that also look at pacing, and motion-design tools built in (a camera that follows and frames things, path
+travel, morph transitions, beat-synced cuts). **Its weak points today:** it is new, with a small community, no
+cloud rendering, no desktop editor, no voice or transcription tools, and pages with many full-screen effects
+render slowly on machines without a GPU.
+
+**Pick HyperFrames if** you want the biggest feature set right now: cloud rendering, a desktop app, voice and
+transcription tools, HDR and HLS output, and a large community backed by HeyGen.
+
+**Pick another framework if** you already work in React, want the longest-running of the three, with a large community, and fit its
+free tier or are happy to pay for a company license.
+
+another framework and HyperFrames are great projects and inspired parts of this one. motionwright shares the idea, not the code.
 
 ## Make your own version (fork it)
 
@@ -111,8 +141,8 @@ already look right instead of inventing everything each time.
 
 ## Questions people ask
 
-**Is there a free alternative to another framework?** Yes. motionwright is free for any use, including big companies,
-under the MIT license.
+**Is there a free alternative to another framework?** Yes. motionwright (MIT) and HyperFrames (Apache 2.0) are both free for any
+use, including big companies. See [How it compares](#how-it-compares).
 
 **Can Claude Code make videos?** Yes. Run `npx motionwright init` (or `npx motionwright skill` in an existing
 project) and ask Claude Code for a video. It also works with Cursor, Codex and other agents that read an

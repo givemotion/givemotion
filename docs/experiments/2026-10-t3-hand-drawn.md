@@ -55,8 +55,36 @@ From the new-engine friction logs (fixed after the round, not yet tested by agen
   shot target matches nothing, `mw.connect` `from`/`to` sides and `label`, `data-type-caret="0.8"`, no contrast
   judgement on text cut by the frame.
 
+## Round 2 (r6): 3 more runs with the fixed tools
+
+Judged together with the 2 baseline and 2 another framework videos (7 per judge, 3 judges):
+
+| group | runs | overall | avg rank (of 7) |
+|---|---|---|---|
+| baseline | 2 | **8.2** | 1.7 |
+| new tools (r6) | 3 | 6.2 (7.0, 6.3, 5.3) | 4.9 |
+| another framework | 2 | 6.2 | 5.0 |
+
+All three makers hit the same new bugs, now fixed: round-cap **dots** where shapes were waiting to be drawn (a
+zero-length dash still paints its caps), connector labels parked at the top-left while an end was hidden, script
+references to shapes that `data-sketch` had replaced, `stroke="none"` drawn with an outline. They asked for marks on HTML
+text (now `data-sketch-mark`), sketched borders on HTML boxes (`data-sketch` on a div) and `fit: 'content'`.
+
+The worst video (5.3) had a half-second **camera glitch**: a shot that fit an element whose clip had not started yet
+(`data-start` later) measured an empty box at the screen corner and zoomed far out. This bug was in every engine
+version; such shots now frame where the element will be.
+
+**Same compositions, current engine (r6-live).** Re-rendering the three r6 compositions with all fixes and judging them
+again with the baseline (5 per judge): new tools 6.6 (7.0, 6.7, 6.0; the glitched one went from 5.3 to 7.0), baseline
+8.0. So the engine fixes helped, but the gap is mostly in what the agents made, and the judges said what:
+- "**lines too clean to feel hand-sketched**": our default strokes were close to ruler-straight and the two passes nearly
+  coincided, while the baseline agents' home-made strokes wobble and part. Default roughness is now stronger, and pale
+  fills hatch in a deeper shade of the same hue.
+- **long, nearly static wide shots** with tiny labels, and **near-empty frames** while the camera crosses blank paper.
+  New `empty-frame` check, and camera craft guidance in the docs (stay close, keep parts near each other, the whole
+  diagram only at the end).
+
 ## Next
 
-- Run the hand-drawn brief again (3 runs) with the fixed tools and the new size guidance.
 - One long scene re-renders fully after any edit (parts are fingerprinted per scene); finer fingerprints would help
   whiteboard videos.

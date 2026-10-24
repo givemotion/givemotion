@@ -22,3 +22,6 @@ Keep this list short and current. Take an item, do it, remove it.
   Chrome flag helped. Ideas not yet tried: fewer full-frame layers in blocks, a lower-cost grain.
 - SyntaxError line numbers point at the `<script>` tag except for "already declared" errors.
 - `text-covered` ignores dimmed text (opacity < 0.5) and transitions; watch for false alarms.
+
+## Ideas waiting for Leo (do not build without asking)
+- docs/ideas/video-analysis-and-partial-render.md: `motionwright analyze` (see a reference video) and re-rendering only changed parts.

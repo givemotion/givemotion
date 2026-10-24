@@ -44,7 +44,7 @@ Setup
   install                       Download the Chrome build used for rendering
   doctor                        Check Chrome and ffmpeg
   clean                         Delete cached video frames
-  bench [file]                  Measure render speed on this machine
+  bench [file]                  Measure render speed, and what each frame costs to composite
 
 Render options
   -o, --output <file>    out.mp4 (format from extension) or a folder for PNG frames

@@ -55,9 +55,12 @@ Finer prints (nested clips with their own times, or per-element "first visible a
 byte-identical to a full render (test in `test/features.test.js`). Files: `src/render.js`.
 
 ## N4. Render speed
-See `docs/experiments/2026-10-t7-speed.md`. Next: fewer/smaller composited layers in blocks and examples (static
-backgrounds need no own layer), a "layer area" number in `bench` (`bench/speed/layers.mjs` has the code), and a
-measurement on a GPU machine and on 8-16 cores. Files: `src/browser.js`, `src/render.js`, `src/bench.js`, blocks.
+See `docs/experiments/2026-10-t7-speed.md`. Done: `bench` prints layers, layer area and render passes per frame;
+idle enter/exit animations and finished from-only CSS animations (`fade-up ... both`) no longer keep elements on
+layers (whole scenes with filter passes); still blur blobs bake to an image. Compositor draw -13..-28% on the
+examples, -34% with still blobs. Next: wall time on a quiet machine, a GPU machine and 8-16 cores; the second render
+pass most frames take; cheaper gradient-bg/grid-bg (their cost is part of their look); raster cost of an SVG with
+`drop-shadow` that redraws (data-story). Files: `src/browser.js`, `src/render.js`, `src/bench.js`, blocks.
 
 ## N5. `analyze` accuracy
 Clean videos: all scene changes found. Busy motion graphics (constant motion, shared background): about 3 of 5 found,

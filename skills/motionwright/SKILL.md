@@ -236,6 +236,7 @@ The most common failure is a video that looks like a slideshow or a website: a c
 - One idea per scene, 2.5–5s each. Let things hold ≥ 1s after they land before the next change.
 - Enter with ease-out (`out-expo`, `out-back`, `spring`), exit with ease-in, and keep exits shorter than entrances. Stagger 40–90ms between items.
 - Animate `opacity`, `translate`, `scale`, `rotate`, `filter`, `clip-path`. Avoid animating `width`/`height`/`top`/`left` (slower, jittery).
+- Render cost: without a GPU, every big element that moves on its own, every `<canvas>`, and everything drawn on top of them is redrawn on each frame, and a `filter` on a big element doubles that. A big blurred glow that stays put is almost free. `npx motionwright bench video.html` prints how much of the frame these layers cover and the biggest ones.
 - Prefer depth: soft gradients, subtle grain, shadows, slight blur on entrance. Avoid pure #000 backgrounds and pure #fff text on busy images (add a scrim).
 - Use `.scene` for full-frame scenes and absolute layout inside; use flex/grid for groups.
 

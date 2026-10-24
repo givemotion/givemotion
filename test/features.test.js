@@ -174,3 +174,38 @@ body{background:#fbfaf6;color:#1e1e1e;font-family:Caveat}
   const diff = fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x))));
   assert.deepEqual(diff, []);
 });
+
+test('speed: idle enter/exit and finished from-only CSS animations hold no layer, still blobs bake to an image, moving ones to a canvas; 1 worker equals 3', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>.blob{position:absolute;width:300px;height:300px;border-radius:50%;filter:blur(60px)}
+    @keyframes drift{to{translate:120px 40px}} @keyframes dim{to{opacity:.4}}
+    #cssin{animation:fade-up .3s .2s both} #cssdim{animation:dim .3s both}</style>
+    <main data-sequence><section class="scene" id="s1" data-duration="2" data-exit="blur 0.5">
+      <div class="blob" id="still" style="left:-60px;top:-80px;background:#3050c0"></div>
+      <div class="blob" id="moving" style="right:-60px;bottom:-80px;background:#c03080;animation:drift 2s linear both"></div>
+      <p id="late" style="font-size:40px" data-enter="fade-up 0.4 1">late</p>
+      <p id="cssin">css in</p><p id="cssdim">css dim</p>
+    </section><section class="scene" data-duration="1"><p>next</p></section></main>`));
+  const at = (t) => evalAt(f, t, `(() => { const s = document.getElementById('s1'), $ = (id) => document.getElementById(id); return { anims: s.getAnimations().length, filter: getComputedStyle(s).filter, late: +getComputedStyle($('late')).opacity,
+    still: document.querySelector('#still > [data-mw-internal]')?.localName, moving: document.querySelector('#moving > [data-mw-internal]')?.localName,
+    cssin: [$('cssin').getAnimations().length, +getComputedStyle($('cssin')).opacity], cssdim: [$('cssdim').getAnimations().length, +getComputedStyle($('cssdim')).opacity] }; })()`);
+  const start = await at(0.1);
+  assert.equal(start.cssin[1], 0, 'a CSS animation still holds its first keyframe during its delay');
+  const mid = await at(0.5);
+  assert.deepEqual(mid.cssin, [0, 1], 'a from-only CSS animation that is over is no longer in effect, and ends on the element\'s own style');
+  assert.deepEqual(mid.cssdim, [1, 0.4], 'a CSS animation with a real end state keeps it');
+  assert.equal(mid.anims, 0, 'the exit has not started: no live animation on the scene');
+  assert.equal(mid.filter, 'none');
+  assert.equal(mid.late, 0, 'a delayed enter still holds its first keyframe');
+  assert.equal(mid.still, 'img');
+  assert.equal(mid.moving, 'canvas');
+  const out = await at(1.75);
+  assert.match(out.filter, /blur/, 'the exit plays');
+  assert.equal(out.late, 1);
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, ...quiet });
+  await render(f, { output: b, workers: 3, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.ok(fa.length >= 90);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+});

@@ -822,7 +822,7 @@ test('motion blur: auto plan is one capture for slow frames, more samples for fa
   assert.equal(a.shutter, 0.5);
   assert.ok(c.shutter < 0.5 && (400 * c.shutter) / c.n <= AUTO_BLUR.maxGap + 1e-9); // very fast: shorter shutter, no wide gaps
   assert.equal(autoBlurPlan(40, 0), null);
-  assert.deepEqual(resolveMotionBlur(undefined), { mode: 'auto', samples: 1 });
+  assert.equal(resolveMotionBlur(undefined).mode, 'off');
   assert.equal(resolveMotionBlur(undefined, { motion: 'classic' }).mode, 'off');
   assert.equal(resolveMotionBlur('auto', { motion: 'classic' }).mode, 'auto');
   assert.equal(resolveMotionBlur('off').mode, 'off');
@@ -862,8 +862,8 @@ test('motion blur: auto blurs only the frames where something moves fast, the sa
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, blurPage());
   const a = join(d, 'a.mp4'), b = join(d, 'b.mp4'), o = join(d, 'off.mp4');
-  const sa = await render(f, { output: a, workers: 1, cache: false, ...quiet });
-  const sb = await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  const sa = await render(f, { output: a, workers: 1, cache: false, motionBlur: 'auto', ...quiet });
+  const sb = await render(f, { output: b, workers: 3, cache: false, motionBlur: 'auto', ...quiet });
   const so = await render(f, { output: o, motionBlur: 'off', cache: false, ...quiet });
   assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
   assert.equal(sa.motionBlur.mode, 'auto');
@@ -892,9 +892,9 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   assert.ok(readFileSync(off).equals(readFileSync(cl)));
   // parts: render once with the cache, re-render the middle part only; must equal a render without the cache
   const full = join(d, 'full.mp4'), part = join(d, 'part.mp4');
-  await render(f, { output: full, cache: false, workers: 2, ...quiet });
-  await render(f, { output: part, workers: 1, ...quiet });
-  const s2 = await render(f, { output: part, redo: '0.5s-0.9s', ...quiet });
+  await render(f, { output: full, cache: false, workers: 2, motionBlur: 'auto', ...quiet });
+  await render(f, { output: part, workers: 1, motionBlur: 'auto', ...quiet });
+  const s2 = await render(f, { output: part, redo: '0.5s-0.9s', motionBlur: 'auto', ...quiet });
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
 });

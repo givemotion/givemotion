@@ -261,7 +261,7 @@ The full reference is one page written for agents (and good for humans too):
 | `install` / `doctor` / `bench` | Get Chrome, check your setup, measure speed (and what makes a page slow to draw) |
 
 Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout),
-`--frames 2s-5s`, `--transparent`, `--motion-blur auto|off|8` (auto by default), `--codec h265|av1`, `--hardware`, `--workers`,
+`--frames 2s-5s`, `--transparent`, `--motion-blur 8|auto`, `--codec h265|av1`, `--hardware`, `--workers`,
 `--muted`, `--data file.json`, `--props '{…}'`. Every command takes `--json`.
 
 Rendering again after a change only redoes the parts of the video that changed (edit one scene → only its 1-2 s parts

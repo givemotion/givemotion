@@ -71,7 +71,7 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 - **Contrast of speed.** Fast in, slow drift while it is read, fast out. Constant medium speed everywhere reads as software.
 - **Emphasis.** To make a word or number matter: scale it 1.1–1.3, change its color to the accent, add a mark (`data-sketch-mark`), a flash or a small shake. One emphasis per beat.
 - **A big hit** (logo lock, peak number): at the same time, a burst of sparks, a ring that scales 0.6→1.6 while fading, `camera.shake` 10–16 px for 0.3–0.4 s, a 0.1 s brightness flash. Put it on a music hit if there is music.
-- **Motion blur** is automatic at render (`--motion-blur auto`, the default): only frames where something moves fast get extra sub-frames, so fast whips, spins and camera moves do not strobe and the render stays fast. `--motion-blur off` turns it off, `--motion-blur 8` forces 8 sub-frames on every frame (slow; rarely needed).
+- **Motion blur** is off by default. `--motion-blur auto` (experimental) gives extra sub-frames only to frames where something moves fast; very fast text can show stepped copies, so check the frames. `--motion-blur 8` blurs every frame (smooth but slow). Whip transitions and `rise`/`blur` entrances already carry their own blur.
 
 ### What the engine already does for you (natural motion, the default)
 

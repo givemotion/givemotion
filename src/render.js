@@ -50,7 +50,7 @@ export function autoBlurPlan(speed, shutter = 0.5) {
 }
 
 /**
- * --motion-blur: unset = auto in natural motion, off in classic motion (data-motion="classic"); "auto"; "off" (also
+ * --motion-blur: unset = off for now (with 2-4 samples, fast text shows stepped copies; see docs/NEXT.md); "auto"; "off" (also
  * 0, false, none); a number = that many samples on every frame. Transparent renders get no auto blur (averaging
  * straight-alpha images darkens edges); a number still forces it.
  */
@@ -58,7 +58,7 @@ export function resolveMotionBlur(value, { motion = 'natural', transparent = fal
   const v = value == null || value === true ? '' : String(value).trim().toLowerCase();
   if (v === 'off' || v === 'false' || v === 'none' || v === 'no' || v === '0') return { mode: 'off', samples: 1 };
   if (v === '' || v === 'auto' || v === 'on') {
-    if (v === '' && motion === 'classic') return { mode: 'off', samples: 1 };
+    if (v === '') return { mode: 'off', samples: 1, why: motion === 'classic' ? 'classic' : 'default' };
     return transparent ? { mode: 'off', samples: 1, why: 'transparent' } : { mode: 'auto', samples: 1 };
   }
   const n = parseInt(v, 10);

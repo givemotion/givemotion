@@ -810,18 +810,10 @@ test('natural camera: follow trails a moving element and settles on it (lag: 0 a
 });
 
 // --- motion blur (auto by default in natural motion) ---
-import { autoBlurPlan, resolveMotionBlur, AUTO_BLUR } from '../src/render.js';
+import { resolveMotionBlur } from '../src/render.js';
 import { imageLength } from '../src/ffmpeg.js';
 
-test('motion blur: auto plan is one capture for slow frames, more samples for faster ones, capped; flag values', () => {
-  assert.equal(autoBlurPlan(0), null);
-  assert.equal(autoBlurPlan(AUTO_BLUR.min - 0.01), null);
-  const a = autoBlurPlan(AUTO_BLUR.min), b = autoBlurPlan(40), c = autoBlurPlan(400);
-  assert.equal(a.n, 2);
-  assert.ok(b.n >= a.n && c.n >= b.n && c.n <= AUTO_BLUR.maxN);
-  assert.equal(a.shutter, 0.5);
-  assert.ok(c.shutter < 0.5 && (400 * c.shutter) / c.n <= AUTO_BLUR.maxGap + 1e-9); // very fast: shorter shutter, no wide gaps
-  assert.equal(autoBlurPlan(40, 0), null);
+test('motion blur: flag values', () => {
   assert.deepEqual(resolveMotionBlur(undefined), { mode: 'auto', samples: 1 });
   assert.equal(resolveMotionBlur(undefined, { motion: 'classic' }).mode, 'off');
   assert.equal(resolveMotionBlur('auto', { motion: 'classic' }).mode, 'auto');

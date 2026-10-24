@@ -714,6 +714,7 @@
     'typewriter': () => [{ opacity: 0 }, { opacity: 1 }],
     'none': () => null,
   };
+  const HIDDEN_AT_START = new Set(['write', 'draw', 'wipe-right', 'wipe-left', 'wipe-down', 'wipe-up', 'diagonal', 'clock', 'iris', 'mask-up', 'mask-down', 'mask-left', 'mask-right', 'grow', 'grow-x', 'grow-y', 'elastic']);
   // Default duration and easing per preset (data-enter="name [duration] [delay] [easing]" overrides).
   const PRESET_DEFAULTS = {
     'drop': { ease: 'bouncy', dur: 1 }, 'swing': { ease: 'bouncy', dur: 1 }, 'elastic': { ease: 'out-elastic', dur: 1.1 },
@@ -809,6 +810,8 @@
             let kf = PRESETS[m.name]();
             // sketched solid fills fade in near the end of the drawing (a stroke dash cannot hide a fill)
             if (m.name === 'draw' && tg.querySelector && (tg.matches('[data-mw-sketch-fill="solid"]') || tg.querySelector('[data-mw-sketch-fill="solid"]'))) kf = [{ ...kf[0], fillOpacity: 0 }, { offset: 0.6, fillOpacity: 0 }, { ...kf[1], fillOpacity: 1 }];
+            // reveals (clip, scale, dash) are also fully hidden before they start, not just clipped to a sliver
+            if (kf && HIDDEN_AT_START.has(m.name)) kf = [{ ...kf[0], visibility: 'hidden' }, ...kf.slice(1)];
             if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
           }
         }
@@ -1261,6 +1264,7 @@
   // Init
   // ---------------------------------------------------------------------------
   let readyPromise = null;
+  let sourceEls = null; // the page's elements before the runtime changed anything (render matches them to the HTML file)
   const waits = [];
   const hooks = { preinit: [], init: [], seek: [], post: [], rebuild: [] };
   let initialized = false;
@@ -1290,6 +1294,7 @@
   function init() {
     if (initialized) return;
     initialized = true;
+    if (document.body) { const els = [...document.body.getElementsByTagName('*')]; sourceEls = { els, parents: els.map((e) => e.parentElement) }; }
     readSettings();
     applyBindings();
     for (const h of hooks.preinit) { try { h(); } catch (e) { pageError(e); } }
@@ -1540,6 +1545,7 @@
     __nearestClip: nearestClip,
     __real: real,
     __stateful: () => stateful || usedRAF,
+    __sourceEls: () => sourceEls,
     __syncMedia: syncMedia,
     __setVideoDurations(map) { for (const v of videos) if (map[v.src] != null) v.duration = map[v.src]; },
   };

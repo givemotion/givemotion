@@ -123,6 +123,72 @@ test('render keeps parts: editing one scene redoes only its parts, and the resul
   assert.equal(r3.parts.rendered, 1);
 });
 
+// one long camera-world scene (6 parts of 1 s): late things are a written label, a nested clip and a sketched shape
+// (the camera only pans: a zoom that animates leaves Chrome's raster a little different in a fresh worker, see docs/NEXT.md)
+const longScene = ({ label = 'later', note = 'note', shape = 'x="600" y="80"', target = { x: 640, y: 380 }, flow = 'first' } = {}) => page(`<section class="scene" data-duration="6" style="background:#fbfaf6;color:#1e1e1e">
+  <div id="world" style="position:absolute;left:0;top:0;width:1200px;height:700px">
+    <div id="txt" style="position:absolute;left:40px;top:40px;width:420px"><p style="margin:0;font-size:30px" data-enter="fade 0.5 2.5">${flow}</p><p style="margin:0;font-size:30px">second</p></div>
+    <div id="a" style="position:absolute;left:60px;top:160px;width:160px;height:80px;background:#1971c2"></div>
+    <div id="b" style="position:absolute;left:420px;top:300px;width:160px;height:80px;background:#e8590c" data-enter="fade 0.5 1"></div>
+    <div id="late" style="position:absolute;left:640px;top:420px;font:40px Caveat" data-enter="write 0.6 4.2">${label}</div>
+    <div data-start="3.4" style="position:absolute;left:80px;top:440px;font-size:28px"><span>${note}</span></div>
+    <svg viewBox="0 0 1200 700" style="position:absolute;inset:0;width:1200px;height:700px" data-sketch><rect ${shape} width="200" height="100" fill="#ffd8a8" stroke="#1e1e1e" stroke-width="5" data-enter="draw 0.8 3.6"/></svg>
+  </div></section>
+  <script>mw.camera('#world').shot(0, { center: { x: 600, y: 350 }, zoom: 0.5 }).shot(2, { center: ${JSON.stringify(target)}, zoom: 0.5, duration: 1 }); mw.connect('#a', '#b', { sketch: true });</script>`);
+
+test('render keeps parts inside one long scene: editing an element that appears late keeps the parts before it, byte for byte', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), out = join(d, 'out', 'v.mp4');
+  writeFileSync(f, longScene());
+  const r1 = await render(f, { output: out, ...quiet });
+  assert.equal(r1.parts.total, 6);
+  assert.equal(r1.parts.lateOff, null);
+  assert.equal(r1.parts.late, 3, JSON.stringify(r1.parts));
+  const same = async (opts, label) => {
+    writeFileSync(f, longScene(opts));
+    const r = await render(f, { output: out, ...quiet });
+    const full = join(d, 'full.mp4');
+    await render(f, { output: full, cache: false, workers: 1, ...quiet });
+    assert.ok(readFileSync(out).equals(readFileSync(full)), label + ': patched video differs from a full render');
+    return r.parts;
+  };
+  // the label is written at 4.2 s: parts 0-3 s stay
+  let p = await same({ label: 'much later' }, 'label');
+  assert.equal(p.reused, 4, 'label ' + JSON.stringify(p));
+  // the nested clip starts at 3.4 s, the sketched rect is drawn from 3.6 s: parts 0-2 s stay
+  p = await same({ label: 'much later', note: 'a new note' }, 'nested clip');
+  assert.equal(p.reused, 3, 'nested clip ' + JSON.stringify(p));
+  p = await same({ label: 'much later', note: 'a new note', shape: 'x="640" y="60"' }, 'sketched shape');
+  assert.equal(p.reused, 3, 'shape ' + JSON.stringify(p));
+});
+
+test('render keeps parts inside one long scene: a camera target or an element in the flow redoes the whole scene', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), out = join(d, 'out', 'v.mp4');
+  // #late becomes a camera target: the camera moves to it from 2 s, so it is not late any more
+  writeFileSync(f, longScene({ target: '#late' }));
+  const r1 = await render(f, { output: out, ...quiet });
+  assert.equal(r1.parts.late, 2, JSON.stringify(r1.parts));
+  writeFileSync(f, longScene({ target: '#late', label: 'a much longer label now' }));
+  const r2 = await render(f, { output: out, ...quiet });
+  assert.equal(r2.parts.reused, 0, 'camera target ' + JSON.stringify(r2.parts));
+  // a paragraph in normal flow that fades in at 2.5 s: its size moves the line under it, which shows from the start
+  writeFileSync(f, longScene({ target: '#late', label: 'a much longer label now', flow: 'a first line that is long enough to wrap' }));
+  const r3 = await render(f, { output: out, ...quiet });
+  assert.equal(r3.parts.reused, 0, 'in-flow element ' + JSON.stringify(r3.parts));
+  const full = join(d, 'full.mp4');
+  await render(f, { output: full, cache: false, workers: 1, ...quiet });
+  assert.ok(readFileSync(out).equals(readFileSync(full)), 'patched video differs from a full render');
+  // a sketched shape added inside the late nested clip moves the seeds of the sketched shapes after it in the page,
+  // here a rect that shows from the start: the scene's live print changes, so nothing is reused
+  const early = 'x="600" y="80" data-enter="none"';
+  writeFileSync(f, longScene({ shape: early }));
+  await render(f, { output: out, ...quiet });
+  writeFileSync(f, longScene({ shape: early, note: 'note <svg data-sketch width="100" height="50"><rect x="2" y="2" width="60" height="30" stroke="#000" fill="none"/></svg>' }));
+  const r4 = await render(f, { output: out, ...quiet });
+  assert.equal(r4.parts.reused, 0, 'seeds ' + JSON.stringify(r4.parts));
+  await render(f, { output: full, cache: false, workers: 1, ...quiet });
+  assert.ok(readFileSync(out).equals(readFileSync(full)), 'seeds: patched video differs from a full render');
+});
+
 test('sketch: data-sketch shapes are rough, seeded and keep their id; mw.connect follows a moving element', { skip }, async () => {
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, page(`<div data-duration="3" style="position:absolute;inset:0"><svg viewBox="0 0 640 360" style="position:absolute;inset:0" data-sketch>

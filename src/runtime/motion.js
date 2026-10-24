@@ -1624,13 +1624,65 @@
     // along an gm.connect arrow: its path changes every frame, so sketch.js lays it out each frame (I.liveTravels)
     const conn = tr.path && tr.path.__gmConnector;
     if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth, conn);
-    if (conn) liveTravels.push({ kind: 'travel', tr, el, conn });
-    else setupTravelPath(tr, el, pth);
+    // an outer <svg> (also one with data-sketch) is a CSS box like a <div>, but has no offsetLeft: measured once
+    const host = el instanceof HTMLElement ? null : travelHost(el);
+    if (conn) liveTravels.push({ kind: 'travel', tr, el, conn, host });
+    else setupTravelPath(tr, el, pth, host);
     el.style.offsetAnchor = 'center';
     setupTravelAnim(tr, el);
   }
-  function setupTravelPath(tr, el, pth) {
-    const cb = el.offsetParent || el.parentElement;
+  // An element without offsetLeft (an outer <svg>): its containing block and where its own layout box sits in it.
+  // A copy without children, transforms or animations (same id and classes, so the same CSS) stands in for it while
+  // it is measured.
+  function travelHost(el) {
+    let cb = el.parentElement;
+    while (cb && cb !== document.body) { const cs = getComputedStyle(cb); if (cs.position !== 'static' || cs.transform !== 'none') break; cb = cb.parentElement; }
+    cb = cb || document.body;
+    const hidden = [];
+    for (let a = el; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+    const twin = el.cloneNode(false), disp = el.style.display;
+    for (const k of ['transform', 'translate', 'rotate', 'scale', 'offsetPath']) twin.style[k] = 'none';
+    twin.style.animation = 'none'; twin.style.transition = 'none';
+    el.parentNode.insertBefore(twin, el);
+    el.style.display = 'none';
+    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
+    const m0 = mk(0), m1 = mk(1000);
+    const a = m0.getBoundingClientRect(), b = m1.getBoundingClientRect(), r = twin.getBoundingClientRect();
+    const k = (b.left - a.left) / 1000 || 1, r2 = (x) => Math.round(x * 100) / 100;
+    m0.remove(); m1.remove(); twin.remove();
+    el.style.display = disp;
+    for (const h of hidden) h.setAttribute('data-gm-hidden', '');
+    return { cb, ox: r2((r.left - a.left) / k), oy: r2((r.top - a.top) / k), w: r2(r.width / k), h: r2(r.height / k) };
+  }
+  // offset / side: the path moved sideways, so the rider goes beside the line instead of on it.
+  //   offset: px (at 1080p, in the path's space) to the right of the direction of travel (below a left-to-right
+  //   path); negative = left (above). side: 'above' | 'below' | 'left' | 'right' (on screen): clear of the line by
+  //   half the rider's size across it, plus offset as the gap (default 10). pts: [[x, y], ...] in the rider's space.
+  function shiftTravel(pts, tr, w, h) {
+    const o = tr.opts || {}, side = o.side == null ? null : String(o.side).toLowerCase();
+    const dir = side ? { above: [0, -1], top: [0, -1], below: [0, 1], bottom: [0, 1], under: [0, 1], left: [-1, 0], right: [1, 0] }[side] : null;
+    if (side && !dir && !tr.__sideWarned) { tr.__sideWarned = true; I.report('warning', 'travel-bad-side', `gm.path.travel: side "${o.side}" is not one of above below left right.`, null, "Use side: 'above' (or 'below', 'left', 'right'), or offset: -40 (px; negative = left of the direction of travel, i.e. above a left-to-right path)."); }
+    const off = (+o.offset || 0) * PX(), n = pts.length;
+    if ((!dir && !off) || n < 2) return pts;
+    const rot = o.rotate === true || o.rotate === 'auto' || (typeof o.rotate === 'string' && /auto/.test(o.rotate));
+    let sgn = 1;
+    if (dir) {
+      // which way is that side for the line as a whole (its first to last point), like an arrow's label
+      const cx = pts[n - 1][0] - pts[0][0], cy = pts[n - 1][1] - pts[0][1], cl = Math.hypot(cx, cy) || 1, nx = -cy / cl, ny = cx / cl;
+      const dot = nx * dir[0] + ny * dir[1];
+      sgn = Math.abs(dot) > 0.05 ? Math.sign(dot) : dir[1] ? (nx >= 0 ? 1 : -1) : (ny <= 0 ? 1 : -1);
+    }
+    const gap = dir ? (o.offset == null ? 10 * PX() : off) : off;
+    return pts.map((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l, ny = dx / l;
+      const d = dir ? sgn * (gap + (rot ? h / 2 : (Math.abs(nx) * w + Math.abs(ny) * h) / 2)) : off;
+      return [p[0] + nx * d, p[1] + ny * d];
+    });
+  }
+  I.shiftTravel = shiftTravel;
+  function setupTravelPath(tr, el, pth, host) {
+    const cb = host ? host.cb : el.offsetParent || el.parentElement;
     const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-gm-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
     const m0 = mk(0), m1 = mk(1000);
     const a = m0.getBoundingClientRect(), b = m1.getBoundingClientRect();
@@ -1651,8 +1703,9 @@
       const pe = pathEl(String(tr.path)); const len = pe.getTotalLength(); const N = Math.max(60, Math.min(600, Math.round(len / 4)));
       for (let i = 0; i <= N; i++) { const q = pe.getPointAtLength((i / N) * len); pts.push([q.x, q.y]); }
     }
+    if (tr.opts.offset || tr.opts.side) pts = shiftTravel(pts, tr, host ? host.w : el.offsetWidth, host ? host.h : el.offsetHeight);
     // offset-path point (0,0) is the element's own layout top-left corner; its center is placed on the path
-    const ox = el.offsetLeft, oy = el.offsetTop;
+    const ox = host ? host.ox : el.offsetLeft, oy = host ? host.oy : el.offsetTop;
     const d = 'M' + pts.map(([x, y]) => r4(x - ox) + ' ' + r4(y - oy)).join(' L');
     el.style.offsetPath = `path('${d}')`;
   }
@@ -1677,7 +1730,7 @@
     if (conn) {
       const bb = el.getBBox();
       el.style.transformBox = 'fill-box'; el.style.transformOrigin = '50% 50%';
-      liveTravels.push({ kind: 'travel', svg: true, tr, el, conn, cx: bb.x + bb.width / 2, cy: bb.y + bb.height / 2 });
+      liveTravels.push({ kind: 'travel', svg: true, tr, el, conn, cx: bb.x + bb.width / 2, cy: bb.y + bb.height / 2, w: bb.width, h: bb.height });
       tr.done = true;
       return;
     }
@@ -1697,9 +1750,10 @@
       const pe = pathEl(String(tr.path)); const len = pe.getTotalLength(); const N = Math.max(60, Math.min(600, Math.round(len / 4)));
       for (let i = 0; i <= N; i++) { const q = pe.getPointAtLength((i / N) * len); pts.push([q.x, q.y]); }
     }
+    const bb = el.getBBox();
+    if (tr.opts.offset || tr.opts.side) pts = shiftTravel(pts, tr, bb.width, bb.height);
     const cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
-    const bb = el.getBBox();
     el.style.transformBox = 'fill-box'; el.style.transformOrigin = '50% 50%';
     svgTravels.push({ tr, el, pts, cum, cx: bb.x + bb.width / 2, cy: bb.y + bb.height / 2, last: null });
     tr.done = true;

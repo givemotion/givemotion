@@ -59,10 +59,52 @@
 
   /** A rough straight line. */
   function line(x1, y1, x2, y2, o) { o = opts(o); return passes(o, (R) => strokeLine(x1, y1, x2, y2, o, R)); }
-  /** A rough rectangle (each side its own stroke, crossing a little at the corners). */
+  /** A rough rectangle (each side its own stroke, crossing a little at the corners). { r } (or rx, ry) rounds it. */
   function rect(x, y, w, h, o) {
+    if (o && (o.r || o.rx || o.ry)) return rrect(x, y, w, h, o.rx ?? o.r ?? o.ry, o.ry ?? o.rx ?? o.r, o);
     o = opts(o);
     return passes(o, (R) => strokeLine(x, y, x + w, y, o, R) + strokeLine(x + w, y, x + w, y + h, o, R, false) + strokeLine(x + w, y + h, x, y + h, o, R, false) + strokeLine(x, y + h, x, y, o, R, false));
+  }
+  /** A rough rounded rectangle: the sides as quick strokes, each corner a quarter curve that picks up where the side
+   *  ended (the pen goes round without lifting); the end runs a little past the start. */
+  function rrect(x, y, w, h, rx, ry, o) {
+    o = opts(o);
+    rx = Math.max(0, Math.min(+rx || 0, w / 2)); ry = Math.max(0, Math.min(+ry || 0, h / 2));
+    if (!rx || !ry) return rect(x, y, w, h, o);
+    const so = { ...o, overshoot: 0.25 * o.overshoot }, K = 0.5523;
+    const endOf = (d) => { const m = /(-?[\d.]+) (-?[\d.]+)$/.exec(d); return [+m[1], +m[2]]; };
+    const x0 = x, y0 = y;
+    return passes(o, (R) => {
+      // each pass of the pen lands a little off the last one (so the two strokes part, like on a square box)
+      x = x0 + (R() - 0.5) * 4 * px() * o.roughness; y = y0 + (R() - 0.5) * 4 * px() * o.roughness;
+      const jr = () => 1 + (R() - 0.5) * 0.16 * o.roughness, jt = () => (R() - 0.5) * Math.min(rx, ry) * 0.1 * o.roughness;
+      // a corner from where the last side ended to the start of the next side, around the corner point (qx, qy)
+      const corner = (from, to, qx, qy) => {
+        const a = jr(), b = jr();
+        const c1 = [from[0] + (qx - from[0]) * K * a + jt(), from[1] + (qy - from[1]) * K * a + jt()];
+        const c2 = [to[0] + (qx - to[0]) * K * b + jt(), to[1] + (qy - to[1]) * K * b + jt()];
+        return `C${f1(c1[0])} ${f1(c1[1])} ${f1(c2[0])} ${f1(c2[1])} ${f1(to[0])} ${f1(to[1])}`;
+      };
+      const r = x + w, b = y + h;
+      let d = strokeLine(x + rx, y, r - rx, y, so, R);
+      d += corner(endOf(d), [r, y + ry], r, y);
+      d += strokeLine(r, y + ry, r, b - ry, so, R, false);
+      d += corner(endOf(d), [r - rx, b], r, b);
+      d += strokeLine(r - rx, b, x + rx, b, so, R, false);
+      d += corner(endOf(d), [x, b - ry], x, b);
+      d += strokeLine(x, b - ry, x, y + ry, so, R, false);
+      // the last corner ends a little past the start, like a quick hand closing the shape
+      const past = Math.min((w - 2 * rx) * 0.3, (6 + R() * 10) * px());
+      d += corner(endOf(d), [x + rx + past, y + (R() - 0.5) * 2 * px() * o.roughness], x, y);
+      return d;
+    });
+  }
+  // a rounded box as plain path data (radii: [rx, ry] per corner, top-left first, clockwise)
+  function roundedBoxPath(x, y, w, h, radii) {
+    const [tl, tr, br, bl] = radii;
+    return `M${x + tl[0]} ${y}H${x + w - tr[0]}` + (tr[0] && tr[1] ? `A${tr[0]} ${tr[1]} 0 0 1 ${x + w} ${y + tr[1]}` : '') + `V${y + h - br[1]}` +
+      (br[0] && br[1] ? `A${br[0]} ${br[1]} 0 0 1 ${x + w - br[0]} ${y + h}` : '') + `H${x + bl[0]}` + (bl[0] && bl[1] ? `A${bl[0]} ${bl[1]} 0 0 1 ${x} ${y + h - bl[1]}` : '') +
+      `V${y + tl[1]}` + (tl[0] && tl[1] ? `A${tl[0]} ${tl[1]} 0 0 1 ${x + tl[0]} ${y}` : '') + 'Z';
   }
   /** A rough ellipse: drawn in one go, the end runs a little past the start like a quick pen circle. */
   function ellipse(cx, cy, rx, ry, o) {
@@ -237,7 +279,19 @@
   function geometryPath(el) {
     const n = (a) => parseFloat(el.getAttribute(a)) || 0;
     switch (el.tagName.toLowerCase()) {
-      case 'rect': return { kind: 'rect', args: [n('x'), n('y'), n('width'), n('height')] };
+      case 'rect': {
+        // rounded corners: rx / ry (attributes or CSS); one of them alone rounds both ways
+        const cs = getComputedStyle(el);
+        let rx = parseFloat(cs.rx), ry = parseFloat(cs.ry);
+        if (!isFinite(rx)) rx = parseFloat(el.getAttribute('rx'));
+        if (!isFinite(ry)) ry = parseFloat(el.getAttribute('ry'));
+        if (!isFinite(rx)) rx = ry;
+        if (!isFinite(ry)) ry = rx;
+        const w = n('width'), h = n('height');
+        rx = Math.min(rx || 0, w / 2); ry = Math.min(ry || 0, h / 2);
+        if (rx > 0 && ry > 0) return { kind: 'rrect', args: [n('x'), n('y'), w, h, rx, ry] };
+        return { kind: 'rect', args: [n('x'), n('y'), w, h] };
+      }
       case 'circle': return { kind: 'ellipse', args: [n('cx'), n('cy'), n('r'), n('r')] };
       case 'ellipse': return { kind: 'ellipse', args: [n('cx'), n('cy'), n('rx'), n('ry')] };
       case 'line': return { kind: 'line', args: [n('x1'), n('y1'), n('x2'), n('y2')] };
@@ -251,6 +305,12 @@
   function outlinePoints(g) {
     const [a, b, c, d] = g.args;
     if (g.kind === 'rect') return [[a, b], [a + c, b], [a + c, b + d], [a, b + d]];
+    if (g.kind === 'rrect') {
+      const [rx, ry] = [g.args[4], g.args[5]], pts = [];
+      for (const [qx, qy, a0] of [[a + c - rx, b + ry, -90], [a + c - rx, b + d - ry, 0], [a + rx, b + d - ry, 90], [a + rx, b + ry, 180]])
+        for (let i = 0; i <= 6; i++) { const t = ((a0 + i * 15) * Math.PI) / 180; pts.push([qx + Math.cos(t) * rx, qy + Math.sin(t) * ry]); }
+      return pts;
+    }
     if (g.kind === 'ellipse') { const pts = []; for (let i = 0; i < 48; i++) { const t = (i / 48) * Math.PI * 2; pts.push([a + Math.cos(t) * c, b + Math.sin(t) * d]); } return pts; }
     if (g.kind === 'polygon' || g.kind === 'polyline') return toPoints(a);
     if (g.kind === 'path') return a;
@@ -263,6 +323,7 @@
     const [a, b, c, d] = g.args;
     switch (g.kind) {
       case 'rect': return `M${a} ${b}H${a + c}V${b + d}H${a}Z`;
+      case 'rrect': { const q = [g.args[4], g.args[5]]; return roundedBoxPath(a, b, c, d, [q, q, q, q]); }
       case 'ellipse': return `M${a - c} ${b}A${c} ${d} 0 1 0 ${a + c} ${b}A${c} ${d} 0 1 0 ${a - c} ${b}Z`;
       case 'line': return `M${a} ${b}L${c} ${d}`;
       case 'polyline': case 'polygon': { const P = toPoints(a); return P.length ? 'M' + P.map((q) => q[0] + ' ' + q[1]).join('L') + (g.kind === 'polygon' ? 'Z' : '') : null; }
@@ -276,7 +337,7 @@
     const cs = getComputedStyle(el);
     const seed = o.seed != null ? String(o.seed) + ':' + index : (el.id || '') + ':' + index;
     const so = { roughness: o.roughness ?? 1, passes: o.passes ?? 2, bow: o.bow ?? 1, seed, raw: o };
-    const fnK = { rect, ellipse, line, polyline, polygon, path }[g.kind];
+    const fnK = { rect, rrect, ellipse, line, polyline, polygon, path }[g.kind];
     const nPass = Math.max(1, Math.min(3, so.passes));
     const outlines = [];
     for (let p = 0; p < nPass; p++) outlines.push(fnK(...g.args, { ...so, passes: 1, seed: seed + ':' + p }));
@@ -397,7 +458,14 @@
       if (cs.position === 'static') el.style.position = 'relative';
       el.style.borderColor = 'transparent';
       // the svg's 0,0 is the padding box corner: step back over the border
-      const box = `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
+      // rounded corners (border-radius) are drawn round
+      const rad = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => {
+        const v = String(cs['border' + c + 'Radius'] || '0').trim().split(/\s+/);
+        const one = (s0, full) => (/%$/.test(s0) ? (parseFloat(s0) / 100) * full : parseFloat(s0) || 0);
+        return [one(v[0], w), one(v[1] ?? v[0], h)];
+      });
+      const sc = Math.min(1, w / Math.max(1e-6, rad[0][0] + rad[1][0]), w / Math.max(1e-6, rad[3][0] + rad[2][0]), h / Math.max(1e-6, rad[0][1] + rad[3][1]), h / Math.max(1e-6, rad[1][1] + rad[2][1]));
+      const box = rad.some((q) => q[0] > 0 && q[1] > 0) ? roundedBoxPath(-bw, -bw, w, h, rad.map((q) => [q[0] * sc, q[1] * sc])) : `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
       const ds = [path(box, { ...R2, roughness: m.opts.roughness ?? 1, passes: 1 }), path(box, { ...R2, seed: m.seed + 'b', roughness: m.opts.roughness ?? 1, passes: 1 })];
       m.svg.innerHTML = ds.map((d) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="${Math.max(2, bw || 3 * px())}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
       el.appendChild(m.svg);
@@ -849,6 +917,13 @@
     const L = r2(X) + 'px', Tp = r2(Y) + 'px';
     return () => { if (el.style.left === L && el.style.top === Tp) return false; el.style.left = L; el.style.top = Tp; return true; };
   }
+  const shifted = (j) => !!(I.shiftTravel && (j.tr.opts.offset || j.tr.opts.side));
+  // points along the arrow's line (its space's coordinates), evenly by length
+  function lineSamples(g) {
+    const n = g.curve ? 32 : 1, out = [];
+    for (let i = 0; i <= n; i++) { const q = pointOnLine(g, i / n); out.push([q.x, q.y]); }
+    return out;
+  }
   // an element riding along an arrow: the arrow's line, in the rider's own coordinates
   function planTravel(j, T) {
     const g = connGeom(j.conn), el = j.el;
@@ -860,7 +935,8 @@
       if (!m) return null;
       const inv = m.inverse(), P = (x, y) => { const s = fwd(x, y), q = new DOMPoint(s[0], s[1]).matrixTransform(inv); return [q.x, q.y]; };
       const a = P(g.x1, g.y1), b = P(g.x2, g.y2), q = P(g.qx, g.qy);
-      const pe = measure(g.curve ? `M${a[0]} ${a[1]}Q${q[0]} ${q[1]} ${b[0]} ${b[1]}` : `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`), len = pe.getTotalLength();
+      const side = shifted(j) && I.shiftTravel(lineSamples(g).map((s) => P(s[0], s[1])), j.tr, j.w || 0, j.h || 0);
+      const pe = measure(side ? 'M' + side.map((s) => f1(s[0]) + ' ' + f1(s[1])).join('L') : g.curve ? `M${a[0]} ${a[1]}Q${q[0]} ${q[1]} ${b[0]} ${b[1]}` : `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`), len = pe.getTotalLength();
       const at = len * Math.max(0, Math.min(1, j.tr.progress(I.mapT(el, T) - I.clipStartOf(el))));
       const p = pe.getPointAtLength(at), p0 = pe.getPointAtLength(Math.max(0, at - 0.5)), p1 = pe.getPointAtLength(Math.min(len, at + 0.5));
       const rot = j.tr.opts.rotate, ang = rot === true || rot === 'auto' ? (Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180) / Math.PI : 0;
@@ -868,9 +944,15 @@
       return () => { if (el.style.transform === v) return false; el.style.transform = v; return true; };
     }
     // CSS offset-path: (0,0) is the element's own layout corner; the browser animates offset-distance (the stops)
-    const toCB = spaceMap(el.offsetParent || el.parentElement), ox = el.offsetLeft, oy = el.offsetTop;
+    // (an outer <svg> has no offsetLeft: where its box sits was measured once, j.host)
+    const H = j.host, toCB = spaceMap(H ? H.cb : el.offsetParent || el.parentElement), ox = H ? H.ox : el.offsetLeft, oy = H ? H.oy : el.offsetTop;
     const P = (x, y) => { const s = fwd(x, y), q = toCB(s[0], s[1]); return r2(q[0] - ox) + ' ' + r2(q[1] - oy); };
-    v = `path("M${P(g.x1, g.y1)} ${g.curve ? 'Q' + P(g.qx, g.qy) + ' ' : 'L'}${P(g.x2, g.y2)}")`;
+    if (shifted(j)) {
+      // beside the line (offset / side): the line sampled in the rider's space, moved sideways
+      const C = (x, y) => { const s = fwd(x, y), q = toCB(s[0], s[1]); return [q[0] - ox, q[1] - oy]; };
+      const pts = I.shiftTravel(lineSamples(g).map((s) => C(s[0], s[1])), j.tr, H ? H.w : el.offsetWidth, H ? H.h : el.offsetHeight);
+      v = `path("M${pts.map((s) => r2(s[0]) + ' ' + r2(s[1])).join(' L')}")`;
+    } else v = `path("M${P(g.x1, g.y1)} ${g.curve ? 'Q' + P(g.qx, g.qy) + ' ' : 'L'}${P(g.x2, g.y2)}")`;
     return () => { if (j.lastV === v) return false; el.style.offsetPath = v; j.lastV = v; return true; };
   }
   // Anchors and riders, in order: a label on a label (or on a rider, or inside a moving label) is placed after it.

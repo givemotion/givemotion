@@ -10,11 +10,11 @@ A composition is one HTML file. Every frame is that page at a moment in time. CS
 ## The loop (always do all four)
 
 1. Write or edit the `.html` composition.
-2. `npx motionwright check video.html` — fix every ✖ error. Fix ⚠ warnings unless you meant it. (Exit code 1 when there are errors.)
+2. `npx motionwright check video.html` — fix every ✖ error. Fix ⚠ warnings unless you meant it. (Exit code 1 when there are errors.) The report starts with a motion strip, one mark per half second (`▁` little changes, `█` the whole picture changes): use it to see the rhythm of the video, and look for long flat runs where it stalls.
 3. `npx motionwright snapshot video.html` — **open `snapshots/sheet.png` (next to the HTML file) and look at it** (`-o review2` writes to another folder so you can compare). It shows the key moment of every scene. Fix anything that looks wrong, cramped, cut off, or ugly. Repeat 2–3.
 4. `npx motionwright render video.html -o out/video.mp4`
 
-Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose; `snapshot --from 3.2 --to 3.8 --every 1f` gives a frame-by-frame strip of one move; `snapshot --transitions` shows the start, middle and end of every scene change; `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment, and `inspect --at 2 --to 3 --el "#logo"` prints its position, size and opacity frame by frame (check easing and speed without watching). Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
+Use `--json` on any command for machine-readable output, and `<command> --help` for its options. `npx motionwright still video.html -t 3.2 -o f.png` renders one exact moment; `snapshot --times 2,5.5,9` shows exactly the moments you choose; `snapshot --from 3.2 --to 3.8 --every 1f` gives a frame-by-frame strip of one move; `snapshot --transitions` shows the start, middle and end of every scene change; `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment (and which clips are on screen with their local time, the clock that `data-enter` delays and `at` options count in), and `inspect --at 2 --to 3 --el "#logo"` prints its position, size and opacity frame by frame (check easing and speed without watching). Humans preview with `npx motionwright dev video.html` (scrub, play, frame-step, live reload).
 
 ## Minimal composition
 
@@ -107,8 +107,8 @@ mw.to('#logo', { rotate: 360, duration: 2, delay: 0.5, repeat: -1, ease: 'none' 
 - Props: `x` `y` `z` `xPercent` `yPercent` `rotate` `rotateX` `rotateY` `scale` `scaleX` `scaleY` `skewX` `skewY` `transformPerspective` (written to `transform`), any CSS property (`backgroundColor`, `clipPath`, `filter`, `borderRadius`, `--css-var` …; colors blend in OKLab), `autoAlpha`, `attr: {cx: 50}`, `morph`, `draw`, `text` (type a new string), `textContent` (count). Options: `duration` (0.5) `ease` (`power1.out`) `delay` `stagger` (number, `{each, from: 'center'|'end'|'edges'|'random'|index, amount}`, or a function `(i, el) => seconds`) `repeat` `yoyo` `repeatDelay` `keyframes` `onUpdate(progress, el)`.
 - `mw.timeline(scope, { repeat: -1, yoyo: true, delay: 1, global: true })` (global = times from the start of the video).
 - The timeline uses `transform`, added on top of the element's own CSS transform (so `translate(-50%,-50%)` centering is kept). `data-enter`/`data-exit` use `translate`/`scale`, and `data-camera` adds on top, so all of them combine on one element.
-- `from()` and `fromTo()` show their start values from the beginning of the clip until the tween starts (useful to keep things hidden until they enter); pass `immediateRender: false` to stop that. `tl.set(el, {…}, time)` sets values instantly. When tweens overlap on the same property, the one that started last wins.
-- SVG shapes scale and rotate around their own center unless you set `transform-origin`.
+- `from()` and `fromTo()` show their start values from the beginning of the clip until the tween starts (useful to keep things hidden until they enter); pass `immediateRender: false` to stop that. `tl.set(el, {…}, time)` sets values instantly. When tweens overlap on the same property, the one that started last (in video time) wins, also across different timelines. The element's own CSS `transform` (e.g. `translate(-50%, -50%)` centering) is kept and the tween is added on top.
+- SVG shapes scale and rotate around their own center unless you set `transform-origin`. A timeline transform replaces the SVG `transform="…"` attribute, so put the position on a parent `<g transform="translate(…)">` and animate the child (a gauge needle: `<g transform="translate(400 300)"><path id="needle" style="transform-origin: 0 0" …/></g>`). `draw` uses the stroke dashes itself, so it replaces your own `stroke-dasharray`; for a dotted line that draws on, draw a solid copy as a mask or reveal the dotted line with a `clip-path`.
 - Plain objects work too (for canvas/three.js): `const s = { r: 0 }; mw.to(s, { r: 100, duration: 2 }); mw.onFrame(() => draw(s.r));`
 
 ## Camera over a world (maps, big diagrams, product tours)
@@ -128,11 +128,11 @@ mw.camera('#world')                                        // times are seconds 
   .shake(3.2, { duration: 0.35, amount: 14 });             // impact
 </script>
 ```
-Shot options: `fit` | `follow` | `center` (selector, list or `{x,y,w,h}`), `zoom` (with `fit` it multiplies: `1.05` = a bit closer), `padding`, `offset: [x, y]` (moves where the camera looks, in world px: `+x` looks further right, so the subject slides left), `rotate`, `duration` (blend time from the previous shot), `ease`, `minZoom`, `maxZoom`. Shot times count from the start of the world's clip; `mw.camera('#world', { global: true })` uses video time instead. `mw.timing('#scene2').start` gives any clip's start time.
+Shot options: `fit` | `follow` | `center` (selector, list or `{x,y,w,h}`), `zoom` (with `fit` it multiplies: `1.05` = a bit closer), `padding` (screen px on each side of the framed elements, default 60), `offset: [x, y]` (moves where the camera looks, in world px: `+x` looks further right, so the subject slides left), `rotate`, `duration` (blend time from the previous shot), `ease`, `minZoom`, `maxZoom`. Shot times count from the start of the world's clip; `mw.camera('#world', { global: true })` uses video time instead. `mw.timing('#scene2').start` gives any clip's start time.
 
 ## Moving along a path
 
-`mw.path.travel('#pkg', '#route', { stops: [[1, 0], [3.2, 0.5], [4.2, 0.5], [6.5, 1]], rotate: true, ease: 'in-out-cubic' })` moves an element along an SVG path: each stop is `[seconds in the clip, progress 0..1]`, a repeated progress is a hold (a stop on the way). `rotate: true` turns it to face the direction of travel. The returned object has `.progress(t)` so other things can follow it, e.g. draw the route behind it: `mw.onFrame('#world', t => route.style.strokeDasharray = trip.progress(t) + ' 2')` (with `pathLength="1"` on the path).
+`mw.path.travel('#pkg', '#route', { stops: [[1, 0], [3.2, 0.5], [4.2, 0.5], [6.5, 1]], rotate: true, ease: 'in-out-cubic' })` moves an element along an SVG path: each stop is `[seconds in the clip, progress 0..1]`, a repeated progress is a hold (a stop on the way). `rotate: true` turns it to face the direction of travel. The element can be HTML (a `<div>`, an `<img>`) or an SVG shape or `<g>` (it is centered on the path either way). `.progress(t)` gives the same answer at load time as during the video, so you can plan other moments from it. The returned object has `.progress(t)` so other things can follow it, e.g. draw the route behind it: `mw.onFrame('#world', t => route.style.strokeDasharray = trip.progress(t) + ' 2')` (with `pathLength="1"` on the path).
 
 ## Shapes and path morphs
 
@@ -144,12 +144,16 @@ Shot options: `fit` | `follow` | `center` (selector, list or `{x,y,w,h}`), `zoom
 
 ```js
 mw.onFrame((t, info) => { box.style.rotate = `${t * 90}deg`; });        // t = seconds; info.frame, info.progress
-mw.onFrame('#scene2', (local, info) => { /* local time while that clip is on screen */ });
+mw.onFrame('#scene2', (local, info) => { /* local time while that clip is on screen; info.time = video time */ });
 mw.interpolate(t, [0, 1, 2], [0, 300, 0], { easing: 'out-cubic' });     // numbers or colors; clamps by default
 mw.spring(t, { from: 0, to: 1, stiffness: 170, damping: 26, delay: 0.2 });
 mw.noise(t) /* smooth, 0..1 */, mw.lerp(a, b, p), mw.clamp(v), mw.ease.outExpo(p)
-mw.burst('#scene3', { at: 2.1, kind: 'confetti', x: '50%', y: '60%' })  // also 'sparks', 'dust', 'bubbles'; count, colors, speed, gravity, size
+mw.burst('#scene3', { at: 2.1, kind: 'confetti', x: '50%', y: '60%' })  // also 'sparks', 'dust', 'bubbles'
+//   at: seconds into #scene3 (add global: true for a video time, e.g. a beat or a voice word)
+//   from: '#icon' throws from that element's center instead of x/y; behind: '#icon' draws under it
+//   count, colors, size (px), speed (px/s), gravity (px/s²), duration (s), spread (deg), angle (deg, -90 = up)
 mw.data            // JSON passed with --data / --props, or <script type="application/json" id="mw-data">
+mw.beat(8), mw.bar(2)  // video time of beat 8 / bar 2 from <html data-bpm data-beat-offset data-bar-offset> (printed by `motionwright audio`); ready at once, so you can build timelines on the beat: tl.to(..., mw.beat(8)) in a { global: true } timeline
 mw.width, mw.height, mw.fps, mw.duration
 mw.wait(promise)   // hold rendering until it resolves (fetch JSON, load a model…)
 mw.onLayout('#scene2', (local) => { /* runs after all animations are placed: measure with getBoundingClientRect, follow or aim at elements */ });
@@ -180,7 +184,7 @@ Rules for seekable JS:
 
 ## Templates and blocks
 
-- Data: `npx motionwright render v.html --props '{"title":"Q3 results"}'` (or `--data file.json`) then `<h1 data-bind="title">`, `<img data-bind-src="logo">`, `data-bind-style-color="brand"`, or `mw.data` in JS.
+- Data (one template, many videos): pass `--data file.json` or `--props '{"title":"Q3 results"}'` to any command (render, check, snapshot, still, inspect). With neither, a `data.json` next to the HTML is used, then `<script type="application/json" id="mw-data">{…}</script>` in the page (good for defaults). Use it anywhere in the HTML as `{{data.title}}`, `{{data.users[2]}}` or `{{data.stats.total}}`; an array becomes a comma list (`{{data.users}}` → `1200,1850,1700`, which is what the chart blocks take); `{{data.label|Monthly users}}` gives a default. In JS: `mw.data`. Also `<h1 data-bind="title">`, `<img data-bind-src="logo">`, `data-bind-style-color="brand"`. `check` warns when a `{{data.…}}` came out empty. Test a template with a second data file that has other values and a different number of items.
 - Reuse: `<mw-include src="parts/intro.html" title="Hi" data-start="2">optional inner HTML</mw-include>` inserts the file; `{{title}}` / `{{title|default}}` / `{{content}}` are replaced.
 - Layering: `.scene` is its own layer. Background blocks (`gradient-bg`, `grid-bg`) always sit behind the scene's content. Full-frame blocks (`title-card`, `end-card`, `quote`, `logo-reveal`, `word-pop`, `captions`, `callout`, `cursor`) cover the scene themselves; other blocks are normal boxes you place with flex/grid.
 - `class`, `style`, `id` and `data-*` on `<mw-include>` go to a wrapper `div` around the block. Block parameters are any other attribute.
@@ -246,6 +250,6 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `load-timeout` | Something given to `mw.wait()` never finished. |
 | `script-error`, `console-error` | Your JS threw; the message has the stack. |
 
-Inside a `mw.camera` world (or a layer with `data-check="crop-ok"`), text sliding past the frame edge is fine, but a label that stays mostly in view and cut for 0.3 s or more is a warning: when the camera zooms in, frame the shot so the labels it is showing fit. Times in the report also say how far into the scene the problem is.
+Inside a `mw.camera` world, text sliding past the frame edge is fine, but a label that stays mostly in view and cut for 0.3 s or more is a warning: when the camera zooms in, frame the shot so the labels it is showing fit. When the crop is on purpose (zoomed into one line of code, a big word bleeding off), put `data-check="crop-ok"` on that text or a parent. Times in the report also say how far into the scene the problem is.
 
-How check decides: it compares frames, so anything moving or fading (CSS, timeline, React, onFrame, a camera follow) is skipped while it moves, and a problem must last ~0.25s to count. Text that is fully hidden (outside the frame, behind a mask, waiting to slide in) or covered by something solid is not judged. Mark decorative copies (echoes, ghosts, outlines) with `data-check="ignore"`. Re-check one moment fast with `check --at 7.5`, or part of the video with `--from 6 --to 9`. Problems list every time range they happen in.
+How check decides: it compares frames, so anything moving or fading (CSS, timeline, React, onFrame, a camera follow) is skipped while it moves, and a problem must last ~0.25s to count. Text that is fully hidden (outside the frame, behind a mask, waiting to slide in) or covered by something solid is not judged. Mark decorative copies (echoes, ghosts, outlines) with `data-check="ignore"`, and layers that are meant to run past the frame edge (a film strip, a ticker, a big word bleeding off) with `data-check="crop-ok"`. Re-check one moment fast with `check --at 7.5`, or part of the video with `--from 6 --to 9`. Problems list every time range they happen in.

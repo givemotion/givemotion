@@ -34,7 +34,8 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     const attrs = parseAttrs(attrStr);
     if (!attrs.src) return `<!-- mw-include without src -->`;
     const file = resolve(fileDir, attrs.src);
-    if (!file.startsWith(rootDir) || !existsSync(file)) return `<div data-mw-include-error="${esc(attrs.src)}" style="color:#f33;font:24px monospace">mw-include not found: ${esc(attrs.src)}</div>`;
+    // Includes are read here on the server, so they may live outside the served folder (../blocks).
+    if (!existsSync(file) || !statSync(file).isFile()) return `<div data-mw-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">mw-include not found: ${esc(attrs.src)}</div>`;
     if (seen.includes(file)) return `<!-- circular mw-include ${esc(attrs.src)} -->`;
     let body = readFileSync(file, 'utf8');
     // Drop the block's documentation comment
@@ -74,13 +75,18 @@ export function applyData(html, data) {
     const m = /<script[^>]*id=["']mw-data["'][^>]*>([\s\S]*?)<\/script>/i.exec(html);
     if (m) { try { data = JSON.parse(m[1]); } catch { data = null; } }
   }
-  return html.replace(/\{\{\s*data\.([\w.\[\]-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, path, def) => {
+  const missing = new Set();
+  const out = html.replace(/\{\{\s*data\.([\w.\[\]-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, path, def) => {
     const v = path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((o, k) => (o == null ? o : o[k]), data);
-    if (v == null) return def != null ? esc(def.trim()) : '';
+    if (v == null) { if (def == null) missing.add(path); return def != null ? esc(def.trim()) : ''; }
     if (Array.isArray(v)) return esc(v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : x)).join(','));
     if (typeof v === 'object') return esc(JSON.stringify(v));
     return esc(String(v));
   });
+  // Tell the page which templates came out empty, so `check` can say so.
+  if (!missing.size) return out;
+  const tag = `<script type="application/json" id="mw-missing-data">${JSON.stringify({ keys: [...missing], noData: data == null })}</script>`;
+  return /<\/body>/i.test(out) ? out.replace(/<\/body>/i, tag + '</body>') : out + tag;
 }
 
 export function injectRuntime(html, { inlineConfig } = {}) {

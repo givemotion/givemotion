@@ -131,29 +131,42 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     if (tag === 'canvas') return !big;
     if (/^(path|rect|circle|ellipse|polygon)$/.test(tag)) {
       const cs = getComputedStyle(c);
-      return cs.fill !== 'none' && !/rgba\([^)]*,\s*0(\.[0-5]\d*)?\)/.test(cs.fill) && parseFloat(cs.fillOpacity) > 0.6;
+      const fillOk = cs.fill !== 'none' && !/rgba\([^)]*,\s*0(\.[0-5]\d*)?\)/.test(cs.fill) && parseFloat(cs.fillOpacity) > 0.6;
+      // a thick stroke (a needle, an arrow, a chart line) also hides what is under it
+      const strokeOk = cs.stroke !== 'none' && !/rgba\([^)]*,\s*0(\.[0-5]\d*)?\)/.test(cs.stroke) && parseFloat(cs.strokeOpacity) > 0.6 && parseFloat(cs.strokeWidth) >= 3;
+      if (!fillOk && !strokeOk) return false;
+      let op = 1; for (let a = c; a && a.nodeType === 1; a = a.parentElement) op *= parseFloat(getComputedStyle(a).opacity);
+      return op > 0.6;
     }
     if (c instanceof SVGElement) return false;
     const cs2 = getComputedStyle(c);
     const m = /rgba?\(([^)]+)\)/.exec(cs2.backgroundColor);
     const alpha = m ? (m[1].split(',')[3] != null ? parseFloat(m[1].split(',')[3]) : 1) : 0;
-    if (alpha > 0.6) return true;
-    return cs2.backgroundImage !== 'none' && !big;
+    let solid = alpha > 0.6;
+    // A gradient counts only if it has no see-through stops (a shine or a glow is see-through).
+    if (!solid && cs2.backgroundImage !== 'none' && !big) solid = !/transparent|rgba\([^)]*,\s*0?\.[0-5]\d*\)|rgba\([^)]*,\s*0\)/.test(cs2.backgroundImage);
+    if (!solid) return false;
+    // faded-out things do not hide what is under them
+    let op = 1; for (let a = c; a && a.nodeType === 1; a = a.parentElement) op *= parseFloat(getComputedStyle(a).opacity);
+    return op > 0.6;
   };
-  const covered = (t) => {
-    if (getComputedStyle(t.el).pointerEvents === 'none') return false;
-    let hits = 0, n = 0;
+  // How much of the text is under something solid drawn on top of it (a wipe, a card, a needle)?
+  const coverOf = (t) => {
+    if (getComputedStyle(t.el).pointerEvents === 'none') return { n: 0, hits: 0, by: null };
+    let hits = 0, n = 0, by = null;
     for (const q of t.rs.slice(0, 3)) {
-      const x = (q.left + q.right) / 2, y = (q.top + q.bottom) / 2;
-      if (x < 0 || y < 0 || x > W || y > H) continue;
-      n++;
-      // Walk down the stack of things at that point until we reach the text.
-      for (const c of document.elementsFromPoint(x, y)) {
-        if (c === t.el || c.contains(t.el) || t.el.contains(c)) break;
-        if (paintsSolid(c)) { hits++; break; }
+      for (const fx of [0.15, 0.5, 0.85]) {
+        const x = q.left + (q.right - q.left) * fx, y = (q.top + q.bottom) / 2;
+        if (x < 0 || y < 0 || x > W || y > H) continue;
+        n++;
+        // Walk down the stack of things at that point until we reach the text.
+        for (const c of document.elementsFromPoint(x, y)) {
+          if (c === t.el || c.contains(t.el) || t.el.contains(c)) break;
+          if (paintsSolid(c)) { hits++; by = by || c; break; }
+        }
       }
     }
-    return n > 0 && hits === n;
+    return { n, hits, by };
   };
   const reportedBox = new Set();
   for (const t of texts) {
@@ -164,8 +177,13 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     const cb = clipBoxOf(el);
     const shown = inter(inter(tu, frame), cb.r);
     t.hidden = area(shown) < 4 || cb.masked && t.moving;
-    t.covered = !t.hidden && covered(t);
+    const cov = t.hidden ? { n: 0, hits: 0 } : coverOf(t);
+    t.covered = cov.n > 0 && cov.hits === cov.n;
     if (t.moving || t.hidden || t.covered) continue;
+    // Partly hidden behind a shape or box that is drawn on top of it
+    if (cov.hits > 0 && cov.by && t.op >= 0.5 && !transitioning && !ignored(cov.by) && !cov.by.closest('[data-mw-internal]')) {
+      out.push({ severity: 'warning', code: 'text-covered', selector: sel(el), text: snippet(el), message: 'Part of the text is hidden behind ' + sel(cov.by) + ', which is drawn on top of it.', minSpan: 0.3, fix: 'Move one of them, or put the text above it (z-index, or later in the HTML).' });
+    }
     // Inside a camera world (or data-check="crop-ok"), being cut by the frame edge is framing, not a mistake.
     const cropOk = !!el.closest('[data-mw-camera-world],[data-check~="crop-ok"]');
     // 1. Text partly outside the frame (fully outside = not shown, which is fine)
@@ -173,7 +191,8 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     const outY = Math.max(0, -tu.top) + Math.max(0, tu.bottom - H);
     // In a camera world, text passing by the edge is fine, but a label that is mostly in view and cut is still worth a look.
     const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
-    if ((outX > 2 || outY > 2) && cropOk && visFrac >= 0.5) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label), unless the crop is on purpose.' });
+    const cropMeant = !!el.closest('[data-check~="crop-ok"]');
+    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
     if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
     else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
@@ -361,6 +380,8 @@ export async function check(input, opts = {}) {
     const pace = opts.at == null && opts.pacing !== false;
     if (pace) await ctx.page.evaluate(`window.__mwGrid = async (src) => { const im = new Image(); im.src = src; await im.decode(); const c = document.createElement('canvas'); c.width = ${GW}; c.height = ${GH}; const g = c.getContext('2d'); g.drawImage(im, 0, 0, ${GW}, ${GH}); const d = g.getImageData(0, 0, ${GW}, ${GH}).data; const o = new Array(${GW * GH}); for (let i = 0, j = 0; i < d.length; i += 4, j++) o[j] = (54 * d[i] + 183 * d[i + 1] + 19 * d[i + 2]) >> 8; return o; }`);
     let lastGrid = null, lastGridT = -Infinity, busy = false;
+    let motion = null;
+    const openFrames = []; // the first half second: is anything on screen?
     const change = []; // [t, fraction of the picture that changed since the previous grid]
     for (const t of times) {
       await ctx.page.seek(t);
@@ -372,6 +393,7 @@ export async function check(input, opts = {}) {
       if (pace && t - lastGridT >= 0.49) {
         const jpg = await ctx.page.capture('jpeg', 60);
         const g = await ctx.page.evaluate(`window.__mwGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
+        if (t < 0.6) { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++; openFrames.push({ t, empty: off / g.length < 0.01 && !a.textCount }); }
         if (lastGrid) { let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - lastGrid[i]) > 6) n++; change.push([t, n / g.length, busy]); }
         lastGrid = g; lastGridT = t; busy = false;
       }
@@ -393,6 +415,8 @@ export async function check(input, opts = {}) {
     }
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
     if (change.length) issues.push(...stillStretches(change, info, from, to));
+    if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second is an empty frame. The first frame is the thumbnail and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
+    motion = change.length ? { every: 0.5, from: change[0][0] - 0.5, values: change.map(([, f, b]) => Math.round((b ? Math.max(f, 0.06) : f) * 1000) / 1000) } : null;
     let merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
     // Some problems only matter if they last (a label sliding past the frame edge during a pan is fine).
     if (opts.at == null) merged = merged.filter((i) => {
@@ -403,9 +427,12 @@ export async function check(input, opts = {}) {
       return true;
     });
     for (const i of merged) delete i.minSpan;
+    merged = groupMany(merged);
+    // A script that failed can make the video look still or empty: say so instead of sending the reader on a hunt.
+    if (merged.some((i) => i.code === 'script-error')) for (const i of merged) if (i.code === 'still' || i.code === 'empty-start') i.message += ' This may only be because of the script error: fix that first.';
     const errors = merged.filter((i) => i.severity === 'error').length;
     const warnings = merged.filter((i) => i.severity === 'warning').length;
-    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), logs: ctx.page.logs || [] };
+    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), motion, logs: ctx.page.logs || [] };
   } finally {
     await ctx.page.close();
     await ctx.server.close();
@@ -435,6 +462,30 @@ function stillStretches(change, info, from, to) {
   }
   flush(Math.min(to + 1 / info.fps, info.duration), to >= info.duration - 2 / info.fps);
   return out;
+}
+
+/** Many pieces of text with the same problem at the same times (e.g. every token of a code block
+ *  after one camera move) → one issue that names their common parent. */
+function groupMany(list) {
+  const groups = new Map();
+  for (const i of list) {
+    if (!i.selector || !i.ranges) continue;
+    const k = i.code + '|' + i.severity + '|' + JSON.stringify(i.ranges);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(i);
+  }
+  const drop = new Set(), add = [];
+  for (const g of groups.values()) {
+    if (g.length < 4) continue;
+    const parts = g.map((i) => i.selector.split(' > '));
+    let common = [];
+    for (let d = 0; d < parts[0].length; d++) { const seg = parts[0][d]; if (parts.every((p) => p[d] === seg)) common.push(seg); else break; }
+    for (const i of g) drop.add(i);
+    add.push({ ...g[0], selector: common.length ? common.join(' > ') : g[0].selector, text: g.length + ' pieces of text, e.g. "' + (g[0].text || '') + '"', message: g[0].message + ' (the same for ' + (g.length - 1) + ' more inside it)' });
+  }
+  if (!drop.size) return list;
+  const rank = { error: 0, warning: 1, info: 2 };
+  return [...list.filter((i) => !drop.has(i)), ...add].sort((a, b) => rank[a.severity] - rank[b.severity] || (a.time ?? -1) - (b.time ?? -1));
 }
 
 function pickSpread(arr, n) {
@@ -476,10 +527,20 @@ function summarizeInfo(info) {
   return { width: info.width, height: info.height, fps: info.fps, duration: info.duration, frames: info.frames, clips: info.clips.length, media: info.media.length };
 }
 
+/** How much changes on screen over time, as a text strip (one mark per half second). */
+export function motionStrip(m) {
+  const bars = ' ▁▂▃▄▅▆▇█';
+  const marks = m.values.map((f) => bars[f < 0.02 ? 0 : Math.max(1, Math.min(8, Math.ceil((f / 0.5) * 8)))]).join('');
+  let ruler = '';
+  for (let i = 0; i < m.values.length; i += 4) ruler += String(Math.round(m.from + i * m.every)).padEnd(4).slice(0, 4);
+  return ['motion  |' + marks + '|  (one mark = ' + m.every + ' s, taller = more of the picture changing)', '        ' + ' ' + ruler + 's'];
+}
+
 export function formatReport(rep, { file } = {}) {
   const lines = [];
   const i = rep.info;
   lines.push(`${file ? basename(file) + ': ' : ''}${i.width}x${i.height} ${i.fps}fps ${i.duration.toFixed(2)}s, ${i.clips} timed elements`);
+  if (rep.motion) lines.push(...motionStrip(rep.motion));
   if (!rep.issues.length) { lines.push('✓ No problems found.'); return lines.join('\n'); }
   for (const x of rep.issues) {
     const rg = (r) => (r[0] === r[1] ? `${r[0].toFixed(2)}s` : `${r[0].toFixed(2)}–${r[1].toFixed(2)}s`);
@@ -515,7 +576,7 @@ export async function snapshot(input, opts = {}) {
       for (const tr of info.transitions || []) times.push(tr.start, (tr.start + tr.end) / 2, tr.end);
       times = times.filter((t) => t >= from && t <= to);
     }
-    else times = keyTimes(info, opts.max || 12).filter((t) => t >= from && t <= to);
+    else times = [...(from === 0 ? [0] : []), ...keyTimes(info, opts.max || 12).filter((t) => t >= from && t <= to)];
     times = [...new Set(times.map((t) => Math.round(t * fps) / fps))].sort((a, b) => a - b);
     if (times.length > 120) throw new Error(`That is ${times.length} frames; use a shorter range (--from/--to) or a bigger --every.`);
     times = times.map((t) => Math.round(Math.min(lastT, Math.max(0, t)) * fps) / fps);

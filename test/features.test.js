@@ -80,3 +80,25 @@ test('mw.random(seed) is stable per seed and differs across seeds', { skip }, as
   assert.notEqual(r[0], r[2]);
   assert.ok(r.every((x) => x >= 0 && x < 1));
 });
+
+test('timeline: two timelines on one element, newest tween wins; CSS centering kept while hidden', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence><section data-duration="1"></section><section id="s1" data-duration="4" style="position:relative">
+    <div id="a" style="position:absolute;left:300px;width:100px;height:40px;transform:translateX(-50%)"></div></section></main>
+    <script>mw.timeline('#s1').to('#a', { scaleX: 0.2, duration: 0.5 }, 0.5); mw.timeline('#s1').fromTo('#a', { scaleX: 0 }, { scaleX: 1, duration: 0.5 }, 2);</script>`, 'data-width="640" data-height="360" data-fps="30"'));
+  const m = await evalAt(f, 4, `(() => { const m = new DOMMatrix(getComputedStyle(document.getElementById('a')).transform); return [m.a, m.e]; })()`);
+  assert.deepEqual(m, [1, -50]);
+  const m2 = await evalAt(f, 2.6, `new DOMMatrix(getComputedStyle(document.getElementById('a')).transform).a`);
+  assert.equal(m2, 0.2);
+});
+
+test('timeline: counting keeps the number format; travel moves SVG shapes', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="3"><b id="n1">000</b> <b id="n2">$0.00</b> <b id="n3">0</b>
+    <svg width="640" height="360"><path id="p" d="M100 100 L500 100" fill="none" stroke="#fff"/><circle id="c" cx="20" cy="20" r="10" fill="red"/></svg></div>
+    <script>mw.timeline().to('#n1', { textContent: 42, duration: 1 }).to('#n2', { textContent: 4.5, duration: 1 }, 0).to('#n3', { textContent: -12, duration: 1 }, 0);
+    mw.path.travel('#c', '#p', { stops: [[0, 0], [2, 1]], ease: 'linear' });</script>`));
+  const v = await evalAt(f, 1.5, `[n1.textContent, n2.textContent, n3.textContent, Math.round(c.getBoundingClientRect().left + 10 - p.getBoundingClientRect().left)]`);
+  assert.deepEqual(v.slice(0, 3), ['042', '$4.50', '−12']);
+  assert.ok(Math.abs(v[3] - 300) <= 3, 'circle at ' + v[3]);
+});

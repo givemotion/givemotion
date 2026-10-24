@@ -551,6 +551,16 @@
     }
     return null;
   }
+  function beatGrid() {
+    const h = document.documentElement;
+    const bpm = parseFloat(h.getAttribute('data-bpm'));
+    if (!(bpm > 0)) report('warning', 'no-bpm', 'mw.beat()/mw.bar() need <html data-bpm="…">: using 120 BPM.', null, 'Run `npx motionwright audio music.mp3`: it prints the data-bpm, data-beat-offset and data-bar-offset to copy.');
+    const period = 60 / (bpm > 0 ? bpm : 120);
+    const offset = parseFloat(h.getAttribute('data-beat-offset')) || 0;
+    const barOffset = h.hasAttribute('data-bar-offset') ? parseFloat(h.getAttribute('data-bar-offset')) || 0 : offset;
+    const perBar = parseInt(h.getAttribute('data-beats-per-bar'), 10) || 4;
+    return { period, offset, barOffset, perBar };
+  }
   function clipStartOf(el) { const c = nearestClip(el); return c ? c.start : 0; }
   function clipEndOf(el) { const c = nearestClip(el); return c ? c.end : comp.duration; }
 
@@ -953,10 +963,11 @@
   }
   function dec(n) { const s = String(n); const i = s.indexOf('.'); return i < 0 ? 0 : s.length - i - 1; }
   function fmtNumber(v, decimals, group) {
-    const s = v.toFixed(decimals);
-    if (!group) return s;
-    const [i, f] = s.split('.');
-    return i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (f ? '.' + f : '');
+    // a real minus sign (−), not a hyphen: it lines up with the digits
+    let s = Math.abs(v).toFixed(decimals);
+    const neg = v < 0 && /[1-9]/.test(s);
+    if (group) { const [i, f] = s.split('.'); s = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (f ? '.' + f : ''); }
+    return (neg ? '\u2212' : '') + s;
   }
   function updateCounters(T) {
     let changed = false;
@@ -1270,6 +1281,8 @@
     setupCountersAndTypers();
     applyEnterExit();
     for (const h of hooks.init) { try { h(); } catch (e) { pageError(e); } }
+    { const md = document.getElementById('mw-missing-data'); if (md) { try { const j = JSON.parse(md.textContent); report('warning', 'data-missing', (j.keys.length === 1 ? '{{data.' + j.keys[0] + '}} is' : j.keys.slice(0, 5).map((k) => '{{data.' + k + '}}').join(', ') + (j.keys.length > 5 ? ' and ' + (j.keys.length - 5) + ' more are' : ' are')) + ' empty: ' + (j.noData ? 'no data was given.' : 'the data has no value there.'), null, j.noData ? 'Pass --data data.json (or --props \'{...}\'), or put a data.json next to the HTML, or add <script type="application/json" id="mw-data">{...}</script> with default data, or write {{data.title|Default text}}.' : 'Check the path, or give a default: {{data.title|Default text}}.'); } catch (e) {} } }
+    for (const el of document.querySelectorAll('[data-mw-include-error]')) report('error', 'include-not-found', `<mw-include src="${el.getAttribute('data-mw-include-error')}"> was not found.`, null, 'The path is relative to the HTML file that contains the include. Check the spelling, or run `npx motionwright add <block>` to copy a block into ./blocks.');
     if (comp.background && !document.body.style.background) document.body.style.background = comp.background;
     for (const a of preInit) { const tg = targetOf(a); origin.set(a, tg ? clipStartOf(tg) : 0); }
     preInit.length = 0;
@@ -1482,7 +1495,10 @@
       else throw new Error('mw.onLayout(fn) or mw.onLayout(element, fn)');
     },
     wait(p) { waits.push(typeof p === 'function' ? p() : p); return p; },
-    timing(el) { if (typeof el === 'string') el = document.querySelector(el); const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
+    // Beat grid from <html data-bpm data-beat-offset data-bar-offset data-beats-per-bar> (printed by `motionwright audio`).
+    beat(n = 0) { const g = beatGrid(); return g.offset + n * g.period; },
+    bar(n = 0) { const g = beatGrid(); return g.barOffset + n * g.perBar * g.period; },
+    timing(el) { if (typeof el === 'string') el = document.querySelector(el); if (!clips.length) { try { buildTimeline(); timelineDirty = true; } catch (e) {} } const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
     interpolate, spring, noise, easing,
     ease: new Proxy({}, { get: (_, k) => easing(String(k).replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())) }),
     clamp: (v, a = 0, b = 1) => Math.min(b, Math.max(a, v)),

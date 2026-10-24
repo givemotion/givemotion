@@ -70,7 +70,7 @@ Docs: SKILL.md in the package, or \`motionwright skill\` to install it for your 
 
 const CMD_HELP = {
   render: 'motionwright render [file.html] -o out.mp4 [options]\n\nSee "Render options" in `motionwright --help`.',
-  still: 'motionwright still [file.html] -t <seconds> | --frame <n> -o frame.png [--transparent] [--json]',
+  still: 'motionwright still [file.html] -t <seconds> | --frame <n> -o frame.png [--transparent] [--data f.json | --props \'{…}\'] [--json]',
   snapshot: `motionwright snapshot [file.html] [options]
   -o <dir>          Where to write (default: snapshots/ next to the HTML file)
   --times 1,2.5,4   Exact moments (seconds, or frames like 45f) instead of automatic ones
@@ -79,19 +79,22 @@ const CMD_HELP = {
   --transitions     Start, middle and end of every scene transition
   --max 12          Max automatic moments (default 12; one per scene when settled)
   --sheet-only      Only write sheet.png
-  --cols 3          Columns in the sheet
+  --cols 2          Columns in the sheet (fewer = bigger pictures)
+  --data f.json / --props '{…}'   Data for {{data.…}} (default: data.json next to the HTML)
   --transparent     Show a checkerboard behind (auto-detected when the page has no background)
   --json            Machine-readable output`,
   check: `motionwright check [file.html] [--json] [--samples 10] [--transparent]
   --at 7.5          Check one moment only (fast, after a fix)
   --from 6 --to 9   Check part of the video
   --fast            Fewer samples (quicker, may miss short problems)
+  --data f.json / --props '{…}'   Data for {{data.…}} (default: data.json next to the HTML)
+  The report starts with a motion strip: how much of the picture changes, one mark per half second.
   Moving or fading text is skipped automatically; problems must last ~0.25s to count.
-  Mark decorative copies with data-check="ignore" (or aria-hidden="true").
+  Mark decorative copies with data-check="ignore" (or aria-hidden="true"), and text meant to be cut by the frame with data-check="crop-ok".
   Exit code 1 when there are errors. Warnings do not fail.`,
   bundle: 'motionwright bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), mw-player.js and player.html.\n  Embed: <script src="mw-player.js"></script> <mw-player src="index.html" controls autoplay loop muted></mw-player>',
   audio: 'motionwright audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
-  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment: screen box, opacity, transform, visible.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).',
+  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment (screen box, opacity, transform, visible), and which clips are on screen with their local time.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).\n  --data f.json / --props \'{…}\'   Data for {{data.…}}',
   dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
   init: 'motionwright init [dir] [--force]',
   add: 'motionwright add <block> [more…] [--dir blocks]',
@@ -247,7 +250,10 @@ async function cmdInspect(args) {
         const r1 = (x) => Math.round(x * 10) / 10;
         return { selector: mw.__selector(e), visible: shown && op > 0.01 && b.right > 0 && b.bottom > 0 && b.left < mw.width && b.top < mw.height, x: r1(b.left), y: r1(b.top), width: r1(b.width), height: r1(b.height), opacity: Math.round(op * 1000) / 1000, transform: cs.transform, translate: cs.translate, scale: cs.scale, rotate: cs.rotate, text: (e.textContent || '').trim().slice(0, 40) };
       }))()`);
-      console.log(JSON.stringify({ time: +args.at, elements: r }, null, 2));
+      // Which clips are on screen, and what their own clock says (data-enter delays, burst `at`, scoped onFrame use it)
+      const T = +args.at, r3 = (x) => Math.round(x * 1000) / 1000;
+      const clips = (ctx.info.clips || []).filter((c) => T >= c.start && T < c.end).map((c) => ({ selector: c.selector, start: r3(c.start), end: r3(c.end), local: r3(T - c.start) }));
+      console.log(JSON.stringify({ time: T, clips, elements: r }, null, 2));
     } catch (e) { fail(e, args); } finally { await ctx.page.close(); await ctx.server.close(); }
     return;
   }

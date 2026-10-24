@@ -284,6 +284,7 @@
   const UNITLESS = new Set(['opacity', 'zIndex', 'fontWeight', 'lineHeight', 'flexGrow', 'flexShrink', 'order', 'zoom', 'fillOpacity', 'strokeOpacity', 'stopOpacity', 'scale', 'aspectRatio', 'columnCount', 'orphans', 'widows', 'strokeMiterlimit']);
   const RESERVED = new Set(['duration', 'delay', 'ease', 'stagger', 'repeat', 'yoyo', 'repeatDelay', 'onUpdate', 'onStart', 'onComplete', 'immediateRender', 'overwrite', 'id', 'paused', 'keyframes', 'yoyoEase', 'lazy', 'callbackScope', 'data', 'runBackwards', 'startAt', 'inherit']);
   const tlList = [];
+  const sharedTracks = new Map(); // element -> write state when several timelines animate it
   let tlSeq = 0;
   let initDone = false;
 
@@ -532,7 +533,16 @@
         tm.tfBase = decompose(null);
         tm.cssPrefix = '';
         if (el instanceof Element && [...tm.props.keys()].some((k) => k in TF || k === 'transformPerspective')) {
-          const tf = el instanceof SVGElement && !(el instanceof SVGSVGElement) ? 'none' : getComputedStyle(el).transform;
+          // Read the transform as written (percentages kept, works while the element is hidden),
+          // not the resolved matrix: the same in every frame order and every worker.
+          let tf = 'none';
+          if (!(el instanceof SVGElement) || el instanceof SVGSVGElement) {
+            if (el.__mwOwnTf === undefined) el.__mwOwnTf = el.style.transform;
+            const cur = el.style.transform;
+            el.style.transform = el.__mwOwnTf;
+            try { tf = String(el.computedStyleMap().get('transform')); } catch (e) { tf = getComputedStyle(el).transform; }
+            el.style.transform = cur;
+          }
           if (tf && tf !== 'none' && !/^matrix\(1, 0, 0, 1, 0, 0\)$/.test(tf)) tm.cssPrefix = tf + ' ';
         }
         tm.hasTF = [...tm.props.keys()].some((k) => k in TF || k === 'transformPerspective');
@@ -575,7 +585,7 @@
       }
       return t;
     }
-    _apply(T) {
+    _apply(T, sink) {
       this._resolve();
       let changed = false;
       const clipsNow = I.clips();
@@ -593,7 +603,7 @@
         }
         if (!ct.vis) continue;
         const t = ct.t;
-        const vals = {};
+        const vals = {}, prio = {};
         for (const [k, segs] of tm.props) {
           let seg = null;
           for (let i = segs.length - 1; i >= 0; i--) if (segs[i].it.start <= t + 1e-9) { seg = segs[i]; break; }
@@ -618,8 +628,11 @@
             if (it.onUpdate && k === (it.firstKey ??= Object.keys(it.props)[0])) { try { it.onUpdate.call(it, p, el, it.i); } catch (e) { I.pageError(e); } }
           }
           vals[k] = v;
+          // When two timelines drive the same property, the tween that started last (in video time) wins.
+          prio[k] = seg ? T - t + seg.it.start : v === undefined ? -Infinity : -1e9;
         }
-        if (write(tm, vals)) changed = true;
+        if (sink && sink.shared.has(el)) sink.list.push({ tm, vals, prio });
+        else if (write(tm, vals)) changed = true;
       }
       for (const c of this.calls) {
         const t = this._localTime(this.opts.global ? null : this.scope, T);
@@ -695,10 +708,23 @@
       if (k === 'text') { if (v !== undefined && setCached(tm, k, v, (s) => { el.textContent = s; })) changed = true; continue; }
       if (k === 'textContent' || k === 'innerText') {
         if (v === undefined) continue;
-        const it = tm.props.get(k)[0].it;
-        const snap = it && it.snap; void snap;
-        const num = typeof v === 'number' ? v : parseFloat(v);
-        if (setCached(tm, k, Math.round(num), (n) => { el.textContent = String(n); })) changed = true;
+        // Keep the look of the number that was in the page: "000" stays 3 digits, "1,200" keeps
+        // its commas, "$4.50" keeps the sign and 2 decimals.
+        if (!tm.numFmt) {
+          const m = /^(\D*?)(-?)(\d[\d,]*)(\.(\d+))?(.*)$/s.exec(String(el.textContent).trim()) || [];
+          const int = m[3] || '';
+          tm.numFmt = { pre: m[1] || '', post: m[6] || '', dec: m[5] ? m[5].length : 0, group: int.includes(','), pad: /^0\d/.test(int) ? int.length : 0 };
+        }
+        const f = tm.numFmt;
+        const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\d.-]/g, ''));
+        const fmt = (n) => {
+          const neg = n < 0 && /[1-9]/.test(Math.abs(n).toFixed(f.dec)); let str = Math.abs(n).toFixed(f.dec);
+          let [ip, dp] = str.split('.');
+          if (f.pad) ip = ip.padStart(f.pad, '0');
+          if (f.group) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          return f.pre + (neg ? '\u2212' : '') + ip + (dp ? '.' + dp : '') + f.post;
+        };
+        if (setCached(tm, k, fmt(isFinite(num) ? num : 0), (txt) => { el.textContent = txt; })) changed = true;
         continue;
       }
       if (v === undefined) {
@@ -942,7 +968,12 @@
       if (!box) return null;
       let zoom = sh.zoom;
       // with fit, zoom multiplies the fitted zoom (1.05 = a little closer)
-      if (sh.fit != null) zoom = Math.min((view.w - 2 * sh.padding) / Math.max(1, box.w), (view.h - 2 * sh.padding) / Math.max(1, box.h)) * (sh.zoom ?? 1);
+      if (sh.fit != null) {
+        // padding is screen px on each side; never let it eat more than 40% of the frame
+        const pad = Math.max(0, Math.min(sh.padding, view.w * 0.4, view.h * 0.4));
+        if (pad < sh.padding && !sh.__padWarned) { sh.__padWarned = true; I.report('warning', 'camera-padding', `mw.camera shot at ${sh.at}s: padding ${sh.padding} is more than 40% of the frame, so it was reduced to ${Math.round(pad)}.`, null, 'padding is in screen px on each side of the framed element (the frame is ' + Math.round(view.w) + 'x' + Math.round(view.h) + '). To show the element smaller, use a smaller padding with zoom below 1, or center + zoom.'); }
+        zoom = Math.min((view.w - 2 * pad) / Math.max(1, box.w), (view.h - 2 * pad) / Math.max(1, box.h)) * (sh.zoom ?? 1);
+      }
       zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom ?? 1));
       const off = sh.offset || [0, 0];
       return { cx: box.x + box.w / 2 + off[0], cy: box.y + box.h / 2 + off[1], zoom, rot: sh.rotate || 0 };
@@ -1005,6 +1036,7 @@
     const el = typeof tr.el === 'string' ? document.querySelector(tr.el) : tr.el;
     const pth = typeof tr.path === 'string' && !/^\s*[Mm]/.test(tr.path) ? document.querySelector(tr.path) : tr.path;
     if (!el) { I.report('error', 'travel-no-element', `mw.path.travel: "${tr.el}" matched nothing.`, null); return; }
+    if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth);
     const cb = el.offsetParent || el.parentElement;
     const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
     const m0 = mk(0), m1 = mk(1000);
@@ -1044,8 +1076,54 @@
     tr.done = true;
     tr.stops = stops; tr.easeFn = (i) => mw.easing(Array.isArray(ease) ? ease[i] || 'linear' : ease);
   }
+  // SVG shapes (a <circle>, a <g>) travel in their own SVG's coordinates, moved by a transform each frame.
+  const svgTravels = [];
+  function setupTravelSVG(tr, el, pth) {
+    const par = el.parentNode;
+    const inv = par.getScreenCTM().inverse();
+    let pts = [];
+    if (pth && pth.nodeType === 1 && pth.getTotalLength) {
+      const len = pth.getTotalLength(), ctm = pth.getScreenCTM(), sv = pth.ownerSVGElement || pth;
+      const N = Math.max(60, Math.min(600, Math.round(len / 4)));
+      for (let i = 0; i <= N; i++) {
+        const q = pth.getPointAtLength((i / N) * len);
+        const sp = sv.createSVGPoint(); sp.x = q.x; sp.y = q.y;
+        const p2 = sp.matrixTransform(ctm).matrixTransform(inv);
+        pts.push([p2.x, p2.y]);
+      }
+    } else {
+      const pe = pathEl(String(tr.path)); const len = pe.getTotalLength(); const N = Math.max(60, Math.min(600, Math.round(len / 4)));
+      for (let i = 0; i <= N; i++) { const q = pe.getPointAtLength((i / N) * len); pts.push([q.x, q.y]); }
+    }
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const bb = el.getBBox();
+    el.style.transformBox = 'fill-box'; el.style.transformOrigin = '50% 50%';
+    svgTravels.push({ tr, el, pts, cum, cx: bb.x + bb.width / 2, cy: bb.y + bb.height / 2, last: null });
+    tr.done = true;
+  }
+  function updateSvgTravels(T) {
+    let changed = false;
+    for (const st of svgTravels) {
+      const t = I.mapT(st.el, T) - I.clipStartOf(st.el);
+      const L = st.cum[st.cum.length - 1] * Math.max(0, Math.min(1, st.tr.progress(t)));
+      let i = 1; while (i < st.cum.length - 1 && st.cum[i] < L) i++;
+      const seg = Math.max(1e-9, st.cum[i] - st.cum[i - 1]), f = Math.max(0, Math.min(1, (L - st.cum[i - 1]) / seg));
+      const [x0, y0] = st.pts[i - 1], [x1, y1] = st.pts[i];
+      const x = x0 + (x1 - x0) * f, y = y0 + (y1 - y0) * f;
+      const rot = st.tr.opts.rotate;
+      const ang = rot === true || rot === 'auto' ? (Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI : 0;
+      const v = `translate(${r4(x - st.cx)}px, ${r4(y - st.cy)}px)` + (ang ? ` rotate(${r4(ang)}deg)` : '');
+      if (v !== st.last) { st.last = v; st.el.style.transform = v; changed = true; }
+    }
+    return changed;
+  }
   function travel(el, path, opts = {}) {
     const tr = { el, path, opts, done: false };
+    // Stops and easing are known right away, so .progress(t) is the same before and after the video starts.
+    const ease0 = opts.ease || 'in-out-cubic';
+    tr.stops = (opts.stops || [[0, 0], [opts.duration || 2, 1]]).map((s0) => (Array.isArray(s0) ? s0 : [s0.at, s0.to])).sort((x, y) => x[0] - y[0]);
+    tr.easeFn = (i) => mw.easing(Array.isArray(ease0) ? ease0[i] || 'linear' : ease0);
     travels.push(tr);
     if (initDone) setupTravel(tr);
     // progress (0..1) at local time t, e.g. to draw the route behind the traveler
@@ -1084,9 +1162,25 @@
     const cv = document.createElement('canvas');
     cv.setAttribute('data-mw-internal', '');
     cv.width = Math.ceil(W); cv.height = Math.ceil(H);
-    cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:' + (o.zIndex ?? 30);
+    // Layering: on top by default; `behind: '#logo'` puts the particles under that element.
+    let z = o.zIndex ?? o.z ?? 30;
+    const behind = o.behind ? (typeof o.behind === 'string' ? el.querySelector(o.behind) || document.querySelector(o.behind) : o.behind) : null;
+    if (o.behind && !behind) I.report('warning', 'burst-no-target', `mw.burst: behind "${o.behind}" matched nothing.`, null);
+    if (behind) {
+      const bcs = getComputedStyle(behind);
+      if (bcs.position === 'static') behind.style.position = 'relative';
+      let bz = parseInt(bcs.zIndex, 10);
+      if (!isFinite(bz)) { bz = 1; behind.style.zIndex = '1'; }
+      z = bz - 1;
+    }
+    cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:' + z;
     if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
     el.appendChild(cv);
+    // When does it fire (video time)? Warn if that is outside the time its element is on screen.
+    const c = I.nearestClip(el);
+    const T0 = o.global ? o.at : (c ? c.start : 0) + o.at;
+    b.t0 = T0;
+    if (c && (T0 < c.start - 1e-6 || T0 >= c.end)) I.report('warning', 'burst-outside-clip', `mw.burst on ${I.selectorOf ? I.selectorOf(el) : b.target} fires at ${T0.toFixed(2)}s of the video, but that element is only on screen from ${c.start.toFixed(2)}s to ${c.end.toFixed(2)}s.`, null, '`at` counts from the start of the element\'s scene. For a video time (a beat, a voice word) pass { at: 4.2, global: true }.');
     const px = PX();
     const pos = (v, size) => (typeof v === 'string' && v.endsWith('%') ? (parseFloat(v) / 100) * size : (+v || 0) * px);
     const rnd = I.makeRandom(1 + o.seed * 7919);
@@ -1097,18 +1191,26 @@
       parts.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: rnd() * 6.28, spin: (rnd() - 0.5) * 14, flip: rnd() * 6.28, flipS: 4 + rnd() * 8, size: o.size * px * (0.6 + rnd() * 0.8), color: o.colors[Math.floor(rnd() * o.colors.length)], life: o.duration * (0.7 + rnd() * 0.3), delay: rnd() * (o.stagger || 0.06), wob: rnd() * 6.28 });
     }
     b.canvas = cv; b.o = o; b.parts = parts; b.x0 = pos(o.x, W); b.y0 = pos(o.y, H); b.el = el; b.last = null;
+    // from: '#icon' → thrown from the center of that element (measured each frame, so it follows it)
+    b.fromEl = o.from ? (typeof o.from === 'string' ? document.querySelector(o.from) : o.from) : null;
+    if (o.from && !b.fromEl) I.report('warning', 'burst-no-target', `mw.burst: from "${o.from}" matched nothing.`, null);
   }
   function drawBursts(T) {
     let changed = false;
     for (const b of bursts) {
       if (!b.canvas) continue;
-      const t = I.mapT(b.el, T) - I.clipStartOf(b.el) - b.o.at;
+      const t = b.o.global ? T - b.o.at : I.mapT(b.el, T) - I.clipStartOf(b.el) - b.o.at;
       const key = t < 0 || t > b.o.duration * 1.05 + 0.1 ? 'off' : Math.round(t * 1000);
       if (key === b.last) continue;
       b.last = key; changed = true;
       const g = b.canvas.getContext('2d');
       g.clearRect(0, 0, b.canvas.width, b.canvas.height);
       if (key === 'off') continue;
+      if (b.fromEl) {
+        const r = b.fromEl.getBoundingClientRect(), cr = b.canvas.getBoundingClientRect();
+        const kx = b.canvas.width / (cr.width || 1), ky = b.canvas.height / (cr.height || 1);
+        b.x0 = (r.left + r.width / 2 - cr.left) * kx; b.y0 = (r.top + r.height / 2 - cr.top) * ky;
+      }
       const { gravity, drag, shape } = b.o;
       const px = PX();
       for (const p of b.parts) {
@@ -1331,8 +1433,33 @@
   I.hooks.seek.push((T) => {
     let changed = updateScramble(T);
     if (animImgs.length && updateAnimatedImages(T)) changed = true;
+    if (svgTravels.length && updateSvgTravels(T)) changed = true;
     if (bursts.length && drawBursts(T)) changed = true;
-    for (const tl of tlList) if (tl._apply(T)) changed = true;
+    // Elements animated by more than one timeline: merge their values, newest tween wins per property.
+    const count = new Map();
+    for (const tl of tlList) { tl._resolve(); for (const el of tl.tracks.keys()) count.set(el, (count.get(el) || 0) + 1); }
+    const shared = new Set([...count].filter(([, n]) => n > 1).map(([el]) => el));
+    const sink = { shared, list: [] };
+    for (const tl of tlList) if (tl._apply(T, shared.size ? sink : null)) changed = true;
+    if (sink.list.length) {
+      const byEl = new Map();
+      for (const e of sink.list) { if (!byEl.has(e.tm.el)) byEl.set(e.tm.el, []); byEl.get(e.tm.el).push(e); }
+      for (const [el, entries] of byEl) {
+        let st = sharedTracks.get(el);
+        if (!st) {
+          const f = entries[0].tm;
+          st = { el, cache: new Map(), tfBase: f.tfBase, cssPrefix: f.cssPrefix, hasTF: false, inline: {} };
+          sharedTracks.set(el, st);
+        }
+        const vals = {}, best = {};
+        for (const e of entries) {
+          if (e.tm.hasTF) st.hasTF = true;
+          if (e.tm.inline) for (const k of Object.keys(e.tm.inline)) if (!(k in st.inline)) st.inline[k] = e.tm.inline[k];
+          for (const k of Object.keys(e.vals)) if (!(k in best) || e.prio[k] >= best[k]) { best[k] = e.prio[k]; vals[k] = e.vals[k]; }
+        }
+        if (write(st, vals)) changed = true;
+      }
+    }
     return changed;
   });
 

@@ -160,7 +160,31 @@ export class FramePage {
     this.sessionId = sessionId;
     const s = (m, p) => b.send(m, p, sessionId);
     this.s = s;
-    b.on('Runtime.exceptionThrown', (p) => this._err('script-error', (p.exceptionDetails.exception && p.exceptionDetails.exception.description) || p.exceptionDetails.text), sessionId);
+    b.on('Runtime.exceptionThrown', (p) => {
+      const d = p.exceptionDetails;
+      const e = this._err('script-error', ((d.exception && d.exception.description) || d.text).split('\n')[0]);
+      // Say where: line number in the page, plus the text of that line.
+      const url = d.url || (d.stackTrace && d.stackTrace.callFrames[0] && d.stackTrace.callFrames[0].url);
+      const line = d.lineNumber != null && d.url ? d.lineNumber : d.stackTrace && d.stackTrace.callFrames[0] ? d.stackTrace.callFrames[0].lineNumber : d.lineNumber;
+      if (e && url && /^http:\/\/(127\.0\.0\.1|localhost)/.test(url) && line != null) {
+        const file = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+        const base = e.message;
+        e.message = base + ` (${file} line ${line + 1})`;
+        if (typeof fetch === 'function') fetch(url).then((r) => r.text()).then((txt) => {
+          const lines = txt.split('\n');
+          let n = line;
+          // "Identifier 'top' has already been declared": point at the declaration, not the <script> tag
+          const id = /Identifier '([\w$]+)' has already been declared/.exec(base);
+          if (id) {
+            const re = new RegExp('\\b(let|const|class|function)\\s+' + id[1].replace(/\$/g, '\\$') + '\\b');
+            for (let i = line; i < lines.length; i++) if (re.test(lines[i])) { n = i; break; }
+            e.message = base + ` (${file} line ${n + 1})`;
+          }
+          const l = lines[n]; if (l && l.trim()) e.message += `: ${l.trim().slice(0, 140)}`;
+          if (id && /^(top|name|status|parent|self|length|origin|history|location|frames|event|screen|close|open|print|stop|find|focus|blur)$/.test(id[1])) e.message += ` ("${id[1]}" is a built-in browser name: rename the variable, or wrap your script in { … })`;
+        }).catch(() => {});
+      }
+    }, sessionId);
     b.on('Runtime.consoleAPICalled', (p) => {
       if (p.type === 'error' || p.type === 'warning' || (this.opts.verbose && p.type === 'log')) {
         const text = p.args.map((a) => a.value ?? a.description ?? '').join(' ');
@@ -181,7 +205,10 @@ export class FramePage {
     }
   }
   _err(code, message) {
-    if (this.errors.length < 200) this.errors.push({ code, message: String(message).slice(0, 500) });
+    if (this.errors.length >= 200) return null;
+    const e = { code, message: String(message).slice(0, 500) };
+    this.errors.push(e);
+    return e;
   }
   async _beginFrame(screenshot, format = 'jpeg', quality = 92) {
     this.ticks += this.interval;

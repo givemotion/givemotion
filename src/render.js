@@ -58,6 +58,11 @@ function defaultWorkers(totalFrames) {
  */
 export async function openComposition(input, opts = {}) {
   const { file, root, rel } = resolveInput(input);
+  // No --data and the page has no data of its own: use data.json next to the HTML if there is one.
+  if (opts.data == null && /\.html?$/i.test(file)) {
+    const dj = join(dirname(file), 'data.json');
+    if (existsSync(dj) && !/id=["']mw-data["']/i.test(readFileSync(file, 'utf8'))) { try { opts = { ...opts, data: JSON.parse(readFileSync(dj, 'utf8')) }; } catch (e) { throw new Error(`data.json next to the composition is not valid JSON: ${e.message}`); } }
+  }
   const chrome = await ensureChrome({ chrome: opts.chrome, log: opts.log });
   const server = await startServer({ root, maxW: 3840, maxH: 2160, data: opts.data ?? null });
   const config = { mode: opts.mode || 'render', seed: opts.seed ?? 1, data: opts.data ?? null, fps: opts.fps, width: opts.width, height: opts.height };

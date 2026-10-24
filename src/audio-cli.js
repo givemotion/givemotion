@@ -48,5 +48,11 @@ export function formatAudio(r) {
     `quiet gaps (a breath before a drop): ${r.quietGaps.length ? r.quietGaps.map(([a, b]) => a.toFixed(2) + '-' + b.toFixed(2) + 's').join(', ') : 'none'}`,
     `loudness per second (0-1): ${r.loudnessPerSecond.join(' ')}`,
     `In a composition: const music = mw.audio('${r.file}'); music.beats / music.downbeats / music.beat(t)`,
+    ...(r.beats && r.beats.length > 2 ? (() => {
+      const per = (r.beats[r.beats.length - 1] - r.beats[0]) / (r.beats.length - 1);
+      const bar = r.downbeats && r.downbeats.length ? r.downbeats[0] : r.beats[0];
+      return [`Beat grid you can use while building timelines (no waiting): <html data-bpm="${(60 / per).toFixed(3)}" data-beat-offset="${r.beats[0].toFixed(3)}" data-bar-offset="${bar.toFixed(3)}">`,
+        `  then mw.beat(8) = ${(r.beats[0] + 8 * per).toFixed(3)}s (beat 0 is the first beat), mw.bar(2) = ${(bar + 8 * per).toFixed(3)}s (4 beats per bar; set data-beats-per-bar to change)`];
+    })() : []),
   ].join('\n');
 }

@@ -1,12 +1,13 @@
 <!-- block:
 description: Editor window with syntax highlighting and an optional typing effect. Put the code between the tags as plain text (no escaping needed).
-params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p; scales with the short side, default 1200), size (font px, default 34)
+params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p; scales with the short side, default 1200), size (font px, default 34), highlight (lines to highlight: "6" or "2-4,6"), focus (lines to keep bright, the others are dimmed), gutter (true = line numbers), grow (true = the window grows while typing instead of keeping its final size)
+targets: every line is <span class="mw-line" data-line="N"> (aim a camera at it, animate it with a timeline: '.mw-line[data-line="6"]'). Wrap a part of the code in ⟦ ⟧ to mark it: it becomes <span class="mw-mark" data-mark="1"> (2, 3… in order), e.g. await sleep(⟦2 ** i * 250⟧). The ⟦ ⟧ are not shown.
 usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing="40" data-duration="6">const answer = await ai.run(prompt);</mw-include>
 -->
 <div class="mwb-code" style="--w:{{width|1200}};--fs:{{size|34}}" data-enter="scale 0.7 0 out-expo">
   <div class="mwb-code__bar"><i></i><i></i><i></i><span>{{title}}</span></div>
   <textarea hidden class="mwb-code__src">{{content}}</textarea>
-  <pre class="mwb-code__pre"><code data-lang="{{lang|js}}" data-typing="{{typing|0}}" data-delay="{{delay|0.4}}"></code></pre>
+  <pre class="mwb-code__pre"><code data-lang="{{lang|js}}" data-typing="{{typing|0}}" data-delay="{{delay|0.4}}" data-highlight="{{highlight}}" data-focus="{{focus}}" data-gutter="{{gutter}}" data-grow="{{grow}}"></code></pre>
 </div>
 <script>
 (() => {
@@ -18,7 +19,10 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
   while (lines.length && !lines[0].trim()) lines.shift();
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   const ind = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length));
-  const src = lines.map((l) => l.slice(isFinite(ind) ? ind : 0)).join('\n');
+  let src = lines.map((l) => l.slice(isFinite(ind) ? ind : 0)).join('\n');
+  // ⟦marked⟧ parts: remember where they are (in characters of the shown code) and drop the brackets
+  const marks = [];
+  { let out = '', open = -1; for (const ch of src) { if (ch === '\u27e6') open = out.length; else if (ch === '\u27e7' && open >= 0) { marks.push([open, out.length]); open = -1; } else out += ch; } src = out; }
   const KW = {
     js: 'await|async|break|case|catch|class|const|continue|default|delete|do|else|export|extends|finally|for|from|function|if|import|in|instanceof|let|new|of|return|static|super|switch|this|throw|try|typeof|var|void|while|yield|true|false|null|undefined',
     py: 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield|self|print',
@@ -26,20 +30,20 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
     go: 'break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var|nil|true|false',
     rust: 'as|async|await|break|const|continue|crate|else|enum|extern|false|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|Self|static|struct|super|trait|true|type|unsafe|use|where|while',
     css: '',
+    html: '', xml: '', svg: '',
   };
   KW.ts = KW.js + '|interface|type|enum|implements|private|public|readonly|as|keyof|namespace|declare|abstract';
   KW.jsx = KW.js; KW.tsx = KW.ts; KW.sh = KW.bash; KW.python = KW.py;
   const kw = KW[lang] ?? KW.js;
-  const comment = /^(py|python|bash|sh)$/.test(lang) ? '#[^\\n]*' : lang === 'html' ? '<!--[\\s\\S]*?-->' : '\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/';
+  const comment = /^(py|python|bash|sh)$/.test(lang) ? '#[^\\n]*' : /^(html|xml|svg)$/.test(lang) ? '<!--[\\s\\S]*?-->' : '\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/';
   const parts = [
     ['c', comment],
     ['s', '`(?:\\\\.|[^`])*`|"(?:\\\\.|[^"\\n])*"|\'(?:\\\\.|[^\'\\n])*\''],
-    ...(lang === 'html' ? [['t', '<\\/?[A-Za-z][\\w-]*'], ['a', '\\b[\\w-]+(?==)']] : []),
+    ...(/^(html|xml|svg)$/.test(lang) ? [['t', '<\\/?[A-Za-z][\\w-]*'], ['a', '\\b[\\w-]+(?==)']] : []),
     ...(lang === 'css' ? [['a', '[\\w-]+(?=\\s*:)'], ['n', '#[0-9a-fA-F]{3,8}\\b']] : []),
     ['n', '\\b\\d[\\d_]*(?:\\.\\d+)?(?:e[+-]?\\d+)?\\b'],
     ...(kw ? [['k', '\\b(?:' + kw + ')\\b']] : []),
-    ['f', '\\b[A-Za-z_$][\\w$]*(?=\\s*\\()'],
-    ['y', '\\b[A-Z][A-Za-z0-9_]*\\b'],
+    ...(/^(html|xml|svg)$/.test(lang) ? [] : [['f', '\\b[A-Za-z_$][\\w$]*(?=\\s*\\()'], ['y', '\\b[A-Z][A-Za-z0-9_]*\\b']]),
     ['p', '=>|[{}()[\\];,.:=+\\-*/<>!&|?%]'],
   ];
   const re = new RegExp(parts.map((p) => '(' + p[1] + ')').join('|'), 'g');
@@ -57,7 +61,37 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
     }
     html += esc(src.slice(last));
   }
+  // One element per line, so lines can be highlighted, focused, framed by a camera or animated.
+  {
+    const outLines = []; let cur = ''; const stack = [];
+    for (const m2 of html.matchAll(/(<span class="[^"]*">)|(<\/span>)|(\n)|([^<\n]+)/g)) {
+      if (m2[1]) { stack.push(m2[1]); cur += m2[1]; }
+      else if (m2[2]) { stack.pop(); cur += m2[2]; }
+      else if (m2[3]) { outLines.push(cur + '</span>'.repeat(stack.length)); cur = stack.join(''); }
+      else cur += m2[4];
+    }
+    outLines.push(cur + '</span>'.repeat(stack.length));
+    const sel = (v) => { const set = new Set(); for (const part of String(v || '').split(',')) { const r = /^\s*(\d+)\s*(?:-\s*(\d+))?\s*$/.exec(part); if (r) for (let i = +r[1]; i <= +(r[2] || r[1]); i++) set.add(i); } return set; };
+    const hl = sel(code.dataset.highlight), fo = sel(code.dataset.focus);
+    html = outLines.map((l, i) => `<span class="mw-line${hl.has(i + 1) ? ' is-hl' : ''}${fo.size && !fo.has(i + 1) ? ' is-dim' : ''}" data-line="${i + 1}">${l}</span>`).join('');
+    if (/^(true|1|yes)$/i.test(code.dataset.gutter)) root.classList.add('mwb-code--gutter');
+  }
   code.innerHTML = html;
+  // Wrap the ⟦marked⟧ ranges (they may cross token colors).
+  marks.forEach(([a, b], i) => {
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+    let pos = 0, n, start = null, end = null;
+    while ((n = walker.nextNode())) {
+      const len = n.data.length;
+      if (!start && a < pos + len) start = [n, a - pos];
+      if (!end && b <= pos + len) { end = [n, b - pos]; break; }
+      pos += len;
+    }
+    if (!start || !end) return;
+    const r = document.createRange(); r.setStart(...start); r.setEnd(...end);
+    const span = document.createElement('span'); span.className = 'mw-mark'; span.dataset.mark = String(i + 1);
+    span.appendChild(r.extractContents()); r.insertNode(span);
+  });
   // Shrink the font if the longest line would not fit the window.
   mw.wait(document.fonts.ready.then(() => {
     const pre = root.querySelector('pre');
@@ -67,7 +101,7 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
       const need = pre.scrollWidth - parseFloat(getComputedStyle(pre).paddingLeft) * 2;
       pre.style.fontSize = Math.floor(fs * (inner / need) * 0.98) + 'px';
     }
-    pre.style.minHeight = pre.offsetHeight + 'px'; // keep the window size fixed while typing
+    if (!/^(true|1|yes)$/i.test(code.dataset.grow)) pre.style.minHeight = pre.offsetHeight + 'px'; // keep the window size fixed while typing
   }));
   const cps = parseFloat(code.dataset.typing);
   if (cps > 0) { code.setAttribute('data-type', String(cps)); code.setAttribute('data-type-delay', code.dataset.delay); code.setAttribute('data-type-caret', ''); }
@@ -84,4 +118,8 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
 .mwb-code .c{color:#8b949e;font-style:italic} .mwb-code .s{color:#a5d6ff} .mwb-code .n{color:#79c0ff} .mwb-code .k{color:#ff7b72}
 .mwb-code .f{color:#d2a8ff} .mwb-code .y{color:#ffa657} .mwb-code .p{color:#c9d1d9} .mwb-code .t{color:#7ee787} .mwb-code .a{color:#79c0ff}
 .mwb-code .mw-caret{background:#58a6ff}
+.mwb-code .mw-line{display:block;min-height:1lh;margin:0 calc(var(--px)*-44);padding:0 calc(var(--px)*44)}
+.mwb-code .mw-line.is-hl{background:rgba(88,166,255,.16);box-shadow:inset calc(var(--px)*5) 0 0 #58a6ff}
+.mwb-code .mw-line.is-dim{opacity:.35}
+.mwb-code--gutter .mw-line::before{content:attr(data-line);display:inline-block;width:2.2em;margin-right:.8em;text-align:right;color:#6e7681}
 </style>

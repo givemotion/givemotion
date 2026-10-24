@@ -1634,6 +1634,20 @@
   // For plain shapes (no children, no text) we paint the blur at 1/k size and scale it up,
   // which looks the same because the result is already very soft. Opt out: data-mw-exact.
   // ---------------------------------------------------------------------------
+  // Does the element move on its own (a CSS/WAAPI animation, a timeline tween, a path travel or a camera)?
+  function movesByItself(el) {
+    try {
+      if (el.getAnimations().length || el.hasAttribute('data-camera')) return true;
+      if (travels.some((tr) => tr.el === el || (typeof tr.el === 'string' && el.matches(tr.el)))) return true;
+      const seen = new Set();
+      const walk = (tl) => {
+        if (seen.has(tl)) return false;
+        seen.add(tl);
+        return tl.ops.some((op) => (op.type === 'child' ? walk(op.tl) : op.t != null && op.type !== 'label' && op.type !== 'call' && toArray(op.t, tl.scope).includes(el)));
+      };
+      return tlList.some(walk);
+    } catch (e) { return true; }
+  }
   function optimizeBlurs() {
     const els = document.body ? document.body.getElementsByTagName('*') : [];
     for (const el of els) {
@@ -1650,6 +1664,7 @@
       let animated = false;
       try { for (const an of el.getAnimations()) { const kf = an.effect && an.effect.getKeyframes ? an.effect.getKeyframes() : []; for (const k of kf) for (const p of Object.keys(k)) if (!/^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|left|top|right|bottom|offsetDistance|offsetPath)$/.test(p)) animated = true; } } catch (e) {}
       if (animated) continue;
+      const moves = movesByItself(el);
       const k = Math.min(8, Math.max(2, Math.floor(r / 10)));
       el.__mwBlur = true;
       // Bake: a small SVG image (shape + blur) is decoded once; moving it later is just copying pixels.
@@ -1659,20 +1674,28 @@
       const style = `position:absolute;left:${pad}px;top:${pad}px;width:${sw}px;height:${sh}px;background-color:${cs.backgroundColor};background-image:${cs.backgroundImage};background-size:${cs.backgroundSize};background-position:${cs.backgroundPosition};background-repeat:${cs.backgroundRepeat};border-radius:${radius};filter:blur(${br}px)`;
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sw + 2 * pad}" height="${sh + 2 * pad}"><foreignObject x="0" y="0" width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="${esc(style)}"></div></foreignObject></svg>`;
       // An SVG image would be re-rasterized at full size on every paint, so draw it once into a small
-      // canvas: a canvas is a fixed bitmap, and scaling it up costs almost nothing.
+      // canvas: a fixed bitmap, scaled up. A canvas always gets its own composited layer, which suits a blob
+      // that moves (moving a layer is cheap). A blob that stays put shows the same bitmap as a plain <img>
+      // instead: it is painted once into the layer around it, while a layer would be redrawn pixel by pixel on
+      // every frame without a GPU (and would pull everything drawn on top of it into layers too).
       const cv = document.createElement('canvas');
-      cv.setAttribute('data-mw-internal', '');
       cv.width = Math.ceil(sw + 2 * pad); cv.height = Math.ceil(sh + 2 * pad);
-      cv.style.cssText = `position:absolute;left:${-pad * k}px;top:${-pad * k}px;width:${cv.width * k}px;height:${cv.height * k}px;pointer-events:none;display:block`;
+      const box = `position:absolute;left:${-pad * k}px;top:${-pad * k}px;width:${cv.width * k}px;height:${cv.height * k}px;max-width:none;pointer-events:none;display:block`;
       const img = new Image();
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
       const done = img.decode().then(() => {
         cv.getContext('2d').drawImage(img, 0, 0);
-        el.style.setProperty('filter', 'none', 'important');
-        el.style.setProperty('background', 'transparent', 'important');
-        if (cs.position === 'static') el.style.position = 'relative';
-        el.style.overflow = 'visible';
-        el.appendChild(cv);
+        let out = cv;
+        if (!moves) { out = new Image(); out.alt = ''; out.src = cv.toDataURL('image/png'); }
+        out.setAttribute('data-mw-internal', '');
+        out.style.cssText = box;
+        return (out === cv ? Promise.resolve() : out.decode()).then(() => {
+          el.style.setProperty('filter', 'none', 'important');
+          el.style.setProperty('background', 'transparent', 'important');
+          if (cs.position === 'static') el.style.position = 'relative';
+          el.style.overflow = 'visible';
+          el.appendChild(out);
+        });
       }).catch(() => {});
       I.pendingWaits.push(done);
     }

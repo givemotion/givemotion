@@ -619,12 +619,46 @@
       const tg = targetOf(a);
       const cs = tg ? clipStartOf(tg) : 0;
       origin.set(a, mode === 'clip' ? cs : Math.max(t, cs));
+      trimFill(a);
       if (inFrameCallbacks && mode !== 'clip') {
         report('warning', 'non-seekable-animation', 'A CSS animation/transition started inside mw.onFrame(). It will not seek correctly when rendering in parallel.', tg, 'Inside onFrame, set styles directly from t (use mw.interpolate). To start a CSS animation at a time, use data-start on the element instead.', t);
       }
     }
   }
   let inFrameCallbacks = false;
+
+  // A CSS animation whose @keyframes set nothing at 100% (only `from`, like fade-up and most presets) ends on the
+  // element's own style, so the forwards half of `fill-mode: both` changes no pixel. But Chrome keeps every element
+  // with an animation in effect on its own composited layer, redrawn on every frame without a GPU, for the rest of
+  // the clip. So drop the forwards half for those: same look at every time, fewer layers.
+  const endProps = new Map(); // @keyframes name -> Set of properties set at 100% (null: not found)
+  const propKey = (p) => p.toLowerCase().replace(/[^a-z]/g, '').replace(/^webkit/, ''); // 'stroke-dashoffset' = 'strokeDashoffset'
+  function keyframesEnd(name) {
+    if (endProps.has(name)) return endProps.get(name);
+    let found = null;
+    const walk = (rules) => {
+      for (const r of rules) {
+        if (r.type === 7 && r.name === name) { // CSSKeyframesRule; the last one wins
+          found = new Set();
+          for (const k of r.cssRules) if (k.keyText.split(',').some((x) => x.trim() === '100%' || x.trim() === 'to')) for (let i = 0; i < k.style.length; i++) found.add(propKey(k.style[i]));
+        } else if (r.cssRules) walk(r.cssRules);
+      }
+    };
+    try { for (const sh of document.styleSheets) { let rs; try { rs = sh.cssRules; } catch (e) { continue; } walk(rs); } } catch (e) { found = null; }
+    endProps.set(name, found);
+    return found;
+  }
+  function trimFill(a) {
+    try {
+      if (typeof CSSAnimation === 'undefined' || !(a instanceof CSSAnimation) || !a.effect) return;
+      const eff = a.effect, tm = eff.getTiming();
+      if ((tm.fill !== 'both' && tm.fill !== 'forwards') || tm.direction !== 'normal' || tm.iterationStart || !Number.isInteger(tm.iterations) || eff.composite !== 'replace') return;
+      const end = keyframesEnd(a.animationName);
+      if (!end) return;
+      for (const k of eff.getKeyframes()) for (const p of Object.keys(k)) if (!/^(offset|computedOffset|easing|composite)$/.test(p) && end.has(propKey(p))) return;
+      eff.updateTiming({ fill: tm.fill === 'both' ? 'backwards' : 'none' });
+    } catch (e) {}
+  }
 
   function seekAnimations(T) {
     let active = false;
@@ -636,10 +670,29 @@
       if (tg && !tg.isConnected) { known.delete(a); continue; }
       if (!isCss && ps === 'idle' && !ownAnim.has(a)) continue;
       const o = origin.get(a) || 0;
-      const rate = a.playbackRate || 1;
+      const own = ownAnim.has(a);
+      const rate = own ? 1 : a.playbackRate || 1;
+      const ms = ((hasRemap ? mapT(tg, T) : T) - o) * 1000 * rate;
+      // Our own enter/exit/camera animations: an exit that has not started (or an enter that is over) changes
+      // nothing, but Chrome still counts it as about to run and keeps the element on its own composited layer
+      // (with an offscreen pass for blur moves) for its whole life, which costs CPU on every frame without a GPU.
+      // So cancel it while it has no effect (setting currentTime later brings it back, paused, as before), and
+      // while it holds its first keyframe before it starts, run it "backwards": same look, but not about to play.
+      if (own && a.effect) {
+        try {
+          const ct = a.effect.getComputedTiming(), fill = ct.fill;
+          const before = ms < ct.delay, after = ms >= ct.delay + ct.activeDuration;
+          if ((before && fill !== 'backwards' && fill !== 'both') || (after && fill !== 'forwards' && fill !== 'both')) {
+            if (ps !== 'idle') a.cancel();
+            continue;
+          }
+          const dir = before ? -1 : 1;
+          if (a.playbackRate !== dir) a.playbackRate = dir;
+        } catch (e) {}
+      }
       try {
-        if (ps !== 'paused') a.pause();
-        a.currentTime = ((hasRemap ? mapT(tg, T) : T) - o) * 1000 * rate;
+        if (ps !== 'paused' && ps !== 'idle') a.pause();
+        a.currentTime = ms;
       } catch (e) { continue; }
       if (!active) {
         try {

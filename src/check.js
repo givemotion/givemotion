@@ -410,6 +410,7 @@ export async function check(input, opts = {}) {
     let lastGrid = null, lastGridT = -Infinity, busy = false;
     let motion = null;
     const openFrames = []; // the first half second: is anything on screen?
+    const emptyGrid = []; // [t, almost nothing on screen] every half second
     const change = []; // [t, fraction of the picture that changed since the previous grid]
     for (const t of times) {
       await ctx.page.seek(t);
@@ -421,7 +422,9 @@ export async function check(input, opts = {}) {
       if (pace && t - lastGridT >= 0.49) {
         const jpg = await ctx.page.capture('jpeg', 60);
         const g = await ctx.page.evaluate(`window.__mwGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
-        if (t < 0.6) { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++; openFrames.push({ t, empty: off / g.length < 0.01 && !a.textCount }); }
+        { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++;
+          if (t < 0.6) openFrames.push({ t, empty: off / g.length < 0.01 && !a.textCount });
+          emptyGrid.push([t, off / g.length < 0.015]); }
         if (lastGrid) { let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - lastGrid[i]) > 6) n++; change.push([t, n / g.length, busy]); }
         lastGrid = g; lastGridT = t; busy = false;
       }
@@ -445,6 +448,15 @@ export async function check(input, opts = {}) {
     const logs = groupLogs(await ctx.page.evaluate('window.mw && mw.__logs ? mw.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
     if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second is an empty frame. The first frame is the thumbnail and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
+    // Almost nothing on screen for a second or more in the middle (a camera between two far-apart parts, a gap
+    // between scenes, a zoom so far out that everything is a speck)
+    for (let i = 0; i < emptyGrid.length; i++) {
+      if (!emptyGrid[i][1]) continue;
+      let j = i; while (j + 1 < emptyGrid.length && emptyGrid[j + 1][1]) j++;
+      const a0 = emptyGrid[i][0], b0 = emptyGrid[j][0];
+      if (j > i && a0 > 0.6) issues.push({ severity: 'warning', code: 'empty-frame', time: Math.round(a0 * 100) / 100, until: Math.round(b0 * 100) / 100, ranges: [[Math.round(a0 * 100) / 100, Math.round(b0 * 100) / 100]], message: 'Almost nothing is on screen from ' + a0.toFixed(1) + ' s to ' + b0.toFixed(1) + ' s.', fix: 'Keep something in view: move the camera between parts that are closer together (or faster), start the next element sooner, or do not zoom out that far.' });
+      i = j;
+    }
     motion = change.length ? { every: 0.5, from: change[0][0] - 0.5, values: change.map(([, f, b]) => Math.round((b ? Math.max(f, 0.06) : f) * 1000) / 1000) } : null;
     let merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
     // Some problems only matter if they last (a label sliding past the frame edge during a pan is fine).

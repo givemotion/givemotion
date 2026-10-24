@@ -85,11 +85,14 @@ backgrounds need no own layer), a "layer area" number in `bench` (`bench/speed/l
 measurement on a GPU machine and on 8-16 cores. Files: `src/browser.js`, `src/render.js`, `src/bench.js`, blocks.
 
 ## N5. `analyze` accuracy
-Clean videos: all scene changes found. Busy motion graphics (constant motion, shared background): about 3 of 5 found,
-whips and irises sometimes missed or mislabeled (`docs/experiments` has no table yet; test videos: render
-`examples/vertical-short`). Ideas: train thresholds on our own renders where `inspect` gives the true transitions
-(a small script that scores precision/recall), OCR as an optional extra, per-minute summaries for long videos.
-Files: `src/analyze.js`.
+Measured: `node bench/analyze/score.mjs` renders 13 videos with known scene changes (from `inspect`) and scores
+`analyze`. Now: scene changes found 100% (tuning) / 90% (held-out), precision 0.95 / 0.77, transition type right
+81% / 65% of found (was 64% / 69% found, 61% / 50% typed); 30 s 1080p analyzes in 6 s (was 18 s).
+Results and the method: `docs/experiments/2026-10-analyze-accuracy.md`. Still open: see-through scenes whose content
+enters during a wipe/iris (direction taken from the entrances), dip on a dark shared background (reads as fade), `zoom`
+(reads as fade), flip/morph/clock, fast `mw.camera` pans and pull-outs over a world (read as push/zoom-out). Ideas:
+a "see-through transition" model, OCR as an optional extra, per-minute summaries for long videos.
+Files: `src/analyze.js`, `bench/analyze/`.
 
 ## Small known issues
 - `text-covered` skips dimmed text (opacity < 0.5) and transitions; a moving element fully covering a settled label for

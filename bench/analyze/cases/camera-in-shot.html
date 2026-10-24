@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- analyze benchmark (tuning): camera moves inside shots that must NOT count as scene changes.
+     Shot 1: mw.camera over a big world (fits, a fast pan, a pull out to everything) with cards entering.
+     Shot 2 (fade in): push + float with a big title sliding in. Shot 3 (hard cut): a long move-left over a strip.
+     True scene changes: 2. -->
+<html data-width="1280" data-height="720" data-fps="30">
+<head>
+<style>
+  body { margin: 0; background: #f6f3ec; color: #1e1e1e; font-family: Inter, system-ui, sans-serif; }
+  .scene { overflow: hidden; }
+  #world { position: absolute; left: 0; top: 0; width: 2600px; height: 1500px; }
+  .c { position: absolute; width: 420px; height: 260px; border-radius: 24px; border: 5px solid #1e1e1e; background: #fff; padding: 30px; box-sizing: border-box; }
+  .c h2 { margin: 0 0 12px; font-size: 54px; font-weight: 900; letter-spacing: -0.02em; }
+  .c p { margin: 0; font-size: 26px; }
+  .c i { position: absolute; right: 26px; bottom: 26px; width: 70px; height: 70px; border-radius: 50%; }
+  .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(0,0,0,.07) 2px, transparent 2px), linear-gradient(90deg, rgba(0,0,0,.07) 2px, transparent 2px); background-size: 100px 100px; }
+  .line { position: absolute; height: 6px; background: #1e1e1e; transform-origin: left; }
+  h1 { position: absolute; margin: 0; font-size: 140px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+  .strip { position: absolute; left: 0; top: 170px; display: flex; gap: 40px; padding-left: 80px; }
+  .tile { flex: none; width: 300px; height: 380px; border-radius: 28px; display: grid; place-items: center; font-size: 90px; font-weight: 900; color: #fff; }
+</style>
+</head>
+<body>
+<main data-sequence>
+  <section class="scene" data-duration="7">
+    <div id="world">
+      <div class="grid"></div>
+      <div class="line" style="left:560px;top:330px;width:700px" data-enter="grow-x 0.6 1.2"></div>
+      <div class="line" style="left:1500px;top:560px;width:600px;rotate:30deg" data-enter="grow-x 0.6 3"></div>
+      <div class="c" id="ca" style="left:140px;top:200px" data-enter="fade-up 0.5 0.2"><h2>Idea</h2><p>Start with a question.</p><i style="background:#e8590c"></i></div>
+      <div class="c" id="cb" style="left:1260px;top:200px" data-enter="fade-up 0.5 1.4"><h2>Draft</h2><p>Sketch the first answer.</p><i style="background:#1971c2"></i></div>
+      <div class="c" id="cc" style="left:2000px;top:950px" data-enter="fade-up 0.5 3.4"><h2>Test</h2><p>Show it to someone.</p><i style="background:#2f9e44"></i></div>
+      <div class="c" id="cd" style="left:300px;top:1000px" data-enter="fade-up 0.5 4.8"><h2>Ship</h2><p>Put it out there.</p><i style="background:#ae3ec9"></i></div>
+    </div>
+  </section>
+  <section class="scene" data-duration="5" data-transition="fade 0.5" data-check="crop-ok" style="background:#1e1e1e;color:#f6f3ec" data-camera="push 1.15, float 20">
+    <h1 style="left:110px;top:150px" data-enter="slide-right 0.7 0.3">Look closer</h1>
+    <h1 style="left:110px;top:330px;color:#e8590c" data-enter="slide-left 0.7 0.8">every frame</h1>
+    <div style="position:absolute;left:110px;top:540px;width:900px;height:16px;background:#f6f3ec;border-radius:8px" data-enter="grow-x 0.8 1.4"></div>
+  </section>
+  <section class="scene" data-duration="4" data-check="crop-ok" style="background:#f6f3ec" data-camera="move-left 700">
+    <div class="strip">
+      <div class="tile" style="background:#e8590c">A</div><div class="tile" style="background:#1971c2">B</div><div class="tile" style="background:#2f9e44">C</div>
+      <div class="tile" style="background:#ae3ec9">D</div><div class="tile" style="background:#1e1e1e">E</div><div class="tile" style="background:#f08c00">F</div>
+    </div>
+  </section>
+</main>
+<script>
+mw.camera('#world')
+  .shot(0, { fit: '#ca', padding: 120 })
+  .shot(1.2, { fit: '#cb', padding: 120, duration: 1 })
+  .shot(3.2, { fit: '#cc', padding: 120, duration: 0.7, ease: 'in-out-quart' })
+  .shot(4.6, { fit: 'all', padding: 40, duration: 1.2 });
+</script>
+</body>
+</html>

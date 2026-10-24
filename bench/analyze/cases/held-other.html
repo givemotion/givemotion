@@ -1,0 +1,48 @@
+<!doctype html>
+<!-- analyze benchmark (HELD OUT, not used for tuning): the less common transitions on gradient scene backgrounds.
+     flip, blur, morph, diagonal, clock, cover-left. -->
+<html data-width="1280" data-height="720" data-fps="30">
+<head>
+<style>
+  body { margin: 0; background: #000; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  .scene { overflow: hidden; }
+  h1 { position: absolute; margin: 0; font-size: 110px; font-weight: 900; letter-spacing: -0.03em; line-height: 1; }
+  p { position: absolute; margin: 0; font-size: 30px; font-weight: 600; opacity: .85; }
+  .logo { position: absolute; width: 200px; height: 200px; border-radius: 44px; background: #ffd23f; display: grid; place-items: center; font-size: 110px; font-weight: 900; color: #1b1b1b; }
+  .shape { position: absolute; }
+</style>
+</head>
+<body>
+<main data-sequence>
+  <section class="scene" data-duration="2.4" style="background:radial-gradient(circle at 30% 30%, #3d5a80, #141e30)">
+    <h1 style="left:100px;top:160px" data-enter="fade-up 0.5 0.2">Turn the page</h1>
+    <p style="left:106px;top:300px" data-enter="fade 0.4 0.6">a flip comes next</p>
+    <div class="shape" style="right:120px;bottom:90px;width:260px;height:260px;border-radius:50%;background:#ee6c4d" data-enter="pop 0.5 0.5"></div>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="flip 0.6" style="background:linear-gradient(160deg, #ff9a8b, #ff6a88)">
+    <h1 style="left:420px;top:110px;color:#2b0f1a" data-enter="fade-down 0.5 0.4">Flipped</h1>
+    <div class="shape" style="left:300px;top:320px;width:680px;height:220px;border-radius:30px;background:#2b0f1a" data-enter="scale 0.5 0.6"></div>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="blur 0.5" style="background:linear-gradient(200deg, #0f2027, #2c5364)">
+    <h1 style="left:110px;top:430px" data-enter="fade-right 0.5 0.4">Soft focus</h1>
+    <div class="logo" style="left:160px;top:120px" data-morph="logo">M</div>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="morph 0.6" style="background:linear-gradient(135deg, #134e5e, #71b280)">
+    <div class="logo" style="left:900px;top:300px;width:280px;height:280px;font-size:150px" data-morph="logo">M</div>
+    <h1 style="left:100px;top:140px" data-enter="fade-up 0.5 0.6">Carried over</h1>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="diagonal 0.6" style="background:linear-gradient(90deg, #f7971e, #ffd200)">
+    <h1 style="left:140px;top:280px;color:#1b1b1b" data-enter="fade-up 0.5 0.4">On the slant</h1>
+    <div class="shape" style="right:140px;top:90px;width:200px;height:200px;background:#1b1b1b;rotate:45deg" data-enter="spin-in 0.6 0.5"></div>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="clock 0.6" style="background:radial-gradient(circle at 70% 60%, #6a3093, #1c0f2e)">
+    <h1 style="left:420px;top:280px" data-enter="pop 0.5 0.4">Tick tock</h1>
+    <div class="shape" style="left:120px;top:100px;width:150px;height:150px;border-radius:50%;border:14px solid #a044ff;box-sizing:border-box"></div>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="cover-left 0.5" style="background:linear-gradient(180deg, #e0eafc, #cfdef3)">
+    <h1 style="left:100px;top:120px;color:#14213d" data-enter="fade-left 0.5 0.4">Slide over</h1>
+    <div class="shape" style="left:100px;top:330px;width:1000px;height:80px;border-radius:40px;background:#fca311" data-enter="grow-x 0.6 0.6"></div>
+  </section>
+</main>
+</body>
+</html>

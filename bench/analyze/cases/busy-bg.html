@@ -1,0 +1,77 @@
+<!doctype html>
+<!-- analyze benchmark (tuning): a background that never stops moving (scrolling stripes, drifting dots,
+     a turning ring) shared by all scenes, plus motion inside each scene.
+     whip-up, iris, push-left, cut, dip, zoom-through. -->
+<html data-width="1280" data-height="720" data-fps="30">
+<head>
+<style>
+  body { margin: 0; background: #11131c; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  main { z-index: 5; }
+  #stripes { position: absolute; inset: -100px; background: repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 30px, transparent 30px 70px); animation: scroll 2s linear infinite; }
+  @keyframes scroll { to { translate: 76px 0; } }
+  .p { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: rgba(160,200,255,.55); animation: drift linear infinite; }
+  @keyframes drift { from { translate: 0 0; } to { translate: 260px -420px; } }
+  #ring { position: absolute; left: 50%; top: 50%; width: 900px; height: 900px; margin: -450px; border-radius: 50%; border: 3px dashed rgba(255,255,255,.12); animation: turn 12s linear infinite; }
+  @keyframes turn { to { rotate: 360deg; } }
+  h1 { position: absolute; margin: 0; font-size: 96px; font-weight: 900; letter-spacing: -0.03em; line-height: 1; }
+  .spin { position: absolute; width: 120px; height: 120px; border-radius: 22px; animation: turn 2.5s linear infinite; }
+  .bob { position: absolute; border-radius: 50%; animation: bob 1.2s ease-in-out infinite alternate; }
+  @keyframes bob { to { translate: 0 -60px; } }
+  .meter { position: absolute; height: 26px; border-radius: 13px; background: rgba(255,255,255,.12); overflow: hidden; }
+  .meter i { position: absolute; inset: 0; transform-origin: left; animation: fill 1.6s ease-in-out infinite alternate; }
+  @keyframes fill { from { scale: .1 1; } to { scale: 1 1; } }
+</style>
+</head>
+<body>
+<div class="scene" id="bg"><div id="stripes"></div><div id="ring"></div><div id="dots"></div></div>
+<script>
+  // 36 drifting dots, placed by index (no randomness needed)
+  const dots = document.getElementById('dots');
+  for (let i = 0; i < 36; i++) {
+    const d = document.createElement('div');
+    d.className = 'p';
+    d.style.left = ((i * 211) % 1280) + 'px';
+    d.style.top = (300 + ((i * 137) % 520)) + 'px';
+    d.style.animationDuration = (3 + (i % 5)) + 's';
+    d.style.animationDelay = (-(i % 7) * 0.4) + 's';
+    dots.appendChild(d);
+  }
+</script>
+<main data-sequence>
+  <section class="scene" data-duration="2.6">
+    <h1 style="left:100px;top:120px" data-enter="fade-up 0.5 0.2">Always on</h1>
+    <div class="spin" style="left:140px;top:340px;background:#ff6b6b"></div>
+    <div class="meter" style="left:340px;top:390px;width:600px"><i style="background:#ff6b6b"></i></div>
+  </section>
+  <section class="scene" data-duration="2.6" data-transition="whip-up 0.3">
+    <h1 style="right:110px;top:420px" data-enter="fade-left 0.4 0.3">Never still</h1>
+    <div class="bob" style="left:180px;top:200px;width:180px;height:180px;background:#ffd166"></div>
+    <div class="bob" style="left:420px;top:240px;width:120px;height:120px;background:#06d6a0;animation-delay:-.5s"></div>
+  </section>
+  <section class="scene" data-duration="2.6" data-transition="iris 0.5">
+    <h1 style="left:330px;top:90px" data-enter="fade-down 0.4 0.3">Round we go</h1>
+    <div class="spin" style="left:300px;top:330px;width:200px;height:200px;background:#118ab2;border-radius:50% 10%"></div>
+    <div class="spin" style="left:760px;top:330px;width:200px;height:200px;background:#ef476f;animation-direction:reverse"></div>
+  </section>
+  <section class="scene" data-duration="2.6" data-transition="push-left 0.4">
+    <h1 style="left:100px;top:520px" data-enter="fade-up 0.4 0.3">Keep pushing</h1>
+    <div class="meter" style="left:100px;top:120px;width:1000px;height:40px"><i style="background:#06d6a0"></i></div>
+    <div class="meter" style="left:100px;top:200px;width:800px;height:40px"><i style="background:#ffd166;animation-delay:-.6s"></i></div>
+    <div class="meter" style="left:100px;top:280px;width:900px;height:40px"><i style="background:#ef476f;animation-delay:-1.1s"></i></div>
+  </section>
+  <section class="scene" data-duration="2.6">
+    <h1 style="left:420px;top:260px" data-enter="pop 0.4 0.2">Cut!</h1>
+    <div class="bob" style="left:1000px;top:120px;width:150px;height:150px;background:#f78c6b"></div>
+  </section>
+  <section class="scene" data-duration="2.6" data-transition="dip 0.6">
+    <h1 style="left:100px;top:100px" data-enter="fade-right 0.5 0.4">Fade to dark</h1>
+    <div class="spin" style="right:180px;top:360px;width:220px;height:220px;background:#9b5de5"></div>
+  </section>
+  <section class="scene" data-duration="2" data-transition="zoom-through 0.4">
+    <h1 style="left:380px;top:300px" data-enter="scale 0.5 0.3">Fly through</h1>
+    <div class="bob" style="left:150px;top:150px;width:100px;height:100px;background:#00bbf9"></div>
+    <div class="bob" style="right:150px;top:450px;width:100px;height:100px;background:#fee440"></div>
+  </section>
+</main>
+</body>
+</html>

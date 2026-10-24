@@ -1,0 +1,54 @@
+<!doctype html>
+<!-- analyze benchmark (tuning): moving transitions on plain backgrounds.
+     wipe-right, cover-up, whip-down, zoom-through, push-down, a hard cut. -->
+<html data-width="1280" data-height="720" data-fps="30">
+<head>
+<style>
+  body { margin: 0; background: #000; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  .scene { overflow: hidden; }
+  h1 { position: absolute; margin: 0; font-size: 130px; font-weight: 900; letter-spacing: -0.04em; line-height: 1; }
+  p { position: absolute; margin: 0; font-size: 30px; font-weight: 600; }
+  .dot { position: absolute; border-radius: 50%; }
+  .box { position: absolute; border-radius: 22px; }
+  .bars { position: absolute; display: flex; gap: 18px; align-items: flex-end; }
+  .bars i { display: block; width: 46px; border-radius: 8px 8px 0 0; }
+</style>
+</head>
+<body>
+<main data-sequence>
+  <section class="scene" data-duration="2.2" style="background:#101820">
+    <h1 style="left:90px;top:120px" data-enter="fade-up 0.5 0.2">ONE</h1>
+    <div class="bars" style="left:100px;bottom:90px;height:300px"><i style="height:120px;background:#f2aa4c" data-enter="grow-y 0.5 0.3"></i><i style="height:220px;background:#f2aa4c" data-enter="grow-y 0.5 0.4"></i><i style="height:170px;background:#f2aa4c" data-enter="grow-y 0.5 0.5"></i><i style="height:290px;background:#f2aa4c" data-enter="grow-y 0.5 0.6"></i></div>
+    <div class="dot" style="right:140px;top:200px;width:320px;height:320px;border:24px solid #f2aa4c;box-sizing:border-box"></div>
+  </section>
+  <section class="scene" data-duration="2.2" data-transition="wipe-right 0.6" style="background:#fee715;color:#101820">
+    <h1 style="right:100px;top:200px" data-enter="fade-left 0.5 0.5">TWO</h1>
+    <div class="box" style="left:90px;top:90px;width:420px;height:540px;background:#101820" data-enter="fade 0.4 0.3"></div>
+  </section>
+  <section class="scene" data-duration="2.2" data-transition="cover-up 0.5" style="background:#3a0ca3" data-camera="push 1.05">
+    <h1 style="left:380px;top:80px" data-enter="fade-down 0.5 0.4">THREE</h1>
+    <div class="dot" style="left:180px;top:300px;width:260px;height:260px;background:#f72585" data-enter="pop 0.5 0.5"></div>
+    <div class="dot" style="left:520px;top:340px;width:200px;height:200px;background:#4cc9f0" data-enter="pop 0.5 0.6"></div>
+    <div class="dot" style="left:800px;top:320px;width:240px;height:240px;background:#7209b7;border:6px solid #fff" data-enter="pop 0.5 0.7"></div>
+  </section>
+  <section class="scene" data-duration="2.2" data-transition="whip-down 0.35" style="background:#f72585">
+    <h1 style="left:100px;top:400px" data-enter="fade-up 0.4 0.3">FOUR</h1>
+    <div class="box" style="right:100px;top:80px;width:380px;height:240px;background:#fff" data-enter="scale 0.4 0.4"></div>
+    <p style="right:120px;top:350px" data-enter="fade 0.3 0.6">a fast whip, blurred</p>
+  </section>
+  <section class="scene" data-duration="2.2" data-transition="zoom-through 0.5" style="background:#4cc9f0;color:#0b132b">
+    <h1 style="left:330px;top:250px" data-enter="fade 0.4 0.4">FIVE</h1>
+    <div class="dot" style="left:80px;top:80px;width:140px;height:140px;background:#0b132b"></div>
+    <div class="dot" style="right:80px;bottom:80px;width:140px;height:140px;background:#0b132b"></div>
+  </section>
+  <section class="scene" data-duration="2.2" data-transition="push-down 0.5" style="background:#2b2d42">
+    <h1 style="left:90px;top:90px" data-enter="fade-right 0.5 0.3">SIX</h1>
+    <div class="box" style="left:90px;top:300px;width:1100px;height:60px;background:#8d99ae" data-enter="grow-x 0.6 0.4"></div>
+    <div class="box" style="left:90px;top:400px;width:700px;height:60px;background:#edf2f4" data-enter="grow-x 0.6 0.6"></div>
+  </section>
+  <section class="scene" data-duration="2" style="background:#ef233c">
+    <h1 style="left:420px;top:280px" data-enter="pop 0.5 0.3">SEVEN</h1>
+  </section>
+</main>
+</body>
+</html>

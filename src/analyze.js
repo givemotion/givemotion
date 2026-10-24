@@ -78,36 +78,161 @@ export function grabFrames(file, times, { fps, width = 480 } = {}) {
 // Picture measures
 // ---------------------------------------------------------------------------
 const lumaOf = (rgb) => { const n = rgb.length / 3, o = new Uint8Array(n); for (let i = 0, j = 0; j < n; i += 3, j++) o[j] = (54 * rgb[i] + 183 * rgb[i + 1] + 19 * rgb[i + 2]) >> 8; return o; };
-/** Best global move from frame a to frame b (camera estimate): shift in grid px and zoom around the center. */
-function globalMotion(a, b, w, h) {
-  const cx = (w - 1) / 2, cy = (h - 1) / 2, mx = Math.round(w * 0.12), my = Math.round(h * 0.12);
-  const cost = (dx, dy, z) => {
-    let s = 0, n = 0;
-    for (let y = my; y < h - my; y += 1) {
-      for (let x = mx; x < w - mx; x += 1) {
-        // where this pixel of b was in a
-        const ax = Math.round(cx + (x - cx) / z - dx), ay = Math.round(cy + (y - cy) / z - dy);
-        if (ax < 0 || ay < 0 || ax >= w || ay >= h) continue;
-        s += Math.abs(b[y * w + x] - a[ay * w + ax]); n++;
-      }
+// where each column / row of b sits in a for a zoom z around the center (the same for every frame of a size)
+const zoomMaps = new Map();
+function zoomMap(w, h, z) {
+  const key = `${w}x${h}@${z}`;
+  let m = zoomMaps.get(key);
+  if (!m) {
+    const cx = (w - 1) / 2, cy = (h - 1) / 2;
+    m = { xs: Int16Array.from({ length: w }, (_, x) => Math.round(cx + (x - cx) / z)), ys: Int16Array.from({ length: h }, (_, y) => Math.round(cy + (y - cy) / z)) };
+    zoomMaps.set(key, m);
+  }
+  return m;
+}
+/** Mean luma difference between b and a moved by (dx, dy) and zoomed by z; only where `mask` is set (if given). */
+function moveCost(a, b, w, h, dx, dy, z, mask) {
+  const { xs, ys } = zoomMap(w, h, z), mx = Math.round(w * 0.12), my = Math.round(h * 0.12);
+  let s = 0, n = 0, all = 0;
+  for (let y = my; y < h - my; y++) {
+    const ay = ys[y] - dy, bo = y * w;
+    for (let x = mx; x < w - mx; x++) {
+      if (mask && !mask[bo + x]) continue;
+      all++;
+      const ax = xs[x] - dx;
+      if (ay < 0 || ay >= h || ax < 0 || ax >= w) continue;
+      s += Math.abs(b[bo + x] - a[ay * w + ax]); n++;
     }
-    return n ? s / n : 255;
-  };
-  const still = cost(0, 0, 1);
-  let best = { dx: 0, dy: 0, z: 1, c: still };
-  const R = 8;
-  for (const z of [0.94, 0.97, 1, 1.03, 1.06]) {
+  }
+  // a move that leaves most of the picture outside the frame cannot be judged
+  return n >= 12 && n >= all * 0.5 ? s / n : 255;
+}
+/** Share of the pixels of b (central part) within 10 luma levels of a moved by (dx, dy) and zoomed by z. */
+function fitShare(a, b, w, h, dx, dy, z) {
+  const { xs, ys } = zoomMap(w, h, z), mx = Math.round(w * 0.12), my = Math.round(h * 0.12);
+  let ok = 0, n = 0;
+  for (let y = my; y < h - my; y++) {
+    const ay = ys[y] - dy;
+    for (let x = mx; x < w - mx; x++) {
+      const ax = xs[x] - dx;
+      if (ay < 0 || ay >= h || ax < 0 || ax >= w) continue;
+      n++;
+      if (Math.abs(b[y * w + x] - a[ay * w + ax]) <= 10) ok++;
+    }
+  }
+  return n ? ok / n : 0;
+}
+const halves = new WeakMap();
+/** The picture at half size (2x2 average), cached per frame. */
+function half(L, w, h, isMask) {
+  let o = halves.get(L);
+  if (o) return o;
+  const W = w >> 1, H = h >> 1;
+  o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const q = 2 * y * w + 2 * x;
+    o[y * W + x] = isMask ? L[q] | L[q + 1] | L[q + w] | L[q + w + 1] : (L[q] + L[q + 1] + L[q + w] + L[q + w + 1] + 2) >> 2;
+  }
+  halves.set(L, o);
+  return o;
+}
+const CAMERA_ZOOMS = [0.94, 0.97, 1, 1.03, 1.06];
+/**
+ * Best global move from frame a to frame b (camera estimate): shift in grid px and zoom around the center.
+ * Searched at half size first (shifts up to `range` grid px), then refined at full size.
+ * With `mask`, only those pixels of b count (e.g. the content, not a still background).
+ */
+function globalMotion(a, b, w, h, { mask = null, range = 16, zooms = CAMERA_ZOOMS } = {}) {
+  const W = w >> 1, H = h >> 1, A = half(a, w, h), B = half(b, w, h), M = mask ? half(mask, w, h, true) : null;
+  const R = Math.max(1, Math.round(range / 2));
+  let best = { dx: 0, dy: 0, z: 1, c: moveCost(A, B, W, H, 0, 0, 1, M) };
+  for (const z of zooms) {
     for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-      const c = cost(dx, dy, z);
+      const c = moveCost(A, B, W, H, dx, dy, z, M);
       if (c < best.c - 1e-9) best = { dx, dy, z, c };
     }
   }
+  // refine at full size around the coarse answer
+  const cost = (dx, dy, z) => moveCost(a, b, w, h, dx, dy, z, mask);
+  const still = cost(0, 0, 1);
+  const zi = zooms.indexOf(best.z), zs = [...new Set([best.z, (best.z + (zooms[zi - 1] ?? best.z)) / 2, (best.z + (zooms[zi + 1] ?? best.z)) / 2])];
+  let fine = { dx: 0, dy: 0, z: 1, c: still };
+  for (const z of zs) for (let dy = 2 * best.dy - 1; dy <= 2 * best.dy + 1; dy++) for (let dx = 2 * best.dx - 1; dx <= 2 * best.dx + 1; dx++) {
+    const c = cost(dx, dy, z);
+    if (c < fine.c - 1e-9) fine = { dx, dy, z, c };
+  }
   // sub-pixel: fit a parabola through the costs next to the best shift
-  const sub = (c0, cm, cp) => { const d = cm - 2 * c0 + cp; return d > 1e-9 ? Math.max(-0.5, Math.min(0.5, (cm - cp) / (2 * d))) : 0; };
-  const fx = sub(best.c, cost(best.dx - 1, best.dy, best.z), cost(best.dx + 1, best.dy, best.z));
-  const fy = sub(best.c, cost(best.dx, best.dy - 1, best.z), cost(best.dx, best.dy + 1, best.z));
-  return { ...best, dx: best.dx + fx, dy: best.dy + fy, still };
+  const sub = (c0, cm, cp) => { const d = cm - 2 * c0 + cp; return d > 1e-9 && cm < 255 && cp < 255 ? Math.max(-0.5, Math.min(0.5, (cm - cp) / (2 * d))) : 0; };
+  const fx = sub(fine.c, cost(fine.dx - 1, fine.dy, fine.z), cost(fine.dx + 1, fine.dy, fine.z));
+  const fy = sub(fine.c, cost(fine.dx, fine.dy - 1, fine.z), cost(fine.dx, fine.dy + 1, fine.z));
+  return { ...fine, dx: fine.dx + fx, dy: fine.dy + fy, still };
 }
+
+/**
+ * The three simple moves of a transition, each on its own, from frame a to frame b: a slide along x, a slide along y,
+ * a zoom around the center. Separate searches do not trade one axis against the other (a horizontal edge says nothing
+ * about x). Returns each move's best value and cost, and the cost of no move.
+ */
+function axisMotion(a, b, w, h, { mask = null, range = 32, zooms = [0.8, 0.86, 0.91, 0.95, 0.975, 1.025, 1.05, 1.1, 1.16, 1.25] } = {}) {
+  const W = w >> 1, H = h >> 1, A = half(a, w, h), B = half(b, w, h), M = mask ? half(mask, w, h, true) : null;
+  const R = Math.max(1, Math.round(range / 2));
+  const cost = (dx, dy, z) => moveCost(a, b, w, h, dx, dy, z, mask);
+  const still = cost(0, 0, 1);
+  const line = (axis) => {
+    let bd = 0, bc = Infinity;
+    for (let d = -R; d <= R; d++) { if (!d) continue; const c = axis ? moveCost(A, B, W, H, 0, d, 1, M) : moveCost(A, B, W, H, d, 0, 1, M); if (c < bc - 1e-9) { bc = c; bd = d; } }
+    let fd = 0, fc = Infinity;
+    for (let d = 2 * bd - 1; d <= 2 * bd + 1; d++) { if (!d) continue; const c = axis ? cost(0, d, 1) : cost(d, 0, 1); if (c < fc - 1e-9) { fc = c; fd = d; } }
+    return { d: fd, c: fc };
+  };
+  let bz = 1, bc = Infinity;
+  for (const z of zooms) { const c = moveCost(A, B, W, H, 0, 0, z, M); if (c < bc - 1e-9) { bc = c; bz = z; } }
+  return { still, x: line(0), y: line(1), z: { z: bz, c: cost(0, 0, bz) } };
+}
+
+/**
+ * Where did the content of `ref` (the pixels in `pts`) go in `img`: the best shift along x or along y, up to half the
+ * frame, and how much better it fits than no shift (ratio < 1). One axis at a time, like a push or a whip.
+ */
+function contentShift(ref, img, pts, w, h) {
+  const cost = (dx, dy) => {
+    let s = 0, m = 0;
+    for (const q of pts) {
+      const x = (q % w) + dx, y = ((q / w) | 0) + dy;
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      s += Math.abs(img[y * w + x] - ref[q]); m++;
+    }
+    return m >= pts.length * 0.4 && m >= 10 ? s / m : Infinity;
+  };
+  const c0 = cost(0, 0);
+  let best = { axis: 'x', d: 0, c: Infinity };
+  for (let d = -(w >> 1); d <= w >> 1; d++) if (d) { const c = cost(d, 0); if (c < best.c - 1e-9) best = { axis: 'x', d, c }; }
+  for (let d = -(h >> 1); d <= h >> 1; d++) if (d) { const c = cost(0, d); if (c < best.c - 1e-9) best = { axis: 'y', d, c }; }
+  return { ...best, ratio: c0 > 0 ? best.c / c0 : 1 };
+}
+
+/** Per color channel, the darkest and brightest value in each 3x3 neighbourhood (for comparisons that forgive a 1 px move). */
+function envelope(rgb, w, h) {
+  const n = w * h * 3, tmn = new Uint8Array(n), tmx = new Uint8Array(n), mn = new Uint8Array(n), mx = new Uint8Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let c = 0; c < 3; c++) {
+    const k = (y * w + x) * 3 + c, l = x > 0 ? k - 3 : k, r = x < w - 1 ? k + 3 : k;
+    tmn[k] = Math.min(rgb[l], rgb[k], rgb[r]); tmx[k] = Math.max(rgb[l], rgb[k], rgb[r]);
+  }
+  const row = w * 3;
+  for (let y = 0; y < h; y++) for (let k = y * row, e = k + row; k < e; k++) {
+    const u = y > 0 ? k - row : k, d = y < h - 1 ? k + row : k;
+    mn[k] = Math.min(tmn[u], tmn[k], tmn[d]); mx[k] = Math.max(tmx[u], tmx[k], tmx[d]);
+  }
+  return { mn, mx };
+}
+/** Coarse color histogram (4 levels per channel), as shares. */
+function histogram(rgb) {
+  const hgm = new Float64Array(64), n = rgb.length / 3;
+  for (let k = 0; k < rgb.length; k += 3) hgm[((rgb[k] >> 6) << 4) | ((rgb[k + 1] >> 6) << 2) | (rgb[k + 2] >> 6)]++;
+  for (let i = 0; i < 64; i++) hgm[i] /= n;
+  return hgm;
+}
+const histSame = (p, q) => { let s = 0; for (let i = 0; i < 64; i++) s += Math.min(p[i], q[i]); return s; };
 
 // OKLab, for palette clustering
 const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
@@ -196,18 +321,23 @@ export async function analyzeVideo(input, opts = {}) {
   const duration = n / fps;
 
   // 1. How different two frames are: the share of pixels whose color changed visibly
-  const all = rgbsAll;
-  // Detail (text, shapes, edges) of each frame: on a shared background a scene change only touches the detail.
-  const detail = lum.map((L) => {
-    const m = new Uint8Array(L.length);
+  const all = rgbsAll, npx = w * h;
+  // Edges (text, shapes) of each frame, and the detail around them: on a shared background a scene change only touches the detail.
+  const edges = lum.map((L) => {
+    const m = new Uint8Array(npx);
     for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
       const q = y * w + x;
-      if (Math.abs(L[q + 1] - L[q - 1]) + Math.abs(L[q + w] - L[q - w]) > 36) { m[q] = 1; m[q - 1] = 1; m[q + 1] = 1; m[q - w] = 1; m[q + w] = 1; }
+      if (Math.abs(L[q + 1] - L[q - 1]) + Math.abs(L[q + w] - L[q - w]) > 36) m[q] = 1;
     }
     return m;
   });
-  const minDetail = w * h * 0.015;
-  /** 0..1: how much of the picture is new (the whole frame, or the detail when the background stays). */
+  const detail = edges.map((E) => {
+    const m = new Uint8Array(npx);
+    for (let q = 0; q < npx; q++) if (E[q]) { m[q] = 1; m[q - 1] = 1; m[q + 1] = 1; m[q - w] = 1; m[q + w] = 1; }
+    return m;
+  });
+  const minDetail = npx * 0.015, minEdges = npx * 0.01;
+  /** 0..1: how much of the picture is new (the whole frame, or the detail when the background stays). Used for pacing. */
   const dist = (i, j) => {
     const a = all[i], b = all[j], da = detail[i], db = detail[j];
     let c = 0, fc = 0, fn = 0;
@@ -222,35 +352,125 @@ export async function analyzeVideo(input, opts = {}) {
   };
   const pd = new Float32Array(n); // frame to frame
   for (let i = 1; i < n; i++) pd[i] = dist(i - 1, i);
-  // 2. Scene changes. Novelty: the picture just before and just after a moment differ much more than the
-  //    picture changes within each side. Things that move all the time (a ticker, particles) or elements
-  //    that enter one by one give low novelty; a cut or a transition gives a peak. Two scales catch
-  //    quick changes and slow ones (a dip, a long dissolve).
-  /** Share of the earlier frame's detail that is still there later (an entrance keeps the old content, a scene change does not). */
-  const persist = (i, j) => {
-    const a = all[i], b = all[j], da = detail[i];
-    let n0 = 0, same = 0;
-    for (let k = 0, q = 0; k < a.length; k += 3, q++) {
-      if (!da[q]) continue;
-      n0++;
-      if (Math.abs(a[k] - b[k]) <= 20 && Math.abs(a[k + 1] - b[k + 1]) <= 20 && Math.abs(a[k + 2] - b[k + 2]) <= 20) same++;
-    }
-    return n0 >= minDetail ? same / n0 : null;
+
+  // 2. Scene changes. A scene change REPLACES the picture: the old content is gone and new content is there.
+  //    `replaced(i, j)` forgives a 1 px move and soft color drift, and looks at two things:
+  //    - the share of all pixels whose color is new (plain backgrounds that change color), counted both ways;
+  //    - the share of frame i's edges that are gone in j AND of j's edges that were not in i (content that was
+  //      swapped, on a background that stays). Something entering keeps the old edges; something leaving does not
+  //      bring new ones; moving particles and drifting gradients stay inside the 1 px tolerance.
+  const envs = new Map();
+  const envOf = (f) => {
+    let e = envs.get(f);
+    if (!e) { e = envelope(all[f], w, h); envs.set(f, e); if (envs.size > 300) envs.delete(envs.keys().next().value); }
+    return e;
   };
+  const TOL = 18;
+  const pairs = new Map();
+  /** { chg, gA, gB }: share of pixels with a new color (both ways), share of i's edges gone in j, of j's edges new (null: too few edges). */
+  const pairInfo = (i, j) => {
+    const key = i * n + j;
+    let r = pairs.get(key);
+    if (r) return r;
+    const a = all[i], b = all[j], ea = envOf(i), eb = envOf(j), Ea = edges[i], Eb = edges[j];
+    let ca = 0, cb = 0, ga = 0, gb = 0, na = 0, nb = 0;
+    for (let q = 0, k = 0; q < npx; q++, k += 3) {
+      const outA = a[k] + TOL < eb.mn[k] || a[k] > eb.mx[k] + TOL || a[k + 1] + TOL < eb.mn[k + 1] || a[k + 1] > eb.mx[k + 1] + TOL || a[k + 2] + TOL < eb.mn[k + 2] || a[k + 2] > eb.mx[k + 2] + TOL;
+      const outB = b[k] + TOL < ea.mn[k] || b[k] > ea.mx[k] + TOL || b[k + 1] + TOL < ea.mn[k + 1] || b[k + 1] > ea.mx[k + 1] + TOL || b[k + 2] + TOL < ea.mn[k + 2] || b[k + 2] > ea.mx[k + 2] + TOL;
+      if (outA) ca++;
+      if (outB) cb++;
+      if (Ea[q]) { na++; if (outA) ga++; }
+      if (Eb[q]) { nb++; if (outB) gb++; }
+    }
+    r = { chg: Math.min(ca, cb) / npx, gA: na >= minEdges ? ga / na : null, gB: nb >= minEdges ? gb / nb : null };
+    pairs.set(key, r);
+    return r;
+  };
+  /** 0..1: how much of picture i is replaced in picture j (new colors, or old content gone AND new content there). */
+  const replaced = (i, j) => {
+    const p = pairInfo(i, j);
+    if (p.gA != null && p.gB != null) return Math.max(p.chg, Math.min(p.gA, p.gB));
+    // content on one side only: something entered an empty picture (or left it), unless most of the frame changed color
+    if (p.gA != null || p.gB != null) return p.chg >= 0.6 ? p.chg : p.chg * 0.5;
+    return p.chg;
+  };
+  /** 0..1: how much changed in any way (colors, old content gone, new content come). */
+  const changed = (i, j) => { const p = pairInfo(i, j); return Math.max(p.chg, p.gA ?? 0, p.gB ?? 0); };
+  const debug = opts.debug ? { candidates: [] } : null;
+  const mad = (i, j) => { const a = all[i], b = all[j]; let s2 = 0; for (let k = 0; k < a.length; k++) s2 += Math.abs(a[k] - b[k]); return s2; };
   const cutAt = (S, E) => {
-    // one frame carries the change: before it the picture is still S, after it already E
-    let best = -1, bv = 0;
-    for (let f = S + 1; f <= E; f++) if (pd[f] > bv) { bv = pd[f]; best = f; }
-    if (best < 0 || bv < 0.25) return -1;
-    return dist(S, best - 1) < 0.15 && dist(best, E) < 0.15 ? best : -1;
+    // One frame carries the change: up to it the old picture is all there (since the change began, and for 0.2 s at
+    // least: a whip, or the circle of an iris, moves just before its last big frame), and the frames right after it
+    // stay as they are (a fast fade also jumps on its first frame, but keeps changing). New content may enter later.
+    let best = -1, jump = 0;
+    for (let f = S + 1; f <= E; f++) {
+      const v = changed(f - 1, f);
+      if (v < 0.4 || v <= jump) continue;
+      const pre = Math.max(0, Math.min(S, f - 1 - Math.round(fps * 0.2)));
+      if (changed(pre, f - 1) < 0.2 && changed(f, Math.min(n - 1, f + 2)) < 0.25) { best = f; jump = v; }
+    }
+    return best;
+  };
+  const hists = new Map();
+  const histOf = (f) => { let x = hists.get(f); if (!x) hists.set(f, (x = histogram(all[f]))); return x; };
+  const WIDE_ZOOMS = [0.85, 0.9, 0.94, 0.97, 1, 1.03, 1.06, 1.1, 1.17];
+  const steps = new Map();
+  const stepMove = (f) => {
+    let g = steps.get(f);
+    if (!g) {
+      g = globalMotion(lum[f - 1], lum[f], w, h, { zooms: WIDE_ZOOMS });
+      // the share of pixels that fit after the move, and without it (content entering during a camera move is a minority)
+      g.fit = fitShare(lum[f - 1], lum[f], w, h, Math.round(g.dx), Math.round(g.dy), g.z);
+      g.fit0 = fitShare(lum[f - 1], lum[f], w, h, 0, 0, 1);
+      steps.set(f, g);
+    }
+    return g;
+  };
+  // a step is a camera move when moving the previous frame makes it fit: on average, or for most pixels
+  const explained = (g) => g.still >= 2 && (g.c < g.still * 0.35 || (g.fit >= 0.75 && g.fit - g.fit0 >= 0.1));
+  /**
+   * The camera moved over one picture: the colors stay the same, and the last frame is the first one moved a little,
+   * or, over the whole move (it can start before S and end after E), each frame is the one before it moved (weighted
+   * by how much each step changes, so one cut or the blurred middle of a whip among small steps is not explained away)
+   * for a few frames at least (a camera does not jump in one frame). Not a camera move either: the picture slid a third
+   * of a frame or more in a blink (a push or a whip; on a plain or smooth background a fast camera pan looks the same,
+   * and counts as one).
+   */
+  const cameraMove = (S, E, note) => {
+    const same = histSame(histOf(S), histOf(E));
+    if (same <= 0.75) return false;
+    const gm = globalMotion(lum[S], lum[E], w, h);
+    const direct = gm.still > 3 && gm.c < gm.still * 0.3;
+    if (note) note.camera = { direct: r2(gm.still ? gm.c / gm.still : 1), colors: r2(same) };
+    let a = S, b = E;
+    const lim = Math.round(fps * 0.5);
+    while (a > 0 && S - a < lim && changed(a - 1, a) >= 0.1) a--;
+    while (b + 1 < n && b - E < lim && changed(b, b + 1) >= 0.1) b++;
+    let tot = 0, ok = 0, lz = 0, okSteps = 0;
+    const path = [[0, 0]];
+    for (let f = a + 1; f <= b; f++) {
+      const g = stepMove(f), p = path[path.length - 1];
+      if (g.still >= 2) tot += g.still;
+      if (explained(g)) { ok += g.still; okSteps++; path.push([p[0] + g.dx, p[1] + g.dy]); lz += Math.log(g.z); } else path.push(p);
+    }
+    const [ex, ey] = path[path.length - 1], horiz = Math.abs(ex) / w >= Math.abs(ey) / h, total = horiz ? ex : ey;
+    const slid = Math.max(Math.abs(total) / (horiz ? w : h), direct ? Math.max(Math.abs(gm.dx) / w, Math.abs(gm.dy) / h) : 0);
+    let t10 = 0, t90 = 0;
+    for (let i = 0; i < path.length; i++) { const v = (horiz ? path[i][0] : path[i][1]) / (total || 1); if (v < 0.1) t10 = i; if (v < 0.9) t90 = i + 1; }
+    const core = (t90 - t10) / fps;
+    if (note) Object.assign(note.camera, { from: a, to: b, explained: r2(tot ? ok / tot : 0), steps: okSteps, slid: r2(slid), zoom: r2(Math.exp(lz)), core: r2(core) });
+    if (!direct && !(tot > 0 && ok >= tot * 0.85 && okSteps >= 3)) return false;
+    if (!direct && slid < 0.03 && Math.abs(lz) < 0.03) return false; // nothing moved: a fade or a dip on a busy picture
+    return !(slid >= 0.3 && core <= 0.35);
   };
   const cands = [];
   for (const sec of [0.1, 0.2, 0.45]) {
     const m = Math.max(2, Math.round(fps * sec));
     const nov = new Float32Array(n);
     for (let f = m; f + m < n; f++) {
-      const before = f - 2 * m >= 0 ? dist(f - 2 * m, f - m) : 0, after = f + 2 * m < n ? dist(f + m, f + 2 * m) : 0;
-      nov[f] = dist(f - m, f + m) - (before + after) / 2 - 0.25 * Math.abs(before - after);
+      // replaced across the moment, minus what keeps changing on both sides anyway
+      const before = f - 2 * m >= 0 ? replaced(f - 2 * m, f - m) : 0, after = f + 2 * m < n ? replaced(f + m, f + 2 * m) : 0;
+      nov[f] = replaced(f - m, f + m) - Math.min(before, after);
     }
     for (let f = m; f + m < n; f++) {
       if (nov[f] < 0.3) continue;
@@ -260,88 +480,186 @@ export async function analyzeVideo(input, opts = {}) {
     }
   }
   // the strongest candidate wins where two scales found the same change
-  cands.sort((a, b) => b.v - a.v);
+  cands.sort((a, b) => b.v - a.v || a.f - b.f || a.m - b.m);
   const transitionsRaw = [];
   const taken = [];
   for (const c of cands) {
-    if (taken.some(([a, b]) => (c.f >= a - 2 && c.f <= b + 2) || ((a + b) / 2 >= c.f - c.m && (a + b) / 2 <= c.f + c.m))) continue;
+    const note = (why, extra) => debug && debug.candidates.push({ t: r3(c.f / fps), m: c.m, v: r3(c.v), why, ...extra });
+    if (taken.some(([a, b]) => (c.f >= a - 2 && c.f <= b + 2) || ((a + b) / 2 >= c.f - c.m && (a + b) / 2 <= c.f + c.m))) { note('overlap'); continue; }
     let S = c.f - c.m, E = c.f + c.m;
     const S0 = S, E0 = E;
-    // tighten to where the change starts and ends
-    while (S + 1 < E && dist(S + 1, S0) < 0.08) S++;
-    while (E - 1 > S && dist(E - 1, E0) < 0.08) E--;
+    // tighten to where the change starts and ends (by how far each frame is on its way from the old picture to the new)
+    const prog = (f) => { const x = mad(S0, f), y = mad(f, E0); return x + y ? x / (x + y) : 0; };
+    while (S + 1 < E && prog(S + 1) < 0.04) S++;
+    while (E - 1 > S && prog(E - 1) > 0.96) E--;
+    const r = replaced(S, E);
+    // something entered or left, the rest is still there (this does not hide a longer change around it from the other scales)
+    if (r < 0.4) { note('not replaced', { r: r3(r), S, E }); continue; }
     taken.push([S0, E0]);
-    const p = persist(S, E);
-    const full = (() => { const a = all[S], b = all[E]; let k2 = 0; for (let k = 0; k < a.length; k += 3) if (Math.abs(a[k] - b[k]) > 14 || Math.abs(a[k + 1] - b[k + 1]) > 14 || Math.abs(a[k + 2] - b[k + 2]) > 14) k2++; return k2 / (a.length / 3); })();
-    if ((p == null || p > 0.45) && full < 0.35) continue; // something entered, or a flash: the old picture is still there
-    const gm = globalMotion(lum[S], lum[E], w, h);
-    if (gm.still > 3 && gm.c < gm.still * 0.45) continue; // the camera moved; the picture is the same
+    const cam = debug ? {} : null;
+    if (cameraMove(S, E, cam)) { note('camera', { S, E, ...cam }); continue; } // the camera moved; the picture is the same
+    note('scene change', { r: r3(r), S, E, ...cam });
     const cf = cutAt(S, E);
     if (cf >= 0) transitionsRaw.push({ type: 'cut', S: cf - 1, E: cf, frame: cf });
     else transitionsRaw.push({ type: null, S, E });
   }
+  // two gradual changes that touch are one (e.g. both halves of a dip): no shot is that short. The same cut found
+  // twice is one, and a cut on the last frames of a gradual change belongs to it (an old scene removed at the end of
+  // a transition into a see-through one)
+  transitionsRaw.sort((a, b) => a.S - b.S || a.E - b.E);
+  for (let i = 1; i < transitionsRaw.length; i++) {
+    const p = transitionsRaw[i - 1], t = transitionsRaw[i];
+    if (p.type === null && t.type === null && t.S - p.E <= Math.round(fps * 0.2)) { p.E = Math.max(p.E, t.E); transitionsRaw.splice(i--, 1); }
+    else if (p.type === 'cut' && t.type === 'cut' && t.frame - p.frame <= 1) transitionsRaw.splice(i--, 1);
+    else if (p.type === null && t.type === 'cut' && t.frame <= p.E + Math.round(fps * 0.1)) transitionsRaw.splice(i--, 1);
+  }
   const isCut = new Set(transitionsRaw.filter((t) => t.type === 'cut').map((t) => t.frame));
 
   // 3. Classify each gradual change by how the new picture arrives
+  const meanL = (f) => { let s = 0; for (const v of f) s += v; return s / f.length; };
   const classify = (S, E) => {
-    const a = lum[S], b = lum[E];
-    const reg = { left: [], right: [], top: [], bottom: [], center: [], ring: [] };
-    let dipLuma = Infinity, blendErr = 0, blendBase = 0;
-    const meanL = (f) => { let s = 0; for (const v of f) s += v; return s / f.length; };
-    const la = meanL(a), lb = meanL(b);
-    const moves = [];
-    const stride = Math.max(1, Math.round((E - S) / 4));
-    const zooms = [];
-    for (let f = S + stride; f <= E; f += stride) zooms.push(globalMotion(lum[f - stride], lum[f], w, h));
-    for (let f = S + 1; f <= E; f++) moves.push(globalMotion(lum[f - 1], lum[f], w, h));
-    for (let f = S + 1; f < E; f++) {
-      const c = lum[f];
-      dipLuma = Math.min(dipLuma, meanL(c));
-      const cnt = { left: [0, 0], right: [0, 0], top: [0, 0], bottom: [0, 0], center: [0, 0], ring: [0, 0] };
-      // best blend factor for a crossfade, and how far the frame is from that blend
-      let num = 0, den = 0;
-      for (let q = 0; q < c.length; q++) { const d = b[q] - a[q]; num += (c[q] - a[q]) * d; den += d * d; }
-      const al = den ? Math.max(0, Math.min(1, num / den)) : 0;
-      for (let q = 0; q < c.length; q++) {
-        const d = Math.abs(a[q] - b[q]);
-        if (d <= 12) continue;
-        blendErr += Math.abs(c[q] - (a[q] + al * (b[q] - a[q]))); blendBase += d;
-        const done = Math.abs(c[q] - b[q]) < Math.abs(c[q] - a[q]) ? 1 : 0;
-        const x = q % w, y = (q / w) | 0;
-        const put = (r) => { cnt[r][0] += done; cnt[r][1]++; };
-        put(x < w / 3 ? 'left' : x >= (2 * w) / 3 ? 'right' : 'center');
-        put(y < h / 3 ? 'top' : y >= (2 * h) / 3 ? 'bottom' : 'center');
-        if (Math.abs(x - w / 2) > w * 0.35 || Math.abs(y - h / 2) > h * 0.35) put('ring');
-      }
-      for (const r of Object.keys(reg)) reg[r].push(cnt[r][1] ? cnt[r][0] / cnt[r][1] : null);
+    const a = all[S], b = all[E], la = meanL(lum[S]), lb = meanL(lum[E]);
+    const info = debug ? { t: r3(S / fps) + '-' + r3(E / fps) } : null;
+    if (info) (debug.classes = debug.classes || []).push(info);
+    // the pixels the change is about, and among them the content (detail of the old or the new picture)
+    const D = [], DE = [];
+    for (let q = 0, k = 0; q < npx; q++, k += 3) {
+      if (Math.max(Math.abs(a[k] - b[k]), Math.abs(a[k + 1] - b[k + 1]), Math.abs(a[k + 2] - b[k + 2])) <= 24) continue;
+      D.push(q);
+      if (detail[S][q] || detail[E][q]) DE.push(q);
     }
-    const half = (arr) => { const q = arr.findIndex((v) => v != null && v >= 0.5); return q < 0 ? arr.length : q; };
-    const tl = half(reg.left), tr = half(reg.right), tt = half(reg.top), tb = half(reg.bottom), tc = half(reg.center), tg = half(reg.ring);
-    const L = Math.max(1, E - S - 1), spread = Math.max(1, 0.25 * L);
-    const blend = blendBase ? blendErr / blendBase : 1;
-    const good = moves.filter((m) => m.c < m.still * 0.8);
-    const shift = good.reduce((s, m) => [s[0] + m.dx, s[1] + m.dy], [0, 0]);
-    const zoomed = zooms.filter((m) => m.c < m.still * 0.9).reduce((z, m) => z * m.z, 1);
-    // a push moves the old picture; a wipe leaves the part not yet covered exactly where it was
-    const M = lum[Math.round((S + E) / 2)];
-    let le = 0, ln = 0;
-    for (let q = 0; q < M.length; q++) if (Math.abs(M[q] - b[q]) > 12 && Math.abs(a[q] - b[q]) > 12) { le += Math.abs(M[q] - a[q]); ln++; }
-    const stays = ln > M.length * 0.05 && le / ln < 6;
-    const moved = !stays && (Math.abs(shift[0]) > w * 0.2 || Math.abs(shift[1]) > h * 0.2);
+    if (D.length < npx * 0.01) return 'other';
+    // a. through black
+    let dipLuma = Infinity;
+    for (let f = S + 1; f < E; f++) dipLuma = Math.min(dipLuma, meanL(lum[f]));
     if (dipLuma < Math.min(la, lb) * 0.5 && dipLuma < 40) return 'dip';
-    if (zoomed > 1.12 || zoomed < 0.89) return zoomed > 1 ? 'zoom-in' : 'zoom-out';
-    if (moved) { const hz = Math.abs(shift[0]) / w >= Math.abs(shift[1]) / h; return 'push-' + (hz ? (shift[0] < 0 ? 'left' : 'right') : (shift[1] < 0 ? 'up' : 'down')); }
-    if (Math.abs(tl - tr) > spread || Math.abs(tt - tb) > spread) {
-      const horiz = Math.abs(tl - tr) >= Math.abs(tt - tb);
-      return 'wipe-' + (horiz ? (tl < tr ? 'right' : 'left') : (tt < tb ? 'down' : 'up'));
+
+    // b. how the content moves, frame by frame, measured on the detail that changes (a background or content that stays
+    //    still does not count): a slide along x, along y, or a zoom, whichever explains the frame best
+    let sx = 0, sy = 0, ax = 0, ay = 0, lz = 0, nx = 0, ny = 0, nz = 0, steps = 0;
+    const mask = new Uint8Array(npx);
+    for (let f = S + 1; f <= E; f++) {
+      const dm = detail[f], L0 = lum[f - 1], L1 = lum[f];
+      let cnt = 0;
+      for (let q = 0; q < npx; q++) cnt += mask[q] = dm[q] && Math.abs(L1[q] - L0[q]) > 12 ? 1 : 0;
+      if (cnt < minDetail / 2) continue;
+      steps++;
+      const g = axisMotion(L0, L1, w, h, { mask });
+      halves.delete(mask); // the mask changes every frame
+      const bestC = Math.min(g.x.c, g.y.c, g.z.c);
+      if (!(bestC < g.still * 0.75)) continue;
+      if (g.x.c === bestC) { nx++; sx += g.x.d; ax += Math.abs(g.x.d); }
+      else if (g.y.c === bestC) { ny++; sy += g.y.d; ay += Math.abs(g.y.d); }
+      else { nz++; lz += Math.log(g.z.z); }
     }
-    if (Math.abs(tc - tg) > spread) return tc < tg ? 'iris' : 'iris-in';
-    if (blend < 0.35) return 'fade';
+    const zoomed = Math.exp(lz), fx = Math.abs(sx) / w, fy = Math.abs(sy) / h;
+    const horiz = fx >= fy, nAxis = horiz ? nx : ny, along = horiz ? fx : fy, steady = horiz ? Math.abs(sx) / Math.max(1e-9, ax) : Math.abs(sy) / Math.max(1e-9, ay);
+    const slide = 'push-' + (horiz ? (sx < 0 ? 'left' : 'right') : (sy < 0 ? 'up' : 'down'));
+    if (info) Object.assign(info, { sx: r2(sx), sy: r2(sy), zoom: r3(zoomed), nx, ny, nz, steps, steady: r2(steady) });
+    // c. a push or a whip moves the content itself; a wipe leaves it in place and only moves the edge. So: where is the
+    //    old content a quarter of the way in, and where is the new content three quarters of the way in?
+    {
+      const prog = (f) => { const x = mad(S, f), y = mad(f, E); return x + y ? x / (x + y) : 0; };
+      let f1 = S + 1, f2 = E - 1;
+      while (f1 < E - 1 && prog(f1) < 0.25) f1++;
+      while (f2 > S + 1 && prog(f2) > 0.75) f2--;
+      const dS = detail[S], dE = detail[E], O = DE.filter((q) => dS[q]), N = DE.filter((q) => dE[q]);
+      const moves = [];
+      if (O.length >= 20) { const r = contentShift(lum[S], lum[f1], O, w, h); if (r.ratio < 0.6 && Math.abs(r.d) >= 2) moves.push({ axis: r.axis, dir: Math.sign(r.d), r: r2(r.ratio) }); }
+      if (N.length >= 20) { const r = contentShift(lum[E], lum[f2], N, w, h); if (r.ratio < 0.6 && Math.abs(r.d) >= 2) moves.push({ axis: r.axis, dir: -Math.sign(r.d), r: r2(r.ratio) }); }
+      if (info) info.content = moves;
+      if (moves.length && moves.every((m) => m.axis === moves[0].axis && m.dir === moves[0].dir)) {
+        const { axis, dir } = moves[0];
+        return 'push-' + (axis === 'x' ? (dir < 0 ? 'left' : 'right') : (dir < 0 ? 'up' : 'down'));
+      }
+    }
+
+    // d. what each changed pixel does over time. P: the content, or every changed pixel when the pictures are plain.
+    //    A pixel "switches" when it shows the old picture, then (after at most two frames of edge) the new one: a wipe or
+    //    an iris. It changes "smoothly" when it goes straight from old to new without detours: a fade. Moving content
+    //    (push, zoom) passes other content through the pixel.
+    const P = DE.length >= npx * 0.01 ? DE : D;
+    const like = (c, ref, k) => Math.abs(c[k] - ref[k]) <= 14 && Math.abs(c[k + 1] - ref[k + 1]) <= 14 && Math.abs(c[k + 2] - ref[k + 2]) <= 14;
+    const edgeFrames = Math.max(1, Math.round(fps / 15));
+    const when = new Float32Array(npx).fill(-1); // switch time of each changed pixel, -1 = did not switch
+    for (const q of D) {
+      const k = q * 3;
+      let lastA = S, firstB = E;
+      while (lastA < E && like(all[lastA + 1], a, k)) lastA++;
+      while (firstB > S && like(all[firstB - 1], b, k)) firstB--;
+      if (firstB > lastA && firstB - lastA - 1 <= edgeFrames) when[q] = (lastA + firstB) / 2;
+    }
+    let smooth = 0, nsw = 0;
+    for (const q of P) {
+      if (when[q] >= 0) nsw++;
+      let tv = 0;
+      for (let f = S + 1; f <= E; f++) tv += Math.abs(lum[f][q] - lum[f - 1][q]);
+      if (tv <= Math.abs(lum[E][q] - lum[S][q]) * 1.25 + 10) smooth++;
+    }
+    const switched = nsw / P.length, smoothShare = smooth / P.length;
+    if (info) Object.assign(info, { plain: P !== DE, switched: r2(switched), smooth: r2(smoothShare) });
+    if (switched >= 0.45) {
+      // Where the new picture appears first: correlate the switch time with x, y, the distance from the center and the
+      // angle, separately for the old content, the new content and the changed background. A wipe sweeps over each of
+      // them in one order, and over many moments. Content that switches all at once (an old scene that just ends, or
+      // one element that fades in) says nothing about the direction: elements entering one after another sit in
+      // different places, which looks like an order but is not a sweep.
+      const group = (keep) => {
+        const fs = [[], [], [], []], ts = [];
+        for (const q of D) {
+          if (when[q] < 0 || !keep(q)) continue;
+          const x = (q % w) / w - 0.5, y = ((q / w) | 0) / h - 0.5;
+          fs[0].push(x); fs[1].push(y); fs[2].push(Math.hypot((x * w) / h, y)); fs[3].push((Math.atan2(x, -y) + 2 * Math.PI) % (2 * Math.PI));
+          ts.push(when[q]);
+        }
+        if (ts.length < 20) return null;
+        // the biggest share of pixels that switch within the same three frames
+        const hist = new Map();
+        for (const t of ts) { const k = Math.round(t); hist.set(k, (hist.get(k) || 0) + 1); }
+        let lump = 0;
+        for (const k of hist.keys()) lump = Math.max(lump, (hist.get(k - 1) || 0) + hist.get(k) + (hist.get(k + 1) || 0));
+        const corr = fs.map((u) => {
+          const m = u.length;
+          let mu = 0, mt = 0; for (let i = 0; i < m; i++) { mu += u[i]; mt += ts[i]; } mu /= m; mt /= m;
+          let suv = 0, suu = 0, svv = 0; for (let i = 0; i < m; i++) { const du = u[i] - mu, dv = ts[i] - mt; suv += du * dv; suu += du * du; svv += dv * dv; }
+          return suu && svv ? suv / Math.sqrt(suu * svv) : 0;
+        });
+        return { corr, lump: lump / ts.length, n: ts.length };
+      };
+      const dS = detail[S], dE = detail[E];
+      const all3 = [group((q) => dS[q]), group((q) => dE[q]), group((q) => !dS[q] && !dE[q])], groups = all3.map((g) => (g && g.lump <= 0.75 ? g : null));
+      if (info) info.groups = all3.map((g) => g && { corr: g.corr.map(r2), lump: r2(g.lump) });
+      // the clearest order decides; no other group may clearly say the opposite
+      let pick = null;
+      groups.forEach((g, gi) => g && g.corr.forEach((v, i) => { const s = i === 3 ? v : Math.abs(v); if (!pick || s > pick.s) pick = { s, i, v, gi }; }));
+      if (pick && pick.s >= (pick.gi === 2 ? 0.5 : 0.6) && !groups.some((g) => g && Math.sign(g.corr[pick.i]) !== Math.sign(pick.v) && Math.abs(g.corr[pick.i]) >= 0.4)) {
+        const cr = groups[pick.gi].corr[2];
+        if (pick.i === 3 && pick.v > Math.abs(cr) + 0.1) return 'clock';
+        if (pick.i >= 2) return cr > 0 ? 'iris' : 'iris-in';
+        if (pick.i === 0) return pick.v > 0 ? 'wipe-right' : 'wipe-left';
+        return pick.v > 0 ? 'wipe-down' : 'wipe-up';
+      }
+    }
+    // e. or the frame-by-frame moves: a slide along one axis, steady in one direction
+    if (nAxis >= 2 && along > 0.25 && steady >= 0.6 && nAxis >= nz) return slide;
+    // f. zoom: the content grows or shrinks frame after frame
+    if (nz >= 2 && (zoomed > 1.15 || zoomed < 0.87)) return zoomed > 1 ? 'zoom-in' : 'zoom-out';
+    // g. a crossfade: every frame is a blend of the two (or the pixels go straight from the old to the new picture)
+    let blendErr = 0, blendBase = 0;
+    for (let f = S + 1; f < E; f++) {
+      const c = lum[f], A = lum[S], B = lum[E];
+      let num = 0, den = 0;
+      for (let q = 0; q < npx; q++) { const d = B[q] - A[q]; num += (c[q] - A[q]) * d; den += d * d; }
+      const al = den ? Math.max(0, Math.min(1, num / den)) : 0;
+      for (let q = 0; q < npx; q++) { const d = Math.abs(A[q] - B[q]); if (d <= 12) continue; blendErr += Math.abs(c[q] - (A[q] + al * (B[q] - A[q]))); blendBase += d; }
+    }
+    const blend = blendBase ? blendErr / blendBase : 1;
+    if (info) info.blend = r2(blend);
+    if (blend < 0.35 || smoothShare >= 0.7) return 'fade';
     return 'other';
   };
   // the moment the picture is half way from the old shot to the new one
   // (by the average color difference: the thresholded distance jumps to "all new" too early in a fade)
-  const mad = (i, j) => { const a = all[i], b = all[j]; let s2 = 0; for (let k = 0; k < a.length; k++) s2 += Math.abs(a[k] - b[k]); return s2; };
   const halfway = (S, E) => { for (let f = S + 1; f < E; f++) if (mad(S, f) >= mad(f, E)) return f; return (S + E + 1) / 2; };
   const transitions = transitionsRaw.map((t) => t.type === 'cut'
     ? { type: 'cut', start: r3(t.frame / fps), end: r3(t.frame / fps), at: r3(t.frame / fps) }
@@ -364,7 +682,9 @@ export async function analyzeVideo(input, opts = {}) {
     const fa = Math.round(s.start * fps), fb = Math.min(n - 1, Math.round(s.end * fps) - 1);
     let dx = 0, dy = 0, z = 1, flips = 0, last = null, samples = 0, movedSamples = 0;
     for (let f = fa + cstep; f <= fb; f += cstep) {
-      const m = globalMotion(lum[f - cstep], lum[f], w, h);
+      // the frames of a transition into or out of the shot are not the camera
+      if (transitions.some((t) => f >= t.start * fps - 1 && f - cstep <= t.end * fps + 1)) continue;
+      const m = globalMotion(lum[f - cstep], lum[f], w, h, { range: 8 });
       samples++;
       if (m.still < 2 || m.c > m.still * 0.85) continue; // nothing moved, or not a whole-picture move
       movedSamples++;
@@ -457,6 +777,7 @@ export async function analyzeVideo(input, opts = {}) {
     seconds: 0,
   };
   report.recipe = recipe(report);
+  if (debug) report._debug = debug;
 
   // 11. Pictures
   const outDir = resolve(opts.output || join(dirname(file), 'analysis', basename(file).replace(/\.[^.]+$/, '')));
@@ -489,7 +810,7 @@ function recipe(r) {
   const total = kinds.reduce((a, [, v]) => a + v, 0);
   out.push(`${s.shotCount} shots, ${s.averageShot} s on average (median ${s.medianShot} s, ${s.shortestShot}-${s.longestShot} s): ${s.medianShot < 1 ? 'very fast cutting' : s.medianShot < 2 ? 'fast cutting' : s.medianShot < 4 ? 'medium pace' : 'slow, long holds'}.`);
   if (total) {
-    const map = { cut: 'hard cuts (no data-transition)', fade: 'data-transition="fade"', dip: 'data-transition="dip"', 'zoom-in': 'data-transition="zoom-through"', 'zoom-out': 'data-transition="zoom"', iris: 'data-transition="iris"', 'iris-in': 'a closing iris (custom clip-path)', other: 'custom transitions (morph, shapes, or something the analysis cannot name)' };
+    const map = { cut: 'hard cuts (no data-transition)', fade: 'data-transition="fade"', dip: 'data-transition="dip"', 'zoom-in': 'data-transition="zoom-through"', 'zoom-out': 'data-transition="zoom"', iris: 'data-transition="iris"', 'iris-in': 'a closing iris (custom clip-path)', clock: 'data-transition="clock"', other: 'custom transitions (morph, shapes, or something the analysis cannot name)' };
     out.push('Scene changes: ' + kinds.map(([k, v]) => `${v} ${k}`).join(', ') + '. In motionwright: ' + kinds.slice(0, 3).map(([k]) => map[k] || `data-transition="${k}"`).join('; ') + '.');
   }
   if (r.music && r.music.bpm) out.push(`Music at ${r.music.bpm} BPM${r.music.cuts ? `; ${r.music.cutsOnBeat} of ${r.music.cuts} scene changes land on a beat (${r.music.cutsOnBar} on a bar start)` : ''}${r.music.shotBeats ? `; a typical shot lasts ${r.music.shotBeats} beats` : ''}. Plan with \`motionwright audio\` and data-cuts.`);

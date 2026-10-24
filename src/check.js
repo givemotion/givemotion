@@ -572,20 +572,20 @@ export function motionIssues(samples, names, setup, info, step) {
   if (camStops.length) {
     const byId = new Map(); for (const c of camStops) { if (!byId.has(c.id)) byId.set(c.id, []); byId.get(c.id).push(c.t); }
     for (const [id, ts] of byId) out.push({ severity: 'warning', code: 'camera-stop', selector: names[id], time: ts[0], until: ts[ts.length - 1], ranges: ts.map((t) => [t, t]),
-      message: `The camera stops dead between moves at ${ts.slice(0, 5).map((t) => t.toFixed(1) + ' s').join(', ')}${ts.length > 5 ? ', …' : ''}: it brakes to a halt and sets off again, which looks mechanical${classicNote}.`,
+      message: `The camera stops dead between moves at ${ts.slice(0, 5).map((t) => t.toFixed(1) + ' s').join(', ')}${ts.length > 5 ? ', …' : ''} (brakes to a halt, then sets off again)${classicNote}.`,
       fix: setup.classic ? 'drop data-motion="classic" so gm.camera blends back-to-back shots, or hold each shot 0.5 s+ on purpose.' : 'chain the moves so the camera keeps moving (back-to-back gm.camera shots, one tween with keyframes), or hold each shot 0.5 s+ on purpose.' });
   }
   if (fast.length) {
     const worst = fast.reduce((a, b) => (b.d > a.d ? b : a));
     const ranges = runsOf(fast.map((f) => f.t).sort((a, b) => a - b), 0.25).filter(([a, b]) => b - a >= 0.05 || fast.filter((f) => f.t >= a - 0.01 && f.t <= b + 0.01).length >= 2);
     if (ranges.length) out.push({ severity: 'warning', code: 'fast-no-blur', selector: names[worst.id], time: ranges[0][0], until: ranges[ranges.length - 1][1], ranges,
-      message: `Moves ${Math.round(worst.d / PX)} px per frame (at 1080p) with motion blur off, so it strobes${classicNote}.`,
+      message: `Moves ${Math.round(worst.d / PX)} px per frame (at 1080p) with no motion blur: it strobes${classicNote}.`,
       fix: setup.blurExplicitOff ? 'remove data-motion-blur="off" (fast moves get motion blur by default), or slow the move down.' : 'render with --motion-blur 8, or drop data-motion="classic" (natural motion blurs fast moves).' });
   }
   if (straight.length) {
     const seen = new Set(), list = straight.filter((s) => (seen.has(s.id) ? false : seen.add(s.id)));
     out.push({ severity: 'warning', code: 'straight-move', selector: names[list[0].id], time: list[0].t0, until: list[0].t1, ranges: list.slice(0, 6).map((s) => [s.t0, s.t1]).sort((a, b) => a[0] - b[0]),
-      message: `${list.slice(0, 3).map((s) => names[s.id]).join(', ')}${list.length > 3 ? ` and ${list.length - 3} more` : ''} ${list.length > 1 ? 'move' : 'moves'} ${list[0].L} px on a dead-straight diagonal; real things travel on slight arcs${classicNote}.`,
+      message: `${list.slice(0, 3).map((s) => names[s.id]).join(', ')}${list.length > 3 ? ` and ${list.length - 3} more` : ''} ${list.length > 1 ? 'move' : 'moves'} ${list[0].L} px on a dead-straight diagonal (real things travel on slight arcs)${classicNote}.`,
       fix: setup.classic ? 'drop data-motion="classic" (moves arc by default), or move along a curve with gm.path.travel.' : 'remove arc: 0, or move along a curve with gm.path.travel (or keyframes through an offset midpoint).' });
   }
   // 4. one easing curve for nearly everything (springs and the natural defaults are not curves of that kind)
@@ -596,7 +596,7 @@ export function motionIssues(samples, names, setup, info, step) {
     const top = [...count].sort((a, b) => b[1] - a[1])[0];
     if (top && top[1] / eases.length > 0.9) {
       const name = eases.find((e) => e.ease === top[0]).name;
-      out.push({ severity: 'warning', code: 'same-ease', time: null, message: `${top[1]} of ${eases.length} tweens and entrances use the same curve (${name}); one curve for everything moves like a machine${classicNote}.`,
+      out.push({ severity: 'warning', code: 'same-ease', time: null, message: `${top[1]} of ${eases.length} tweens and entrances use the same curve (${name}): everything moves like one machine${classicNote}.`,
         fix: setup.classic ? "drop data-motion=\"classic\" (natural motion gives moves springs), or vary the eases: 'spring'/'out-back' for arrivals, 'in-*' for exits, 'in-out-sine' for long moves." : "leave ease out for the natural spring default, or vary it: 'spring'/'out-back' for arrivals, 'in-*' for exits, 'in-out-sine' for long moves." });
     }
   }

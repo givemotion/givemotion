@@ -20,6 +20,9 @@ second. Do not reformat files you are not changing.
 - **T6** `mw.connect`, `mw.rect`, `data-safe-zone` / `unsafe-zone`, `mw.log`, `hideBefore`, `snapshot --grid`, `captions` command.
 - **T7** speed study (`docs/experiments/2026-10-t7-speed.md`): time is mostly software compositing; fixed an encoder stall
   and a determinism bug (Chrome partial raster).
+- **N2** labels that stay with their shapes: `data-anchor="#server bottom 12"` (HTML and SVG text, follows timeline/travel/
+  camera, chains), `data-sketch-mark-padding`, `mw.path.travel(el, mw.connect(...))` rides a live arrow. Not yet tried by
+  a fresh agent round: the next hand-drawn round should check that makers use it and that moving a part is one edit.
 - Also: tests no longer hang, camera shots at elements that appear later frame correctly, `empty-frame` and
   `text-over-line` checks, script error lines map to the file you wrote.
 
@@ -42,12 +45,6 @@ Round 2 and 3 only covered some briefs, one run each. Run `round.js setup r8 --b
 tokens), judge with 2-3 judges per brief, and compare with round 2 (`docs/experiments/2026-10-round2.md`). The friction
 logs are the main output: fix the engine first, then docs.
 - Files: `bench/agents/` (maybe tune briefs), new `docs/experiments/<date>-r8.md`.
-
-## N2. Labels that stay with their shapes (from the last hand-drawn round)
-Agents place every label in world px by hand, apart from the shape it names; moving a part meant ~25 edits.
-- Idea: `data-anchor="#server bottom 12"` on any element: placed next to that element (side, gap), following it if it moves.
-- Also: `data-sketch-mark-padding`; `mw.connect` returning a path that `mw.path.travel` can follow.
-- Files: `src/runtime/sketch.js` (or `motion.js`), SKILL.md.
 
 ## N3. Partial re-render inside one long scene
 Parts are fingerprinted per top-level scene, so a whiteboard video (one long scene) re-renders fully after any edit.

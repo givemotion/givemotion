@@ -1542,7 +1542,7 @@
   // Shared internals for runtime extensions (motion.js, audio.js). Not a public API.
   mw.__internal = {
     hooks, comp, real, PX, report, pageError, parseTime, easing, cssEasing, isEasingName, normEase,
-    nearestClip, clipStartOf, clipEndOf, mapT, addOwn, selectorOf, makeRandom, parseColor, mixColor, info,
+    nearestClip, clipStartOf, clipEndOf, mapT, addOwn, selectorOf, makeRandom, parseColor, mixColor, info, dropOwnMutations, noteMutations: () => handleRecords(mo.takeRecords()),
     morphPairs: () => morphPairs,
     addOwnAnim(a, originTime) { ownAnim.add(a); origin.set(a, originTime); known.add(a); },
     setColorMixer(fn) { colorMixer = fn; }, clips: () => clips, waits, pendingWaits, MODE, CONFIG, SKIP_TAGS,

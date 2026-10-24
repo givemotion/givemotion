@@ -220,3 +220,53 @@ test('timeline: fromTo with keyframes shows its from-values before it starts; hi
   assert.deepEqual(JSON.parse(await evalAt(f, 0.5, `JSON.stringify([getComputedStyle(document.getElementById('a')).opacity, getComputedStyle(document.getElementById('b')).visibility])`)), ['0', 'hidden']);
   assert.deepEqual(JSON.parse(await evalAt(f, 2, `JSON.stringify([getComputedStyle(document.getElementById('a')).opacity, getComputedStyle(document.getElementById('b')).visibility])`)), ['1', 'visible']);
 });
+
+test('data-anchor keeps labels next to moving shapes (camera, chains, SVG text); travel rides an mw.connect arrow; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2" style="position:absolute;inset:0;overflow:hidden">
+    <div id="world" style="position:absolute;left:0;top:0;width:1000px;height:600px;font-size:24px">
+      <svg viewBox="0 0 1000 600" width="1000" height="600" style="position:absolute;left:0;top:0" data-sketch>
+        <rect id="r" x="60" y="80" width="200" height="120" fill="#fd0" stroke="#000" stroke-width="6"/>
+        <text id="st" data-anchor="#r top 10" text-anchor="middle" font-size="24" fill="#fff">top</text></svg>
+      <div id="b" style="position:absolute;left:600px;top:120px;width:120px;height:80px;background:#345"></div>
+      <div id="l1" data-anchor="#r bottom 12" style="transform:translate(-50%,-50%)">under r</div>
+      <div id="l2" data-anchor="#b right 10">right of b</div>
+      <div id="l3" data-anchor="#l2 bottom-left 0">chained</div>
+      <div id="pkg" style="position:absolute;width:20px;height:20px;background:#e60"></div>
+    </div>
+    <div id="ov" data-anchor="#b top 20" style="font-size:20px">over the stage</div>
+    <p style="position:absolute;left:20px;top:300px;font-size:30px;margin:0"><span id="m0" data-sketch-mark="circle" data-sketch-mark-padding="0">word</span> <span id="m1" data-sketch-mark="circle">word</span></p>
+  </section>
+  <script>
+    mw.timeline('#world').to('#b', { y: 200, x: -100, duration: 2, ease: 'linear' }, 0);
+    const arrow = mw.connect('#r', '#b', { head: 'none' });
+    mw.path.travel('#pkg', arrow, { stops: [[0, 0], [2, 1]], ease: 'linear' });
+    mw.camera('#world').shot(0, { fit: ['#r', '#b'], padding: 20 }).shot(0.5, { fit: '#b', padding: 60, duration: 1 });
+  </script>`));
+  const v = await evalAt(f, 1, `(() => {
+    const R = (s) => mw.rect(s, '#world'), S = (s) => document.querySelector(s).getBoundingClientRect();
+    const g = R(document.querySelector('#r [data-mw-sketch-guide]')), l1 = R('#l1'), b = R('#b'), l2 = R('#l2'), l3 = R('#l3'), st = R('#st'), pkg = R('#pkg');
+    const p = document.querySelector('.mw-connect path').getAttribute('d').match(/-?[\\d.]+/g).map(Number);
+    const ov = S('#ov'), sb = S('#b');
+    const mw0 = document.querySelector('#m0 .mw-sketch-mark path').getBBox().width, mw1 = document.querySelector('#m1 .mw-sketch-mark path').getBBox().width;
+    return { l1gap: l1.y - (g.y + g.h), l1cx: l1.cx - g.cx, l2gap: l2.x - (b.x + b.w), l2cy: l2.cy - b.cy, l3: [l3.x - l2.x, l3.y - (l2.y + l2.h)], stgap: g.y - (st.y + st.h), stcx: st.cx - g.cx,
+      pkg: [pkg.cx - (p[0] + p[2]) / 2, pkg.cy - (p[1] + p[3]) / 2], ov: [ov.left + ov.width / 2 - (sb.left + sb.width / 2), sb.top - (ov.top + ov.height)], marks: [mw0, mw1], issues: mw.inspect().issues.map((i) => i.code) };
+  })()`);
+  const px = 360 / 1080;
+  const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, what + ': ' + a + ' vs ' + b);
+  // the visible edge of the sketched rect is half its 6px stroke outside the shape, then the 12px gap
+  near(v.l1gap, 3 + 12 * px, 1, 'label under the sketched rect'); near(v.l1cx, 0, 1, 'centered under it (the centering translate is dropped)');
+  near(v.l2gap, 10 * px, 1, 'label right of the moving box'); near(v.l2cy, 0, 1, 'vertically centered');
+  near(v.l3[0], 0, 1, 'chained label lined up left'); near(v.l3[1], 0, 1, 'chained label right under');
+  near(v.stgap, 3 + 10 * px, 2, 'SVG text above the rect'); near(v.stcx, 0, 2, 'SVG text centered');
+  near(v.pkg[0], 0, 1.5, 'traveler halfway along the arrow (x)'); near(v.pkg[1], 0, 1.5, 'traveler halfway along the arrow (y)');
+  near(v.ov[0], 0, 1.5, 'stage label centered over the zoomed world box'); near(v.ov[1], 20 * px, 1.5, 'stage label gap (after the camera)');
+  assert.ok(v.marks[0] < v.marks[1] - 10, 'padding 0 circle is narrower: ' + v.marks);
+  assert.deepEqual(v.issues.filter((c) => /anchor|script|connect/.test(c)), []);
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, ...quiet });
+  await render(f, { output: b, workers: 2, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.equal(fa.length, 60);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+});

@@ -1100,7 +1100,15 @@
     // a sketched shape (data-sketch) is a group: travel along its exact shape
     if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-mw-sketch-guide]') || pth.querySelector('path') || pth;
     if (!el) { I.report('error', 'travel-no-element', `mw.path.travel: "${tr.el}" matched nothing.`, null); return; }
-    if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth);
+    // along an mw.connect arrow: its path changes every frame, so sketch.js lays it out each frame (I.liveTravels)
+    const conn = tr.path && tr.path.__mwConnector;
+    if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth, conn);
+    if (conn) liveTravels.push({ kind: 'travel', tr, el, conn });
+    else setupTravelPath(tr, el, pth);
+    el.style.offsetAnchor = 'center';
+    setupTravelAnim(tr, el);
+  }
+  function setupTravelPath(tr, el, pth) {
     const cb = el.offsetParent || el.parentElement;
     const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
     const m0 = mk(0), m1 = mk(1000);
@@ -1126,7 +1134,8 @@
     const ox = el.offsetLeft, oy = el.offsetTop;
     const d = 'M' + pts.map(([x, y]) => r4(x - ox) + ' ' + r4(y - oy)).join(' L');
     el.style.offsetPath = `path('${d}')`;
-    el.style.offsetAnchor = 'center';
+  }
+  function setupTravelAnim(tr, el) {
     el.style.offsetRotate = tr.opts.rotate === false || tr.opts.rotate == null ? '0deg' : tr.opts.rotate === true || tr.opts.rotate === 'auto' ? 'auto' : String(tr.opts.rotate);
     let stops = (tr.opts.stops || [[0, 0], [tr.opts.duration || 2, 1]]).map((s0) => (Array.isArray(s0) ? s0 : [s0.at, s0.to]));
     stops = stops.sort((x, y) => x[0] - y[0]);
@@ -1142,7 +1151,15 @@
   }
   // SVG shapes (a <circle>, a <g>) travel in their own SVG's coordinates, moved by a transform each frame.
   const svgTravels = [];
-  function setupTravelSVG(tr, el, pth) {
+  const liveTravels = I.liveTravels = [];
+  function setupTravelSVG(tr, el, pth, conn) {
+    if (conn) {
+      const bb = el.getBBox();
+      el.style.transformBox = 'fill-box'; el.style.transformOrigin = '50% 50%';
+      liveTravels.push({ kind: 'travel', svg: true, tr, el, conn, cx: bb.x + bb.width / 2, cy: bb.y + bb.height / 2 });
+      tr.done = true;
+      return;
+    }
     const par = el.parentNode;
     const inv = par.getScreenCTM().inverse();
     let pts = [];

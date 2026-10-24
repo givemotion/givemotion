@@ -414,8 +414,11 @@
     let d = '';
     const U = rects.reduce((u, r) => ({ x: Math.min(u.x, r.x), y: Math.min(u.y, r.y), r: Math.max(u.r, r.x + r.w), b: Math.max(u.b, r.y + r.h) }), { x: Infinity, y: Infinity, r: -Infinity, b: -Infinity });
     const pad = fs * 0.25;
-    if (m.kind === 'circle') d = ellipse((U.x + U.r) / 2, (U.y + U.b) / 2, (U.r - U.x) / 2 + pad * 1.6, (U.b - U.y) / 2 + pad, { ...R2, passes: 1 });
-    else if (m.kind === 'box') d = rect(U.x - pad, U.y - pad * 0.6, U.r - U.x + pad * 2, U.b - U.y + pad * 1.2, { ...R2, passes: 1 });
+    // data-sketch-mark-padding="6" (all sides) or "10 4" (sides, top/bottom): px at 1080p between the text and the mark
+    const pv = (el.getAttribute('data-sketch-mark-padding') || '').trim().split(/[\s,]+/).map(parseFloat).filter((x) => isFinite(x));
+    const padX = pv.length ? pv[0] * px() : m.kind === 'circle' ? pad * 1.6 : pad, padY = pv.length ? (pv[1] ?? pv[0]) * px() : m.kind === 'circle' ? pad : pad * 0.6;
+    if (m.kind === 'circle') d = ellipse((U.x + U.r) / 2, (U.y + U.b) / 2, (U.r - U.x) / 2 + padX, (U.b - U.y) / 2 + padY, { ...R2, passes: 1 });
+    else if (m.kind === 'box') d = rect(U.x - padX, U.y - padY, U.r - U.x + padX * 2, U.b - U.y + padY * 2, { ...R2, passes: 1 });
     else for (const r of rects) {
       const y = m.kind === 'underline' ? r.y + r.h * 0.92 : r.y + r.h * 0.55;
       d += strokeLine(r.x - fs * 0.05, y, r.x + r.w + fs * 0.05, y + (m.kind === 'highlight' ? 0 : fs * 0.02), { roughness: 0.6, bow: 1, overshoot: 0.5, raw: {} }, rng(m.seed + ':' + Math.round(y)), !d);
@@ -476,8 +479,10 @@
     const [o, x, y] = m.map((d) => d.getBoundingClientRect());
     const ax = (x.left - o.left) / 1000, ay = (x.top - o.top) / 1000, bx = (y.left - o.left) / 1000, by = (y.top - o.top) / 1000;
     const det = ax * by - ay * bx || 1;
-    // screen → space
-    return (sx, sy) => { const dx = sx - o.left, dy = sy - o.top; return [(dx * by - dy * bx) / det, (dy * ax - dx * ay) / det]; };
+    // screen → space (and .fwd: space → screen)
+    const f = (sx, sy) => { const dx = sx - o.left, dy = sy - o.top; return [(dx * by - dy * bx) / det, (dy * ax - dx * ay) / det]; };
+    f.fwd = (x, y) => [o.left + x * ax + y * bx, o.top + x * ay + y * by];
+    return f;
   }
   const elOf = (t) => (typeof t === 'string' ? document.querySelector(t) : (t && replaced.get(t)) || t);
   function rectIn(target, space) {
@@ -499,7 +504,8 @@
   function connect(a, b, o = {}) {
     const c = { a, b, o, seed: o.seed ?? 'c' + connectors.length };
     connectors.push(c);
-    return { el: () => c.path, progress: (t) => c.progressAt ? c.progressAt(t) : 1 };
+    // (mw.path.travel(el, thisArrow) rides along the arrow, see planTravel)
+    return { el: () => c.path, progress: (t) => c.progressAt ? c.progressAt(t) : 1, __mwConnector: c };
   }
   // where the line from the center of box r toward point (px, py) leaves r (plus a gap)
   function edgePoint(r, px2, py2, gap) {
@@ -509,7 +515,8 @@
     const k = Math.min(sx, sy), len = Math.hypot(dx, dy);
     return [r.cx + dx * k + (dx / len) * gap, r.cy + dy * k + (dy / len) * gap];
   }
-  function commonParent(x, y) { for (let p = x.parentElement; p; p = p.parentElement) if (p.contains(y)) return p; return document.body; }
+  // (an HTML element: two shapes in one <svg> get their arrow in the svg's HTML parent)
+  function commonParent(x, y) { for (let p = x.parentElement; p; p = p.parentElement) if (p.contains(y) && !(p instanceof SVGElement)) return p; return document.body; }
   function setupConnector(c) {
     const A = elOf(c.a), B = elOf(c.b);
     if (!A || !B) { I.report('error', 'connect-no-target', `mw.connect: "${!A ? c.a : c.b}" matched nothing.`, null, 'Check the selector.'); c.dead = true; return; }
@@ -555,25 +562,32 @@
       path.setAttribute('pathLength', '1');
     }
   }
+  // the arrow's line right now, in its space's coordinates (null while an end is not displayed)
+  function connGeom(c) {
+    if (!c.path && !c.dead) setupConnector(c);
+    if (c.dead || !c.A.getClientRects().length || !c.B.getClientRects().length) return null;
+    const ra = rectIn(c.A, c.space), rb = rectIn(c.B, c.space);
+    if (!ra || !rb) return null;
+    const o = c.o, gap = (o.gap ?? 10) * px(), curve = o.curve ?? 0;
+    // aim from center to center, bent by curve; ends sit on the boxes' edges
+    const mx = (ra.cx + rb.cx) / 2, my = (ra.cy + rb.cy) / 2, len = Math.hypot(rb.cx - ra.cx, rb.cy - ra.cy) || 1;
+    const nx = -(rb.cy - ra.cy) / len, ny = (rb.cx - ra.cx) / len;
+    const qx = mx + nx * curve * len, qy = my + ny * curve * len;
+    // from/to: 'top' 'right' 'bottom' 'left' (middle of that side) or 'center'; default: where the line crosses the edge
+    const side = (r, sd, gp) => ({ top: [r.cx, r.y - gp], bottom: [r.cx, r.y + r.h + gp], left: [r.x - gp, r.cy], right: [r.x + r.w + gp, r.cy], center: [r.cx, r.cy] })[sd];
+    const [x1, y1] = side(ra, o.from, gap) || edgePoint(ra, curve ? qx : rb.cx, curve ? qy : rb.cy, gap);
+    const [x2, y2] = side(rb, o.to, gap) || edgePoint(rb, curve ? qx : ra.cx, curve ? qy : ra.cy, gap);
+    return { x1, y1, x2, y2, qx, qy, curve };
+  }
   function updateConnectors(T) {
     let changed = false;
     for (const c of connectors) {
-      if (!c.path && !c.dead) setupConnector(c);
+      const g = connGeom(c);
       if (c.dead) continue;
-      const shown = c.A.getClientRects().length && c.B.getClientRects().length;
-      const ra = rectIn(c.A, c.space), rb = rectIn(c.B, c.space);
-      const o = c.o, gap = (o.gap ?? 10) * px();
+      const o = c.o;
       let d = '';
-      if (shown && ra && rb) {
-        const curve = o.curve ?? 0;
-        // aim from center to center, bent by curve; ends sit on the boxes' edges
-        const mx = (ra.cx + rb.cx) / 2, my = (ra.cy + rb.cy) / 2, len = Math.hypot(rb.cx - ra.cx, rb.cy - ra.cy) || 1;
-        const nx = -(rb.cy - ra.cy) / len, ny = (rb.cx - ra.cx) / len;
-        const qx = mx + nx * curve * len, qy = my + ny * curve * len;
-        // from/to: 'top' 'right' 'bottom' 'left' (middle of that side) or 'center'; default: where the line crosses the edge
-        const side = (r, sd, gp) => ({ top: [r.cx, r.y - gp], bottom: [r.cx, r.y + r.h + gp], left: [r.x - gp, r.cy], right: [r.x + r.w + gp, r.cy], center: [r.cx, r.cy] })[sd];
-        const [x1, y1] = side(ra, o.from, gap) || edgePoint(ra, curve ? qx : rb.cx, curve ? qy : rb.cy, gap);
-        const [x2, y2] = side(rb, o.to, gap) || edgePoint(rb, curve ? qx : ra.cx, curve ? qy : ra.cy, gap);
+      if (g) {
+        const { x1, y1, x2, y2, qx, qy, curve } = g;
         const head = o.head === false || o.head === 'none' ? null : o.head || 'end';
         const hl = (o.headSize ?? 20) * px();
         if (o.sketch) {
@@ -611,6 +625,241 @@
     }
     return changed;
   }
+
+  // ---------------------------------------------------------------------------
+  // data-anchor="#server bottom 12": keep an element (a label) next to another one, every frame, wherever that one
+  // moves (timeline, travel, camera, entrance). Side: top bottom left right center, or top-left top-right bottom-left
+  // bottom-right (above/below, lined up with that edge); "inside" puts it inside that edge instead. The number is the
+  // gap in px at 1080p (default 12). The label is positioned absolutely in its own parent (left/top are set).
+  // Plus mw.path.travel(el, arrow): ride along an mw.connect arrow, whose line is rebuilt every frame.
+  // ---------------------------------------------------------------------------
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const SIDES = { top: 'top', above: 'top', bottom: 'bottom', below: 'bottom', under: 'bottom', left: 'left', right: 'right', center: 'center', middle: 'center', 'top-left': 'top-left', 'top-right': 'top-right', 'bottom-left': 'bottom-left', 'bottom-right': 'bottom-right', 'left-top': 'top-left', 'right-top': 'top-right', 'left-bottom': 'bottom-left', 'right-bottom': 'bottom-right' };
+  function parseAnchor(v) {
+    const toks = String(v || '').trim().split(/\s+/).filter(Boolean);
+    let side = null, gap = null, inside = false;
+    while (toks.length > 1) {
+      const t = toks[toks.length - 1].toLowerCase();
+      if (SIDES[t] && !side) side = SIDES[t];
+      else if (t === 'inside' || t === 'in') inside = true;
+      else if (t === 'outside') inside = false;
+      else if (/^-?(\d+\.?\d*|\.\d+)(px)?$/.test(t) && gap == null) gap = parseFloat(t);
+      else break;
+      toks.pop();
+    }
+    return { sel: toks.join(' '), side: side || 'center', gap: gap ?? 12, inside };
+  }
+  // the nearest match: a block repeated with the same classes finds its own copy (or the box the label is in)
+  function findNear(el, sel) {
+    try {
+      for (let p = el.parentElement; p; p = p.parentElement) {
+        if (p.matches(sel)) return p;
+        const m = [...p.querySelectorAll(sel)].find((x) => x !== el && !el.contains(x));
+        if (m) return m;
+      }
+    } catch (e) { return null; }
+    return null;
+  }
+  // where the label's top-left goes, for a target box t in the label's coordinates
+  function anchorXY(t, W, H, sp) {
+    const g = sp.gap * px(), [v, h] = sp.side === 'center' ? [null, null] : sp.side.includes('-') ? sp.side.split('-') : sp.side === 'top' || sp.side === 'bottom' ? [sp.side, null] : [null, sp.side];
+    const corner = v && h, r = t.x + t.w, b = t.y + t.h;
+    let X = t.x + t.w / 2 - W / 2, Y = t.y + t.h / 2 - H / 2;
+    if (h === 'left') X = sp.inside ? t.x + g : corner ? t.x : t.x - g - W;
+    if (h === 'right') X = sp.inside ? r - g - W : corner ? r - W : r + g;
+    if (v === 'top') Y = sp.inside ? t.y + g : t.y - g - H;
+    if (v === 'bottom') Y = sp.inside ? b - g - H : b + g;
+    return [X, Y];
+  }
+  const anchors = [];
+  // three invisible points in a parent (the same containing block as an absolute label there): screen <-> its coordinates
+  const probeSets = new WeakMap();
+  function probesFor(parent, pos) {
+    let s = probeSets.get(parent);
+    if (!s) probeSets.set(parent, (s = {}));
+    if (!s[pos]) {
+      const mk = (x, y) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:${pos};left:${x}px;top:${y}px;width:0;height:0;margin:0;pointer-events:none;visibility:hidden`; parent.appendChild(d); return d; };
+      s[pos] = [mk(0, 0), mk(1000, 0), mk(0, 1000)];
+    }
+    return s[pos];
+  }
+  function collectAnchors() {
+    for (const el of document.querySelectorAll('[data-anchor]')) {
+      if (el.__mwAnchor) continue;
+      el.__mwAnchor = true;
+      const sp = parseAnchor(el.getAttribute('data-anchor'));
+      const tg = sp.sel ? findNear(el, sp.sel) : null;
+      if (!tg) { I.report('error', 'anchor-no-target', `data-anchor="${el.getAttribute('data-anchor')}": "${sp.sel}" matched nothing.`, el, 'Start with a selector of the element to stay next to, then the side and gap: data-anchor="#server bottom 12".'); continue; }
+      const svgText = el instanceof SVGElement && /^text$/i.test(el.tagName);
+      if (el instanceof SVGElement && !svgText) { I.report('warning', 'anchor-unsupported', 'data-anchor works on HTML elements and SVG <text>, not on other SVG elements.', el, 'Wrap the SVG in an HTML element, or anchor an HTML label instead.'); continue; }
+      const a = { kind: 'anchor', el, tg, sp, svg: svgText };
+      if (!svgText) {
+        // out of the flow, at the parent's origin; its own size only (a width set by the author still wraps it)
+        const cs = getComputedStyle(el);
+        el.style.position = cs.position === 'fixed' ? 'fixed' : 'absolute';
+        el.style.left = '0px'; el.style.top = '0px'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.margin = '0';
+        let wAuto = false; try { wAuto = String(el.computedStyleMap().get('width')) === 'auto'; } catch (e) {}
+        if (wAuto) el.style.width = 'max-content';
+        // the anchor centers it: a centering translate(-50%, -50%) left over from hand placement would push it off
+        try { const m = cs.transform && cs.transform !== 'none' ? new DOMMatrix(cs.transform) : null; if (m && m.is2D && m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1) el.style.transform = 'none'; } catch (e) {}
+        a.probes = probesFor(el.parentElement, el.style.position);
+      }
+      // a shape's visible edge is half its stroke outside its geometry (measured once)
+      const tcs = getComputedStyle(tg);
+      a.sw = tg instanceof SVGGraphicsElement && !/^(text|svg|foreignObject)$/i.test(tg.tagName) && tcs.stroke !== 'none' ? parseFloat(tcs.strokeWidth) || 0 : 0;
+      anchors.push(a);
+      jobsDirty = true;
+    }
+  }
+  // screen -> the label's own coordinates (its parent's user space for SVG text)
+  function labelSpace(a, cache) {
+    const key = a.svg ? a.el.parentNode : a.probes;
+    if (cache && cache.has(key)) return cache.get(key);
+    let f = null;
+    if (a.svg) { const m = a.el.parentNode.getScreenCTM(); if (m) { const inv = m.inverse(); f = (x, y) => { const q = new DOMPoint(x, y).matrixTransform(inv); return [q.x, q.y]; }; } }
+    else {
+      const [o, x, y] = a.probes.map((d) => d.getBoundingClientRect());
+      const ax = (x.left - o.left) / 1000, ay = (x.top - o.top) / 1000, bx = (y.left - o.left) / 1000, by = (y.top - o.top) / 1000;
+      const det = ax * by - ay * bx;
+      if (det) f = (sx, sy) => { const dx = sx - o.left, dy = sy - o.top; return [(dx * by - dy * bx) / det, (dy * ax - dx * ay) / det]; };
+    }
+    if (cache) cache.set(key, f);
+    return f;
+  }
+  // the target's box in the label's coordinates (null while it is not displayed)
+  function targetBox(a, map) {
+    const tg = a.tg;
+    if (!tg.isConnected || !tg.getClientRects().length) return null;
+    const ge = tg.hasAttribute('data-mw-sketch') ? tg.querySelector(':scope > [data-mw-sketch-guide]') || tg : tg;
+    const r = ge.getBoundingClientRect();
+    let e = 0;
+    if (a.sw) { const m = tg.getScreenCTM && tg.getScreenCTM(); e = m ? (a.sw / 2) * Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) : 0; }
+    const pts = [map(r.left - e, r.top - e), map(r.right + e, r.top - e), map(r.right + e, r.bottom + e), map(r.left - e, r.bottom + e)];
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+  }
+  // Each job measures first and returns its write (or null), so a frame's labels cost one layout per level, not one each.
+  function planAnchor(a, init, cache) {
+    const el = a.el;
+    if (!el.isConnected || !el.getClientRects().length) return null;
+    const map = labelSpace(a, cache);
+    if (!map) return null;
+    // a target that is not displayed right now (a later clip): where it was measured while loading
+    const t = targetBox(a, map) || a.fallback;
+    if (!t) return null;
+    if (init) a.fallback = { x: r2(t.x), y: r2(t.y), w: r2(t.w), h: r2(t.h) };
+    if (a.svg) {
+      // SVG text: its box at x=0 y=0 (measured again only when the text changes), so x/y never depend on the last frame
+      const txt = el.textContent;
+      if (!a.tb || a.tb.txt !== txt) {
+        el.setAttribute('x', '0'); el.setAttribute('y', '0');
+        const b = el.getBBox();
+        a.tb = { txt, x: b.x, y: b.y, w: b.width, h: b.height };
+        a.lastX = a.lastY = null;
+      }
+      const [X, Y] = anchorXY(t, a.tb.w, a.tb.h, a.sp);
+      const x = String(r2(X - a.tb.x)), y = String(r2(Y - a.tb.y));
+      return () => { if (x === a.lastX && y === a.lastY) return false; el.setAttribute('x', x); el.setAttribute('y', y); a.lastX = x; a.lastY = y; return true; };
+    }
+    const [X, Y] = anchorXY(t, el.offsetWidth, el.offsetHeight, a.sp);
+    const L = r2(X) + 'px', Tp = r2(Y) + 'px';
+    return () => { if (el.style.left === L && el.style.top === Tp) return false; el.style.left = L; el.style.top = Tp; return true; };
+  }
+  // an element riding along an arrow: the arrow's line, in the rider's own coordinates
+  function planTravel(j, T) {
+    const g = connGeom(j.conn), el = j.el;
+    if (!g) return j.svg ? () => { if (!el.style.transform) return false; el.style.transform = ''; return true; } : () => { if (el.style.offsetPath === 'none') return false; el.style.offsetPath = 'none'; j.lastV = null; return true; };
+    const fwd = spaceMap(j.conn.space).fwd;
+    let v;
+    if (j.svg) {
+      const m = el.parentNode.getScreenCTM();
+      if (!m) return null;
+      const inv = m.inverse(), P = (x, y) => { const s = fwd(x, y), q = new DOMPoint(s[0], s[1]).matrixTransform(inv); return [q.x, q.y]; };
+      const a = P(g.x1, g.y1), b = P(g.x2, g.y2), q = P(g.qx, g.qy);
+      const pe = measure(g.curve ? `M${a[0]} ${a[1]}Q${q[0]} ${q[1]} ${b[0]} ${b[1]}` : `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`), len = pe.getTotalLength();
+      const at = len * Math.max(0, Math.min(1, j.tr.progress(I.mapT(el, T) - I.clipStartOf(el))));
+      const p = pe.getPointAtLength(at), p0 = pe.getPointAtLength(Math.max(0, at - 0.5)), p1 = pe.getPointAtLength(Math.min(len, at + 0.5));
+      const rot = j.tr.opts.rotate, ang = rot === true || rot === 'auto' ? (Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180) / Math.PI : 0;
+      v = `translate(${r2(p.x - j.cx)}px, ${r2(p.y - j.cy)}px)` + (ang ? ` rotate(${r2(ang)}deg)` : '');
+      return () => { if (el.style.transform === v) return false; el.style.transform = v; return true; };
+    }
+    // CSS offset-path: (0,0) is the element's own layout corner; the browser animates offset-distance (the stops)
+    const toCB = spaceMap(el.offsetParent || el.parentElement), ox = el.offsetLeft, oy = el.offsetTop;
+    const P = (x, y) => { const s = fwd(x, y), q = toCB(s[0], s[1]); return r2(q[0] - ox) + ' ' + r2(q[1] - oy); };
+    v = `path("M${P(g.x1, g.y1)} ${g.curve ? 'Q' + P(g.qx, g.qy) + ' ' : 'L'}${P(g.x2, g.y2)}")`;
+    return () => { if (j.lastV === v) return false; el.style.offsetPath = v; j.lastV = v; return true; };
+  }
+  // Anchors and riders, in order: a label on a label (or on a rider, or inside a moving label) is placed after it.
+  // Most run before the camera (so a camera shot can frame them); one whose target is moved by the camera from
+  // outside it (a label over the stage pinned to something in the world) runs after the camera.
+  let jobs = [], jobsDirty = true;
+  function orderJobs() {
+    const all = anchors.concat(I.liveTravels || []);
+    const depsOf = (j) => (j.kind === 'anchor' ? [j.tg] : [j.conn.A || elOf(j.conn.a), j.conn.B || elOf(j.conn.b)]).concat(j.el.parentElement).filter(Boolean);
+    const moved = (k, e) => k.el === e || k.el.contains(e);
+    const out = [], state = new Map();
+    const visit = (j) => {
+      const s = state.get(j);
+      if (s === 2) return;
+      if (s === 1) { I.report('error', 'anchor-loop', 'data-anchor: these elements are anchored to each other in a loop.', j.el, 'Anchor each label to a shape that is not anchored back to it.'); return; }
+      state.set(j, 1);
+      j.dep = []; j.level = 0;
+      for (const d of depsOf(j)) for (const k of all) if (k !== j && moved(k, d) && !j.dep.includes(k)) { visit(k); j.dep.push(k); j.level = Math.max(j.level, (k.level || 0) + 1); }
+      state.set(j, 2); out.push(j);
+    };
+    all.forEach(visit);
+    // what the camera moves: its world, layers with parallax, shared-element morphs
+    const mover = (e) => e && e.closest && e.closest('[data-mw-camera-world],[data-parallax],[data-morph]');
+    for (const j of out) j.late = depsOf(j).some((d) => mover(d) !== mover(j.el)) || j.dep.some((k) => k.late);
+    // before the camera, the camera's transforms of the last frame are taken off while measuring: rounding then never
+    // depends on which frame came before (1 worker == N workers)
+    camLayers = [...new Set(out.filter((j) => !j.late).flatMap((j) => { const r = []; for (let e = j.el.closest('[data-mw-camera-world],[data-parallax]'); e; e = e.parentElement && e.parentElement.closest('[data-mw-camera-world],[data-parallax]')) r.push(e); return r; }))];
+    jobs = out.sort((x, y) => x.level - y.level); jobsDirty = false;
+  }
+  let camLayers = [];
+  function runJobs(T, late) {
+    if (jobsDirty || jobs.length !== anchors.length + (I.liveTravels || []).length) orderJobs();
+    if (!late && camLayers.length) {
+      if (I.noteMutations) I.noteMutations(); // (real changes so far still count; the toggle below does not)
+      const saved = camLayers.map((e) => e.style.transform);
+      for (const e of camLayers) e.style.transform = 'none';
+      try { return runLevels(T, late); } finally { camLayers.forEach((e, i) => { e.style.transform = saved[i]; }); if (I.dropOwnMutations) I.dropOwnMutations(); }
+    }
+    return runLevels(T, late);
+  }
+  function runLevels(T, late) {
+    let changed = false;
+    for (let i = 0; i < jobs.length;) {
+      const lv = jobs[i].level, writes = [], cache = new Map();
+      for (; i < jobs.length && jobs[i].level === lv; i++) {
+        const j = jobs[i];
+        if (!!j.late !== late) continue;
+        const w = j.kind === 'anchor' ? planAnchor(j, false, cache) : planTravel(j, T);
+        if (w) writes.push(w);
+      }
+      for (const w of writes) if (w()) changed = true;
+    }
+    return changed;
+  }
+  // placed once while loading (the same in every worker), so a camera shot at 'content' sees the labels in place;
+  // things in clips that are not on screen yet are shown for a moment to be measured
+  function initAnchors() {
+    collectAnchors();
+    if (!anchors.length) return;
+    orderJobs();
+    for (const a of jobs) {
+      if (a.kind !== 'anchor') continue;
+      const hidden = [];
+      for (const e of [a.el, a.tg]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-mw-hidden')) { hidden.push(p); p.removeAttribute('data-mw-hidden'); }
+      try { const w = planAnchor(a, true, null); if (w) w(); } catch (e) { I.pageError(e); } finally { for (const p of hidden) p.setAttribute('data-mw-hidden', ''); }
+    }
+    jobsDirty = true;
+  }
+  I.hooks.init.unshift(initAnchors);
+  I.hooks.rebuild.push(collectAnchors);
+  I.hooks.post.unshift((T) => runJobs(T, false));
+  I.hooks.post.push((T) => runJobs(T, true));
   I.hooks.post.push(updateConnectors);
 
   mw.rect = rectIn;

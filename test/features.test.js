@@ -898,3 +898,110 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
 });
+
+// sketch and travel (r10)
+test('travel: an outer <svg data-sketch> rides an arrow; side/offset put riders beside the line (rotating or not, SVG shapes too)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2" style="position:absolute;inset:0">
+    <div id="world" style="position:absolute;inset:0">
+      <div id="a" style="position:absolute;left:20px;top:150px;width:60px;height:60px;background:#345"></div>
+      <div id="b" style="position:absolute;left:560px;top:150px;width:60px;height:60px;background:#345"></div>
+      <svg id="env" width="40" height="30" viewBox="0 0 40 30" data-sketch style="position:absolute;left:0;top:0;overflow:visible"><rect x="2" y="2" width="36" height="26" fill="#fff" stroke="#000" stroke-width="3"/></svg>
+      <div id="up" style="position:absolute;width:40px;height:30px;background:#fd0"></div>
+      <div id="rot" style="position:absolute;width:40px;height:20px;background:#e60"></div>
+      <svg width="640" height="360" style="position:absolute;left:0;top:0;overflow:visible"><path id="route" d="M100 300 L500 300" fill="none" stroke="#888"/><rect id="sh" x="0" y="0" width="20" height="10" fill="#0af"/></svg>
+    </div>
+  </section>
+  <script>
+    const ab = gm.connect('#a', '#b', { head: 'none' });
+    gm.path.travel('#env', ab, { stops: [[0, 0], [2, 1]], ease: 'linear' });
+    gm.path.travel('#up', ab, { stops: [[0, 0], [2, 0.5]], ease: 'linear', side: 'above' });
+    gm.path.travel('#rot', ab, { stops: [[0, 0], [2, 1]], ease: 'linear', offset: -30, rotate: true });
+    gm.path.travel('#sh', '#route', { stops: [[0, 0], [2, 1]], ease: 'linear', side: 'below' });
+  </script>`));
+  const v = await evalAt(f, 1, `(() => {
+    const R = (s) => gm.rect(s, '#world');
+    const p = document.querySelector('.gm-connect path').getAttribute('d').match(/-?[\\d.]+/g).map(Number);
+    return { line: p, env: R('#env'), up: R('#up'), rot: R('#rot'), sh: R('#sh'), issues: gm.inspect().issues.map((i) => i.code) };
+  })()`);
+  const px = 360 / 1080, [x1, y1, x2] = v.line;
+  const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, what + ': ' + a + ' vs ' + b);
+  near(v.env.cx, (x1 + x2) / 2, 1.5, 'sketched svg rides the arrow (x)'); near(v.env.cy, y1, 1.5, 'sketched svg rides the arrow (y)');
+  near(v.up.cx, x1 + (x2 - x1) * 0.25, 1.5, 'side above: same place along the line');
+  near(v.up.y + v.up.h, y1 - 10 * px, 1.5, 'side above: its bottom edge clears the line by the gap');
+  near(v.rot.cy, y1 - 30 * px, 1.5, 'offset -30 with rotate: 30 px (at 1080p) above a left-to-right line');
+  near(v.sh.cx, 300, 1.5, 'SVG shape along a path (x)'); near(v.sh.y, 300 + 10 * px, 1.5, 'side below: its top clears the path by the gap');
+  assert.deepEqual(v.issues.filter((c) => /travel|script/.test(c)), []);
+});
+
+test('sketch: rounded rects (rx/ry, border-radius) are drawn round; square ones stay square', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="1" style="position:absolute;inset:0">
+    <svg width="640" height="360" style="position:absolute;left:0;top:0" data-sketch>
+      <rect id="rr" x="40" y="40" width="200" height="120" rx="30" fill="#fd0" stroke="#000" stroke-width="4"/>
+      <rect id="sq" x="300" y="40" width="200" height="120" fill="none" stroke="#000" stroke-width="4"/>
+    </svg>
+    <div id="pill" data-sketch style="position:absolute;left:40px;top:220px;width:240px;height:80px;border:4px solid #0af;border-radius:40px"></div>
+  </section>`));
+  const v = await evalAt(f, 0.5, `(() => {
+    // the closest any outline stroke comes to the box's square corner (x, y)
+    const near = (paths, x, y) => Math.min(...paths.map((p) => { const L = p.getTotalLength(); let m = 1e9; for (let i = 0; i <= 400; i++) { const q = p.getPointAtLength(L * i / 400); m = Math.min(m, Math.hypot(q.x - x, q.y - y)); } return m; }));
+    const outl = (id) => [...document.querySelectorAll('#' + id + ' > path:not([data-gm-sketch-fill]):not([data-gm-sketch-guide])')];
+    return { kinds: [document.querySelector('#rr').getAttribute('data-gm-sketch'), document.querySelector('#sq').getAttribute('data-gm-sketch')],
+      rr: near(outl('rr'), 40, 40), sq: near(outl('sq'), 300, 40), pill: near([...document.querySelectorAll('#pill .gm-sketch-border path')], -4, -4) };
+  })()`);
+  assert.deepEqual(v.kinds, ['rrect', 'rect']);
+  assert.ok(v.rr > 6, 'rounded corner stays away from the square corner: ' + v.rr);
+  assert.ok(v.sq < 4, 'square corner is drawn to the corner: ' + v.sq);
+  assert.ok(v.pill > 8, 'border-radius box is drawn round: ' + v.pill);
+  // data-motion="classic" keeps the old square look
+  const fc = join(d, 'c.html');
+  writeFileSync(fc, readFileSync(f, 'utf8').replace('<html ', '<html data-motion="classic" '));
+  assert.equal(await evalAt(fc, 0.5, `document.querySelector('#rr').getAttribute('data-gm-sketch')`), 'rect');
+});
+
+test('gm.sketch.loop circles a group without cutting its labels, draws on, and data-sketch-mark="circle" loops around boxes and SVG groups; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2" style="position:absolute;inset:0;overflow:hidden">
+    <div id="world" style="position:absolute;left:0;top:0;width:900px;height:500px;font-size:22px">
+      <div id="a" style="position:absolute;left:60px;top:60px;width:120px;height:70px;background:#345"></div>
+      <p id="la" style="position:absolute;left:70px;top:140px;margin:0" data-enter="fade-up 0.4 0.2">label a</p>
+      <div id="b" style="position:absolute;left:420px;top:200px;width:100px;height:100px;background:#345"></div>
+      <p id="lb" style="position:absolute;left:400px;top:310px;margin:0">a longer label b</p>
+      <div id="card" data-sketch-mark="circle" data-sketch-mark-at="0.2" style="position:absolute;left:640px;top:60px;width:180px;height:90px;border:3px solid #0af"><p style="margin:10px">card text</p></div>
+      <svg width="900" height="500" style="position:absolute;left:0;top:0;overflow:visible"><g id="grp" data-sketch-mark="circle" data-sketch-mark-at="0.2"><rect x="620" y="300" width="80" height="60" fill="#fd0"/><rect x="720" y="320" width="60" height="40" fill="#fd0"/></g></svg>
+    </div>
+  </section>
+  <script>
+    gm.sketch.loop(['#a', '#la', '#b', '#lb'], { draw: [1, 0.5], padding: 24, id: 'lp' });
+    gm.camera('#world').shot(0, { fit: 'content', padding: 20 });
+  </script>`));
+  const probe = `(() => {
+    const R = (s) => gm.rect(s, '#world'), lp = document.querySelector('.gm-sketch-loop path');
+    const pts = (p, n = 300) => { const L = p.getTotalLength(), o = []; for (let i = 0; i <= n; i++) { const q = p.getPointAtLength(L * i / n); o.push([q.x, q.y]); } return o; };
+    // how far the curve stays outside a box (negative = it cuts into it)
+    const clear = (P, b) => Math.min(...P.map(([x, y]) => { const dx = Math.max(b.x - x, x - (b.x + b.w)), dy = Math.max(b.y - y, y - (b.y + b.h)); return dx > 0 || dy > 0 ? Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) : Math.max(dx, dy); }));
+    const P = pts(lp), boxes = ['#a', '#la', '#b', '#lb'].map(R);
+    const card = document.querySelector('#card .gm-sketch-mark path'), ce = document.querySelector('#card'), cardBox = { x: -3, y: -3, w: ce.offsetWidth, h: ce.offsetHeight };
+    const g = document.querySelector('#grp + .gm-sketch-mark path'), rb = [...document.querySelectorAll('#grp > rect')].map((r) => r.getBBox()), gb = { x: Math.min(...rb.map((r) => r.x)), y: Math.min(...rb.map((r) => r.y)) }; gb.width = Math.max(...rb.map((r) => r.x + r.width)) - gb.x; gb.height = Math.max(...rb.map((r) => r.y + r.height)) - gb.y;
+    return { vis: getComputedStyle(document.querySelector('.gm-sketch-loop')).visibility, dash: lp.style.strokeDasharray, id: !!document.querySelector('#lp'),
+      clear: boxes.map((b) => clear(P, b)), inside: boxes.map((b) => { const q = lp.ownerSVGElement.createSVGPoint(); q.x = b.cx; q.y = b.cy; return lp.isPointInFill(q); }),
+      card: card ? clear(pts(card), cardBox) : null, grp: g ? clear(pts(g), { x: gb.x, y: gb.y, w: gb.width, h: gb.height }) : null,
+      issues: gm.inspect().issues.map((i) => i.code) };
+  })()`;
+  const before = await evalAt(f, 0.5, probe), v = await evalAt(f, 1.8, probe);
+  assert.equal(before.vis, 'hidden', 'not drawn before its draw time');
+  assert.equal(v.vis, 'visible'); assert.equal(v.dash, 'none'); assert.ok(v.id);
+  const px = 360 / 1080;
+  for (const c of v.clear) assert.ok(c > 24 * px * 0.6, 'the loop clears every target by most of its padding: ' + v.clear);
+  assert.deepEqual(v.inside, [true, true, true, true], 'every target is inside the loop');
+  assert.ok(v.card > 3, 'circle mark on a box goes around it, not through its corners: ' + v.card);
+  assert.ok(v.grp > 3, 'circle mark on an SVG <g> goes around it: ' + v.grp);
+  assert.deepEqual(v.issues.filter((c) => /loop|script|mark/.test(c)), []);
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, cache: false, ...quiet });
+  await render(f, { output: b, workers: 2, cache: false, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.equal(fa.length, 60);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+});

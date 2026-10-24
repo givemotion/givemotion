@@ -1621,6 +1621,8 @@
     // a sketched shape (data-sketch) is a group: travel along its exact shape
     if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-gm-sketch-guide]') || pth.querySelector('path') || pth;
     if (!el) { I.report('error', 'travel-no-element', `gm.path.travel: "${tr.el}" matched nothing.`, null); return; }
+    // an inline box (a <span>, an <a>) cannot be moved by offset-path or transforms
+    if (el instanceof HTMLElement && getComputedStyle(el).display === 'inline') I.report('warning', 'travel-inline', `gm.path.travel: "${typeof tr.el === 'string' ? tr.el : el.tagName.toLowerCase()}" is an inline element, so it cannot move.`, el, 'Give it display: inline-block (or block), or travel a <div> around it.');
     // along an gm.connect arrow: its path changes every frame, so sketch.js lays it out each frame (I.liveTravels)
     const conn = tr.path && tr.path.__gmConnector;
     if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth, conn);

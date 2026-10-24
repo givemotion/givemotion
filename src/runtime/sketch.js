@@ -10,6 +10,8 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const f1 = (x) => Math.round(x * 10) / 10;
   const px = () => (typeof I.PX === 'function' ? I.PX() : 1);
+  // (rounded sketched corners and loops around boxes are new looks: <html data-motion="classic"> keeps the old ones)
+  const natural = () => !I.naturalMotion || I.naturalMotion();
   // original shape → the sketched group that replaced it (so references taken by scripts still work)
   const replaced = I.replaced = I.replaced || new WeakMap();
 
@@ -344,7 +346,7 @@
         if (!isFinite(ry)) ry = rx;
         const w = n('width'), h = n('height');
         rx = Math.min(rx || 0, w / 2); ry = Math.min(ry || 0, h / 2);
-        if (rx > 0 && ry > 0) return { kind: 'rrect', args: [n('x'), n('y'), w, h, rx, ry] };
+        if (rx > 0 && ry > 0 && natural()) return { kind: 'rrect', args: [n('x'), n('y'), w, h, rx, ry] };
         return { kind: 'rect', args: [n('x'), n('y'), w, h] };
       }
       case 'circle': return { kind: 'ellipse', args: [n('cx'), n('cy'), n('r'), n('r')] };
@@ -522,7 +524,7 @@
         return [one(v[0], w), one(v[1] ?? v[0], h)];
       });
       const sc = Math.min(1, w / Math.max(1e-6, rad[0][0] + rad[1][0]), w / Math.max(1e-6, rad[3][0] + rad[2][0]), h / Math.max(1e-6, rad[0][1] + rad[3][1]), h / Math.max(1e-6, rad[1][1] + rad[2][1]));
-      const box = rad.some((q) => q[0] > 0 && q[1] > 0) ? roundedBoxPath(-bw, -bw, w, h, rad.map((q) => [q[0] * sc, q[1] * sc])) : `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
+      const box = natural() && rad.some((q) => q[0] > 0 && q[1] > 0) ? roundedBoxPath(-bw, -bw, w, h, rad.map((q) => [q[0] * sc, q[1] * sc])) : `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
       const ds = [path(box, { ...R2, roughness: m.opts.roughness ?? 1, passes: 1 }), path(box, { ...R2, seed: m.seed + 'b', roughness: m.opts.roughness ?? 1, passes: 1 })];
       m.svg.innerHTML = ds.map((d) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="${Math.max(2, bw || 3 * px())}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
       el.appendChild(m.svg);
@@ -530,7 +532,7 @@
     }
     // A circle around something that is not a run of text (a group, a card, an image, an SVG <g> or shape): a loop
     // that hugs its box instead of an ellipse that would cut its corners
-    if (m.kind === 'circle' && !textLike(el)) return buildLoopMark(m);
+    if (m.kind === 'circle' && natural() && !textLike(el)) return buildLoopMark(m);
     // Text marks live inside the element, so they move, fade and hide with it. Line boxes are measured relative to the
     // element's own box (entrance moves and camera zoom scale all of them alike).
     const B = el.getBoundingClientRect(), k = el.offsetWidth ? B.width / el.offsetWidth : 1;
@@ -573,15 +575,20 @@
     const pad = (pv.length ? pv[0] : 20) * px();
     let box, host;
     if (el instanceof SVGElement) {
-      // in the shape's own user space: inside a <g> / <svg>, next to any other shape (moved by its transform attribute)
+      // in the shape's own user space. An outer <svg> holds it inside; a <g> or a shape gets it right after itself
+      // (with its transform attribute), so the mark never grows the group's own box (arrows and camera shots use it)
       let b; try { b = el.getBBox(); } catch (e) { return false; }
       if (!b.width && !b.height) return false;
       box = { x: b.x, y: b.y, w: b.width, h: b.height };
-      if (!/^(g|svg)$/i.test(el.tagName)) {
-        const tm = el.transform && el.transform.baseVal && el.transform.baseVal.consolidate();
-        if (tm) { const M = tm.matrix, c = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => [M.a * x + M.c * y + M.e, M.b * x + M.d * y + M.f]); const xs = c.map((q) => q[0]), ys = c.map((q) => q[1]); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+      if (el instanceof SVGSVGElement && !(el.parentNode instanceof SVGElement)) host = el;
+      else {
+        const g = document.createElementNS(SVGNS, 'g');
+        g.setAttribute('data-check', 'ignore'); g.setAttribute('class', 'gm-sketch-mark');
+        const tf = el.getAttribute('transform');
+        if (tf) g.setAttribute('transform', tf);
+        m.svg = g;
         host = el.parentNode;
-      } else host = el;
+      }
     } else {
       const w = el.offsetWidth, h = el.offsetHeight;
       if (!w || !h) return false;

@@ -98,7 +98,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       const fo = Math.abs(box.op - p.op) / dt;
       speedMoving = v > 40 * PX || sz > 0.25 || fo > 0.4;
     }
-    texts.push({ el, rs, u, op, moving: inAnim(el) || speedMoving });
+    texts.push({ el, rs, u, op, moving: inAnim(el) || speedMoving, fading: !!(p && Math.abs(box.op - p.op) > 0.02) });
   }
   window.__mwPrevBoxes = next;
   // Is a camera world moving right now? Labels the camera passes over on its way to the next shot are not framing mistakes.
@@ -345,7 +345,18 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   // Text boxes for the contrast pass. Fading, moving, covered or clip-filled text is not judged.
   // (text cut by the frame edge is not judged for contrast: only part of it can be measured, and the crop is its own issue)
   const inFrame = (t) => t.u.left >= -2 && t.u.top >= -2 && t.u.right <= W + 2 && t.u.bottom <= H + 2;
-  window.__mwTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && inFrame(t)).map((t) => {
+  // (text that is still fading, or lies partly under another element drawn over it (a scrim, a caption box), is not
+  //  judged for contrast: that dimming is on purpose, and a covering box is text-covered's business)
+  const underSomething = (t) => {
+    const tu = tight(t.u);
+    for (let ix = 0; ix < 5; ix++) {
+      const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 5, y = (tu.top + tu.bottom) / 2;
+      const st = document.elementsFromPoint(x, y), k = st.findIndex((e) => e === t.el || t.el.contains(e));
+      if (k > 0 && st.slice(0, k).some((e) => !e.contains(t.el) && !e.closest('[data-mw-internal]'))) return true;
+    }
+    return false;
+  };
+  window.__mwTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && !t.fading && inFrame(t) && !underSomething(t)).map((t) => {
     const cs = getComputedStyle(t.el);
     // A dark/light text-shadow or outline gives text its own backing; be lenient then.
     const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseArgs } from '../src/args.js';
@@ -53,4 +53,25 @@ test('injectRuntime puts runtime first in <head>', () => {
   const j = out.indexOf('x()');
   assert.ok(i > 0 && i < j);
   assert.match(injectRuntime('<p>no head</p>'), /runtime\.js/);
+});
+
+test('hardware encoder: auto on macOS for H.264/HEVC MP4 only; reproducibility check passes for x264, fails for a broken encoder', async () => {
+  const { wantsHardware, encoderIsReproducible, encoderPlan, ffmpegInfo } = await import('../src/ffmpeg.js');
+  const info = { version: 'x', encoders: { h264_videotoolbox: true, hevc_videotoolbox: true, libx264: true } };
+  assert.equal(wantsHardware({ format: 'mp4', info, platform: 'darwin' }), 'auto');
+  assert.equal(wantsHardware({ format: 'mp4', info, platform: 'darwin', codec: 'h265' }), 'auto');
+  assert.equal(wantsHardware({ format: 'mp4', info, platform: 'linux' }), false);
+  assert.equal(wantsHardware({ format: 'webm', info, platform: 'darwin' }), false);
+  assert.equal(wantsHardware({ format: 'mp4', info, platform: 'darwin', quality: 'max' }), false);
+  assert.equal(wantsHardware({ format: 'mov', info, platform: 'darwin', transparent: true }), false);
+  assert.equal(wantsHardware({ format: 'mp4', info: { version: 'x', encoders: {} }, platform: 'darwin' }), false);
+  assert.equal(wantsHardware({ format: 'mp4', info, platform: 'darwin', hardware: false }), false);
+  assert.equal(wantsHardware({ format: 'mp4', info, platform: 'linux', hardware: true }), true);
+  const real = ffmpegInfo();
+  if (!real || !real.encoders.libx264) return;
+  const dir = mkdtempSync(join(tmpdir(), 'mw-hw-')), cacheFile = join(dir, 'hw.json');
+  const plan = encoderPlan({ format: 'mp4', info: real });
+  assert.equal(encoderIsReproducible(plan, real, { cacheFile }), true);
+  assert.equal(Object.values(JSON.parse(readFileSync(cacheFile, 'utf8')))[0], true, 'answer kept');
+  assert.equal(encoderIsReproducible({ ...plan, vargs: ['-c:v', 'no_such_encoder'] }, real, { cacheFile }), false);
 });

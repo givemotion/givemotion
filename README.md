@@ -295,6 +295,11 @@ without a GPU. Run `npx motionwright bench` on your own computer.
 Where the speed comes from: Chrome's frame-by-frame capture (`beginFrame`, on Linux and Windows), several
 browsers rendering parts of the video at once, reusing frames that did not change, and encoding while capturing.
 
+**On a Mac** it uses the GPU for drawing, and the Mac's hardware video encoder (VideoToolbox) for MP4 by default,
+once a quick one-time check shows the encoder gives the same bytes every time (so renders stay exact and re-renders
+can reuse parts). `npx motionwright doctor` says which encoder you get; `--no-hardware` turns it off. Frame capture
+on macOS uses screenshots, because Chrome's frame-by-frame capture is not available there.
+
 ### How it works
 
 ```

@@ -1,6 +1,8 @@
 // FFmpeg helpers: detection, encoder settings, segment writers, concat and audio mixing.
 import { spawn, spawnSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdtempSync, mkdirSync, rmSync, existsSync, statSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { tmpdir, release as osRelease } from 'node:os';
 
 let cachedPath = null;
 export function ffmpegPath() {
@@ -240,4 +242,41 @@ export async function finalize({ segments, listFile, out, format, duration, audi
   if (format === 'mp4' || format === 'mov') args.push('-movflags', '+faststart');
   args.push(out);
   return run(args);
+}
+
+/**
+ * Should this render use the GPU video encoder? `hardware: true/false` decides; left unset ("auto") it is used on macOS
+ * (VideoToolbox) for H.264/HEVC MP4 and MKV, unless the output is transparent or --quality max. Returns true, false or
+ * 'auto' (use it if encoderIsReproducible() says so).
+ */
+export function wantsHardware({ hardware, format, transparent, quality, codec, info, platform = process.platform }) {
+  if (hardware === true || hardware === false) return hardware;
+  if (platform !== 'darwin' || transparent || quality === 'max' || !info || !(format === 'mp4' || format === 'mkv')) return false;
+  const c = codec || 'h264';
+  const enc = c === 'h264' ? 'h264_videotoolbox' : c === 'h265' || c === 'hevc' ? 'hevc_videotoolbox' : null;
+  return enc && info.encoders[enc] ? 'auto' : false;
+}
+
+/**
+ * Does this encoder give the same bytes for the same frames on this machine? Renders must be reproducible (and a
+ * re-render patches parts into an earlier video byte for byte), so a hardware encoder is only used after it encodes a
+ * short test clip twice, in two processes, identically. The answer is kept per ffmpeg version, OS release and settings.
+ */
+export function encoderIsReproducible(plan, info, { cacheFile, tmp } = {}) {
+  const key = [info.version, process.platform, osRelease(), plan.vargs.join(' ')].join('|');
+  let cache = {};
+  try { if (cacheFile) cache = JSON.parse(readFileSync(cacheFile, 'utf8')); } catch {}
+  if (key in cache) return cache[key];
+  const dir = mkdtempSync(join(tmp || tmpdir(), 'mw-hwcheck-'));
+  let ok = false;
+  try {
+    const enc = (out) => spawnSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=30:duration=2',
+      ...plan.vf, ...plan.vargs, '-an', '-y', out], { encoding: 'utf8', timeout: 60000 });
+    const a = join(dir, 'a.' + plan.segExt), b = join(dir, 'b.' + plan.segExt);
+    const ra = enc(a), rb = enc(b);
+    ok = ra.status === 0 && rb.status === 0 && existsSync(a) && existsSync(b) && statSync(a).size > 0 && readFileSync(a).equals(readFileSync(b));
+  } catch { ok = false; } finally { rmSync(dir, { recursive: true, force: true }); }
+  cache[key] = ok;
+  try { if (cacheFile) { mkdirSync(dirname(cacheFile), { recursive: true }); writeFileSync(cacheFile, JSON.stringify(cache, null, 1)); } } catch {}
+  return ok;
 }

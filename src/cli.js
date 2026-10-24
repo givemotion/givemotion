@@ -52,7 +52,8 @@ Render options
   --quality <q>          draft | standard (default) | high | max
   --crf <n>              Override encoder quality (lower = better)
   --codec <c>            h264 (default) | h265 | av1   (mp4 only)
-  --hardware             Use the GPU video encoder when available (VideoToolbox/NVENC)
+  --hardware             Use the GPU video encoder (NVENC/VideoToolbox). On a Mac it is on by default once it encodes
+                         reproducibly; --no-hardware turns it off
   --scale <n>            Render at n× resolution (2 → 4K from a 1080p layout)
   --fps <n>  --width <n>  --height <n>   Override the composition settings
   --frames <range>       Part of the video: "0-90" (frames) or "2s-5s" (a new file)
@@ -431,6 +432,13 @@ async function cmdDoctor() {
   console.log(`chrome      ${c ? `${c.path} (${c.kind === 'shell' ? 'headless shell: fast frame capture' : 'regular Chrome: screenshot capture'}) ${chromeVersion(c.path) || ''}` : 'not found → run `npx motionwright install`'}`);
   const f = ffmpegInfo();
   console.log(`ffmpeg      ${f ? f.version + '  encoders: ' + Object.entries(f.encoders).filter(([, v]) => v).map(([k]) => k).join(', ') : 'not found → install ffmpeg (brew/apt/winget) or set MOTIONWRIGHT_FFMPEG'}`);
+  if (f) {
+    // Which video encoder a render uses here: the GPU one on a Mac once it has shown it encodes reproducibly
+    const { wantsHardware, encoderPlan, encoderIsReproducible } = await import('./ffmpeg.js');
+    const want = wantsHardware({ format: 'mp4', info: f });
+    const ok = want === 'auto' && encoderIsReproducible(encoderPlan({ format: 'mp4', info: f, hardware: true }), f, { cacheFile: join(CACHE_DIR, 'hardware-encoders.json') });
+    console.log(`encoder     ${ok ? 'GPU (VideoToolbox), checked: same bytes every time (--no-hardware to turn off)' : want === 'auto' ? 'software (x264): VideoToolbox did not encode the same bytes twice here' : process.platform === 'darwin' ? 'software (x264): this ffmpeg has no VideoToolbox encoder' : 'software (x264); --hardware uses NVENC/VideoToolbox when available'}`);
+  }
   console.log(`cache       ${CACHE_DIR}`);
   if (!c || !f) process.exitCode = 1;
 }

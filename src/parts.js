@@ -83,7 +83,10 @@ export async function pagePrints() {
   const topSrc = new Map(), topLive = new Map();
   for (const t of tops) { topSrc.set(t.el, '<gm-clip>'); topLive.set(t.live, '<gm-clip>'); }
   // the source around the scenes, every script and style, the live page around the scenes, and what cameras measured
-  out.shared = ser(doc.documentElement, topSrc, false) + '\n' + code.join('\n') + '\n' + ser(document.documentElement, topLive, true) + '\n' + JSON.stringify(gm.__cameraContent ? gm.__cameraContent() : null);
+  const around = ser(doc.documentElement, topSrc, false), aroundLive = ser(document.documentElement, topLive, true), cams = JSON.stringify(gm.__cameraContent ? gm.__cameraContent() : null);
+  out.shared = around + '\n' + code.join('\n') + '\n' + aroundLive + '\n' + cams;
+  // (the pieces of the shared print, only to say which one changed when every part is redone)
+  out.sharedParts = { scripts: await hash(code.filter((c) => /^<script/i.test(c)).join('\n')), styles: await hash(code.filter((c) => !/^<script/i.test(c)).join('\n')), page: await hash(around), live: await hash(aroundLive + cams) };
   return out;
 
   // Everything the late-element rule needs to know about the page; { ok: false, why } turns it off.

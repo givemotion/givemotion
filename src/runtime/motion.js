@@ -2230,4 +2230,13 @@
   });
   // interpolate() now mixes any CSS color in OKLab
   I.setColorMixer(mixColor);
+  // (for check) which elements gm.timeline moves with transform properties (x, y, scale, rotate…), and which ones
+  gm.__tweenedTransforms = () => {
+    const out = [];
+    for (const tl of tlList) {
+      try { tl._resolve(); } catch (e) { continue; }
+      for (const [el, tm] of tl.tracks || []) { if (!(el instanceof Element)) continue; const props = [...tm.props.keys()].filter((k) => k in TF); if (props.length) out.push({ el, props }); }
+    }
+    return out;
+  };
 })();

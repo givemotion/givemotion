@@ -255,7 +255,7 @@ export async function render(input, opts = {}) {
         const keep = prev && prev.a === a && prev.b === b && prev.fp === fp && existsSync(file) && !(redo && a < redo[1] && b > redo[0]);
         list.push({ i, a, b, fp, file, keep });
       }
-      const why = !old ? 'first render' : old.settings !== settings ? 'settings, data or engine changed' : old.shared !== deps.shared ? 'shared code, styles or files changed' : null;
+      const why = !old ? 'first render' : old.settings !== settings ? 'settings, data or engine changed' : old.shared !== deps.shared ? sharedWhy(old.sharedParts, deps.sharedParts) : null;
       const same = (o, c) => o.fp === c.fp && o.start === c.start && o.end === c.end;
       const changedClips = old && old.settings === settings && old.shared === deps.shared ? deps.clips.flatMap((c) => {
         const o = (old.clips || []).find((x) => same(x, c));
@@ -505,7 +505,7 @@ export async function render(input, opts = {}) {
       const segments = parts ? parts.list.map((p) => p.file) : (auto ? ranges : groups.flat()).map((r) => r.file);
       await finalize({ segments, listFile: join(tmp, 'list.txt'), out, format, duration: nFrames / fps, audio: media.audio.map((a) => ({ ...a, start: a.start - f0 / fps, end: a.end - f0 / fps })).filter((a) => a.end > 0).map((a) => (a.start < 0 ? { ...a, from: a.from + -a.start * a.rate, start: 0 } : a)), fps, plan, transparent });
       if (parts && keepParts) {
-        writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));
+        writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, sharedParts: parts.deps.sharedParts, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));
         // parts of an older, longer video
         for (const f of readdirSync(parts.dir)) if (/^part-\d+\./.test(f) && !parts.list.some((p) => basename(p.file) === f)) rmSync(join(parts.dir, f), { force: true });
       }
@@ -516,7 +516,7 @@ export async function render(input, opts = {}) {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
       seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode, encoder: plan ? plan.vargs[plan.vargs.indexOf('-c:v') + 1] : 'png',
       motionBlur: blur.mode === 'auto' ? { mode: 'auto', frames: todoFrames, blurred: blurStats.blurred, samples: blurStats.samples, extraCaptures: blurStats.samples - blurStats.blurred, probeMs: blurStats.probeMs } : { mode: blur.mode, samples: blurSamples },
-      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
+      parts: keepParts ? { why: parts.why || null, total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
       bytes: format === 'png' ? null : statSync(out).size,
       warnings: comp.issues.filter((i) => i.severity !== 'error'),
       pageErrors: dedupe(pageErrors),
@@ -525,7 +525,7 @@ export async function render(input, opts = {}) {
       const pc = (x) => Math.round((x / todoFrames) * 100);
       log(`  motion blur: ${blurStats.blurred} of ${todoFrames} frames (${pc(blurStats.blurred)}%) moved fast and got ${AUTO_BLUR.counts[0]}-${AUTO_BLUR.maxN} samples: +${blurStats.samples - blurStats.blurred} captures (+${pc(blurStats.samples - blurStats.blurred)}%), motion check ${(blurStats.probeMs / 1000).toFixed(1)}s (--motion-blur off to skip)`);
     }
-    if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s (${summary.renderFps} fps, ${reused} static frames reused) → ${relativeOut(out)}`);
+    if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s (${summary.renderFps} fps${summary.parts ? `, ${summary.parts.reused} of ${summary.parts.total} parts reused from the last render` : ''}, ${reused} still frames copied) → ${relativeOut(out)}`);
     return summary;
   } finally {
     await Promise.all(pages.map((p) => p.close().catch(() => {})));
@@ -687,7 +687,20 @@ async function dependencyPrints(ctx) {
     try { const st = statSync(f); return p + ':' + (st.size > 64 * 1024 * 1024 ? st.size + '-' + st.mtimeMs : hashOf(readFileSync(f))); } catch { return p + ':missing'; }
   });
   const units = (c) => c.units.map((u) => ({ fp: hashOf(u.print), t: +u.t.toFixed(6), end: u.end == null ? null : +u.end.toFixed(6), name: u.name }));
-  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), clips: r.clips.map((c) => ({ fp: hashOf(c.print), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name, units: units(c) })), fine: r.fine };
+  const sharedParts = r.sharedParts ? { ...r.sharedParts, files: hashOf(fileHash.join('\n')) } : null;
+  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), sharedParts, clips: r.clips.map((c) => ({ fp: hashOf(c.print), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name, units: units(c) })), fine: r.fine };
+}
+
+/** Why every part is redone when the shared print changed: which piece of it changed, in words. */
+function sharedWhy(o, n) {
+  if (!o || !n) return 'shared code, styles or files changed';
+  const what = [];
+  if (o.scripts !== n.scripts) what.push('a script changed (a script can change any frame, so every part is redone; edits to the HTML inside one scene only redo that scene)');
+  if (o.styles !== n.styles) what.push('a style changed');
+  if (o.page !== n.page) what.push('the HTML outside the scenes changed');
+  if (o.files !== n.files) what.push('a file the page loads changed');
+  if (!what.length && o.live !== n.live) what.push('the page came out different after loading (scripts that build elements, camera fits)');
+  return what.length ? what.join('; ') : 'shared code, styles or files changed';
 }
 
 /** Only the soundtrack: `render comp.html -o sound.mp3` (also .wav .m4a .ogg .flac) */

@@ -190,3 +190,15 @@ test('code-window: ⟦marks⟧ on later lines wrap the right text and keep one e
   const r = await evalAt(f, 0.5, `({ marks: [...document.querySelectorAll('.mw-mark')].map((m) => [m.textContent, m.closest('.mw-line').dataset.line]), lines: document.querySelectorAll('.mw-line').length })`);
   assert.deepEqual(r, { marks: [['clearTimeout(timer);', '3'], ['setTimeout', '4']], lines: 5 });
 });
+
+test('check: a line through text is found (also dashed), not when an opaque panel covers it; SVG text is judged by its fill', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<svg viewBox="0 0 640 360" style="position:absolute;inset:0;width:640px;height:360px"><line x1="0" y1="60" x2="640" y2="60" stroke="#333" stroke-width="4"/><line x1="0" y1="262" x2="640" y2="262" stroke="#333" stroke-width="4" stroke-dasharray="12 6"/>
+    <rect x="400" y="130" width="160" height="60" fill="#1c2333"/><text id="btn" x="480" y="170" text-anchor="middle" font-size="30" fill="#fff">Order</text></svg>
+    <div style="position:absolute;left:20px;top:30px;width:300px;height:60px;background:#fff"><p id="hud" style="margin:0;font-size:30px;line-height:60px;color:#222">Step one</p></div>
+    <p id="bad" style="position:absolute;left:340px;top:244px;margin:0;font-size:30px;color:#fff">Crossed out</p>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rep = await check(f);
+  const by = (code) => rep.issues.filter((i) => i.code === code).map((i) => i.selector);
+  assert.deepEqual(by('text-over-line'), ['#bad']);
+  assert.deepEqual(by('low-contrast'), []);
+});

@@ -248,16 +248,24 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     if (visualFs < 18 * PX && lineH > 0 && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'tiny-text', selector: sel(el), text: snippet(el), message: 'Text is ' + Math.round(visualFs) + 'px tall in a ' + W + 'x' + H + ' frame, which is hard to read in a video.', fix: 'Use at least ' + Math.round(24 * PX) + 'px (' + Math.round(28 * PX) + 'px+ for body text).' });
     t.fontPx = visualFs;
     t.bold = parseInt(cs.fontWeight, 10) >= 600;
-    t.color = cs.color;
-    t.clipText = cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text' || /transparent|rgba\(\d+, \d+, \d+, 0\)/.test(cs.webkitTextFillColor || '');
+    // (SVG text is painted with its fill, not its CSS color; a gradient fill is judged like clip-filled text: not at all)
+    const svgText = el instanceof SVGElement;
+    t.color = svgText ? cs.fill : cs.color;
+    t.clipText = cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text' || /transparent|rgba\(\d+, \d+, \d+, 0\)/.test(cs.webkitTextFillColor || '') || (svgText && !/^(rgb|#|hsl|color|oklab|oklch|lab|lch)/.test(cs.fill));
   }
   // 4b. A line drawn through text (an arrow, the edge of a box): visible strokes that pass through the letters.
-  //     Fills (a card behind a label, hatching) are fine; strokes being drawn on or dashed are skipped.
+  //     Fills (a card behind a label, hatching) are fine; strokes still being drawn on, or hidden under something opaque, are skipped.
   const strokes = [];
   for (const sh of document.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')) {
     if (sh.closest('defs,clipPath,mask,marker,pattern,symbol,[data-mw-sketch-guide],[data-mw-sketch-fill],.mw-sketch-mark,[data-mw-internal]') || ignored(sh)) continue;
     const cs = getComputedStyle(sh);
-    if (cs.stroke === 'none' || /rgba\([^)]*,\s*0\)/.test(cs.stroke) || cs.visibility !== 'visible' || cs.strokeDasharray !== 'none') continue;
+    if (cs.stroke === 'none' || /rgba\([^)]*,\s*0\)/.test(cs.stroke) || cs.visibility !== 'visible' || inAnim(sh)) continue;
+    // A dashed line counts (a dashed ring through a label is still a line through it), but a draw-on that has not
+    // finished (dash 1 gap 2 on pathLength 1, offset not yet 0) is only partly there: skip it.
+    if (cs.strokeDasharray !== 'none') {
+      const da = cs.strokeDasharray.split(/[\s,]+/).map(parseFloat), off = parseFloat(cs.strokeDashoffset) || 0;
+      if (sh.getAttribute('pathLength') === '1' && da.length === 2 && da[1] >= da[0] && Math.abs(off) > 0.02) continue;
+    }
     const b = sh.getBoundingClientRect();
     if (!b.width && !b.height) continue;
     let op = parseFloat(cs.strokeOpacity);
@@ -267,6 +275,25 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     if (!ctm || parseFloat(cs.strokeWidth) * Math.hypot(ctm.a, ctm.b) < 1.5 * PX) continue;
     strokes.push({ sh, b, inv: ctm.inverse() });
   }
+  // Is the stroke covered at this point by something opaque drawn above it (a panel, a filled shape)?
+  // (hit testing skips pointer-events:none, so a stroke that is not found counts as visible)
+  const opaqueEl = (e) => {
+    const cs = getComputedStyle(e);
+    let solid = false;
+    if (e instanceof SVGElement) solid = !/^(svg|g|text|tspan|use|foreignObject)$/i.test(e.tagName) && cs.fill !== 'none' && !/rgba\([^)]*,\s*0(\.\d+)?\)/.test(cs.fill) && parseFloat(cs.fillOpacity) >= 0.9;
+    else solid = /^(IMG|VIDEO|CANVAS)$/.test(e.tagName) || cs.backgroundImage !== 'none' || (!/rgba\([^)]*,\s*0(\.\d+)?\)|transparent/.test(cs.backgroundColor));
+    if (!solid) return false;
+    let op = 1;
+    for (let a = e; a && a.nodeType === 1 && op >= 0.9; a = a.parentElement) op *= parseFloat(getComputedStyle(a).opacity);
+    return op >= 0.9;
+  };
+  const coveredAt = (x, y, sh) => {
+    const stack = document.elementsFromPoint(x, y);
+    const k = stack.indexOf(sh);
+    if (k < 0) return false;
+    for (let i = 0; i < k; i++) if (stack[i] !== document.documentElement && stack[i] !== document.body && !stack[i].contains(sh) && opaqueEl(stack[i])) return true;
+    return false;
+  };
   if (strokes.length) for (const t of texts) {
     if (t.moving || t.hidden || t.covered || t.op < 0.5) continue;
     const tu = tight(t.u);
@@ -274,10 +301,12 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     for (const st of strokes) {
       const b = st.b;
       if (b.right < tu.left || b.left > tu.right || b.bottom < tu.top || b.top > tu.bottom || st.sh.closest('svg') === t.el.closest('svg') && t.el.closest('text') && false) continue;
-      for (let iy = 0; iy < 3 && !hit; iy++) for (let ix = 0; ix < 7 && !hit; ix++) {
-        const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 7, y = tu.top + (tu.bottom - tu.top) * (iy + 0.5) / 3;
+      // (rows about 4 px apart at 1080p, so a thin line between two rows is not missed)
+      const ny = Math.min(8, Math.max(3, Math.ceil((tu.bottom - tu.top) / (4 * PX))));
+      for (let iy = 0; iy < ny && !hit; iy++) for (let ix = 0; ix < 7 && !hit; ix++) {
+        const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 7, y = tu.top + (tu.bottom - tu.top) * (iy + 0.5) / ny;
         const pt = new DOMPoint(x, y).matrixTransform(st.inv);
-        try { if (st.sh.isPointInStroke(pt)) hit = st.sh; } catch (e) {}
+        try { if (st.sh.isPointInStroke(pt) && !coveredAt(x, y, st.sh)) hit = st.sh; } catch (e) {}
       }
       if (hit) break;
     }
@@ -327,7 +356,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
 })`;
 
 const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__mw_hide'); if (!s) { s = document.createElement('style'); s.id='__mw_hide'; document.head.appendChild(s); }
-  s.textContent = '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke-color:transparent!important;caret-color:transparent!important;text-decoration-color:transparent!important} .mw-caret{visibility:hidden!important}';
+  s.textContent = '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke-color:transparent!important;caret-color:transparent!important;text-decoration-color:transparent!important} text,text *{fill:transparent!important;stroke:transparent!important} .mw-caret{visibility:hidden!important}';
   return true; })()`;
 const PAGE_SHOW_TEXT = `(() => { const s = document.getElementById('__mw_hide'); if (s) s.remove(); return true; })()`;
 

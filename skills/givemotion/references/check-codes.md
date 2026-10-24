@@ -30,6 +30,10 @@ Contents
 | `still` | Little changes on screen for 2.5 s or more (1.9 s at the very end: a dead end card): nothing enters, leaves or moves, and a slow float or a faint glow does not count. Viewers read it as the video stalling. Cut the hold, start the next beat sooner, or end earlier. |
 | `empty-frame` | Almost nothing on screen for a second or more in the middle of the video (a camera crossing empty space between parts, a gap between scenes, a zoom so far out that everything is a speck). |
 | `empty-start` | The first half second shows only the background. The first frame is often the thumbnail and the hook: show something from frame 0. |
+| `camera-stop` | A camera world brakes to a halt and sets off again within 0.45 s: start the next shot as the previous one arrives (they then blend into one move) or hold it ≥ 0.5 s on purpose. |
+| `fast-no-blur` | Something moves 40+ px per frame (at 1080p) with motion blur off (classic mode or `--motion-blur off`): it will strobe. Remove the override, or slow the move. |
+| `straight-move` | A long dead-straight diagonal move (25%+ of the frame width). Leave `arc` at its default, or travel along a curved path. |
+| `same-ease` | 8+ animations and more than 90% use the same bezier curve: drop the explicit eases (the natural defaults vary by role) or vary them (springs for arrivals, `in-*` for exits, `in-out-sine` for long moves). |
 | `camera-late` | A camera shot arrives (its time + duration) after its scene starts its exit transition, so it is never seen at rest. Start it earlier or shorten it. |
 | `camera-no-target`, `camera-padding` | A shot's target matched nothing in the world; a `padding` too big for the frame was clamped. |
 

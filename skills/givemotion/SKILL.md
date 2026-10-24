@@ -77,11 +77,11 @@ The most common failure is a video that looks like slides or a website: a center
 4. **Nothing cut by the frame.** In a camera shot, keep every label fully in or fully out of frame; frame the part you are talking about with room around it.
 5. **Fill the frame with a clear subject.** No small UI in a big empty frame, no layouts crowded into one corner or the top half, no frames that go nearly empty mid-transition. One hero per moment; dim the rest.
 6. **Scenes flow into each other.** Prefer transitions with direction and continuity: `morph`, `push-*`, `whip-*`, `zoom-through`, match cuts. Plain `fade` is the slideshow default; use it rarely, and never crossfade two text-heavy scenes (the texts ghost on top of each other). Often the best structure is one big world and a camera moving through it.
-7. **Choreograph, don't dump.** Elements arrive one after another (stagger 40–90 ms) with overshoot and settle (`back.out`, `spring`, `bouncy`) and small secondary motion. Enter with ease-out (`out-expo`, `out-back`, `spring`), exit with ease-in, exits shorter than entrances. Overlap moves with `gm.timeline` (`'<0.1'`, `'-=0.2'`).
+7. **Choreograph, don't dump.** Elements arrive one after another (stagger 40–90 ms) with small secondary motion; exits shorter than entrances. Overlap moves with `gm.timeline` (`'<0.1'`, `'-=0.2'`). **Let the engine give things mass:** leave out `ease` (and usually `duration`) and moves spring in, scale with distance, travel on slight arcs and flow into the next move; the camera flows through back-to-back shots; fast frames get motion blur at render. Set an ease only for a deliberate effect (`references/motion-design.md` §3).
 8. **Kinetic type over paragraphs.** Split headlines into words or chars and reveal them (`mask-up`, `flip-up`, `stretch`), scale up the key word, change its color, move the camera through the text.
 9. **Shapes over boxes.** Build visuals from SVG shapes, lines that draw on, simple icons, blobs and morphs. Rows of rounded cards look like a web page; use them only for UI demos, and then move the camera over the UI, zoom into the part that matters, and use the cursor.
 10. **Rhythm and variety.** Change something every 0.5–1.5 s; one idea per scene, 2.5–5 s; hold ≥ 1 s after a thing lands. Do not repeat the same layout or the same move in every scene. With music, cut and pulse on the beat.
-11. **Depth and look.** Layers at different speeds (`data-parallax`), soft gradients, light, grain, shadows, slight blur on entrances; `--motion-blur 8` at render for fast moves. Avoid pure `#000` backgrounds and pure `#fff` text on busy images (add a scrim). Keep one look (palette, fonts, motion personality) for the whole video.
+11. **Depth and look.** Layers at different speeds (backgrounds next to a camera world drift by themselves; `data-parallax` to tune), soft gradients, light, grain, shadows. Avoid pure `#000` backgrounds and pure `#fff` text on busy images (add a scrim). Keep one look (palette, fonts, motion personality) for the whole video.
 12. **Vertical 1080×1920:** the same pixel sizes work (the short side is 1080); keep the top 220px and bottom 380px free of key text, 60px at the sides; `data-safe-zone="shorts"` on `<html>` makes `check` warn. Titles 90–140px, captions 56–72px, max ~6 words per line.
 13. Animate `opacity`, `translate`, `scale`, `rotate`, `filter`, `clip-path`, not `width`/`height`/`top`/`left` (slower, jittery). `.scene` for full-frame scenes, absolute layout inside, flex/grid for groups.
 
@@ -89,7 +89,7 @@ The most common failure is a video that looks like slides or a website: a center
 
 | Attribute | What it does |
 |---|---|
-| `data-enter="<preset> [dur] [delay] [easing]"` | Animate in at the start of the element's clip. Defaults: `.6s`, `out-expo`. |
+| `data-enter="<preset> [dur] [delay] [easing]"` | Animate in at the start of the element's clip. Default: a spring timed to the move's size. |
 | `data-exit="<preset> [dur] [delay] [easing]"` | Animate out so it finishes at the clip end (delay counts back from the end). |
 | `data-stagger="0.08"` | Apply enter/exit to each child (or each split piece) with increasing delay. |
 | `data-split="words\|chars\|lines"` | Wrap pieces in `.gm-word` / `.gm-char` spans with `--i` (index) and `--n` (count) for your own CSS. |
@@ -123,8 +123,8 @@ For anything with more than a few moving parts, use `gm.timeline`: the GSAP API 
 
 ```js
 gm.timeline('#scene2')                                     // scope: selectors are looked up inside it
-  .from('.title .gm-word', { y: 120, opacity: 0, rotate: 8, stagger: 0.06, duration: 0.8, ease: 'expo.out' })
-  .to('.card', { x: 400, scale: 1.2, duration: 1, ease: 'power3.inOut' }, '+=0.3')
+  .from('.title .gm-word', { y: 120, opacity: 0, rotate: 8, stagger: 0.06 })   // no ease: springs in
+  .to('.card', { x: 400, y: -60, scale: 1.2 }, '+=0.3')                 // arcs, sized to the distance
   .fromTo('.bar', { scaleY: 0 }, { scaleY: 1, stagger: { each: 0.08, from: 'center' } }, '<')
   .to('#line', { draw: 1, duration: 1.5 }, 2)                       // draw an SVG stroke
   .to('.price', { textContent: 249, duration: 1.5 }, 2.5);          // count a number

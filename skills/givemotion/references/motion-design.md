@@ -50,7 +50,7 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 
 ## 3. Easing and movement principles (with recipes)
 
-- **Ease-out on entrances, ease-in on exits.** Things arriving decelerate into place (`out-expo`, `out-quart`, `out-back`, `spring`); things leaving accelerate away (`in-quad`, `in-cubic`, `in-expo`). Moves from A to B on screen use in-out (`power3.inOut`, `in-out-quart`). Linear only for constant drifts, tickers and rotations.
+- **Ease-out on entrances, ease-in on exits.** Things arriving decelerate into place (the default springs do this; by hand: `out-expo`, `out-quart`, `out-back`, `spring`); things leaving accelerate away (`in-quad`, `in-cubic`, `in-expo`). Moves from A to B on screen use in-out (`power3.inOut`, `in-out-quart`). Linear only for constant drifts, tickers and rotations.
 - **Weight.** Big things move slower and overshoot less; small things are quick and can bounce. A full-frame panel: 0.9 s `out-quart`; a chip: 0.35 s `back.out(1.6)`.
 - **Anticipation.** Before a big, fast move, a small move the other way (5–10% of the distance, 0.12–0.2 s, ease-in):
   ```js
@@ -71,8 +71,20 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 - **Contrast of speed.** Fast in, slow drift while it is read, fast out. Constant medium speed everywhere reads as software.
 - **Emphasis.** To make a word or number matter: scale it 1.1–1.3, change its color to the accent, add a mark (`data-sketch-mark`), a flash or a small shake. One emphasis per beat.
 - **A big hit** (logo lock, peak number): at the same time, a burst of sparks, a ring that scales 0.6→1.6 while fading, `camera.shake` 10–16 px for 0.3–0.4 s, a 0.1 s brightness flash. Put it on a music hit if there is music.
-- **Motion blur.** Fast whips, spins and camera moves strobe at 30 fps; render with `--motion-blur 8` when the video has them. Classic `blur` on entrances (`rise`, `blur`) also suggests speed.
-- The engine's motion defaults follow `gm.motion` (`'natural'` by default); `<html data-motion="classic">` switches back to the older classic motion if you need to match an earlier render.
+- **Motion blur** is automatic at render (`--motion-blur auto`, the default): only frames where something moves fast get extra sub-frames, so fast whips, spins and camera moves do not strobe and the render stays fast. `--motion-blur off` turns it off, `--motion-blur 8` forces 8 sub-frames on every frame (slow; rarely needed).
+
+### What the engine already does for you (natural motion, the default)
+
+Leave out `ease` and `duration` unless you need exact timing, and you get these for free. Setting an ease on everything throws them away (`check` warns `same-ease` when one curve is used for almost everything).
+- **Entrances have mass.** `data-enter` presets and timeline entrances spring in: fades, slides, masks and text land crisp (no overshoot); `pop`, `grow`, `scale`, `spin-in`, `flip-up`, `stretch`, `tilt` overshoot a hair and settle. Explicit names: `natural(0.7)` (a spring released from rest; the number is the damping, 1 = no overshoot) and `natural-move` (a move that gathers speed and settles).
+- **Bigger moves take a little longer.** Without a duration, timeline moves last about 0.4–0.65 s and `gm.fly` 0.65–1.05 s depending on the distance; presets that travel by the element's size scale the same way.
+- **Moves flow.** Back-to-back tweens on the same property (one ends where the next starts) carry their speed through the joint instead of stopping.
+- **Arcs.** Diagonal x+y moves and `gm.fly` bend slightly upward like a thrown object. `arc: 0` for a dead-straight line, `arc: 0.2` for more.
+- **Staggers breathe.** Staggered rows vary a few percent in timing (seeded, the same every render); the first and last item keep their times.
+- **The camera moves like an operator** (`references/camera.md`): back-to-back shots become one continuous move, `follow` trails its target and settles, held shots breathe by a pixel or two, fast zooms overshoot a touch, and backgrounds next to the world drift for depth.
+- `gm.motion` is `'natural'`; `<html data-motion="classic">` brings back the older fixed curves and cameras that stop between shots (only to match an earlier render).
+
+To see how natural a render is: `npx givemotion analyze out/video.mp4 --motion` gives a 0–10 naturalness score with the camera stops, stop-and-go moments, sudden velocity changes and strobing frames it found; `--strips` writes 10 fps strips of the busiest moments (`references/review.md`).
 
 ## 4. Camera grammar
 
@@ -82,7 +94,7 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 - **Lead room.** A subject moving right sits in the left third with space ahead (`offset: [260, 0]` on a follow shot). A subject looking or pointing somewhere gets space on that side.
 - **Frame cleanly.** Every label fully in or fully out of a held shot. Fit the subject together with its label.
 - **Land on time.** A shot's time is when the move starts; to land on a beat or on a scene's key moment, start it `duration` earlier. Finish before the scene's exit transition (`camera-late`).
-- **Depth.** Background layers with `data-parallax` 0.2–0.5 make camera moves feel like real space; a soft blur on far layers helps. 3D tilt (`rotateX`/`rotateY` with `transformPerspective`) for screenshots and cards beats a flat rectangle.
+- **Depth.** Backgrounds next to a camera world (grid-bg, gradient-bg, full-frame layers behind it) drift with the camera by themselves; `data-parallax` 0.2–0.5 sets a layer's depth yourself, `data-parallax="0"` pins it; a soft blur on far layers helps. 3D tilt (`rotateX`/`rotateY` with `transformPerspective`) for screenshots and cards beats a flat rectangle.
 - **Impacts** use `shake`; a handheld feel (`data-camera="handheld"`) suits documentary or energetic styles, not clean corporate ones.
 
 ## 5. Scene-to-scene continuity

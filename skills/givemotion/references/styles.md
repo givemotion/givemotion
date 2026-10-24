@@ -79,7 +79,7 @@ For: gaming, music, events, hype trailers, energetic promos.
 - Palette: `--bg #07060d` `--ink #f5f3ff` `--muted #a9a3c7` `--magenta #ff2bd6` `--cyan #00e5ff` `--lime #b6ff3b`.
 - Type: wide or condensed sans weight 800–900; glow with `text-shadow: 0 0 calc(var(--px)*24) var(--magenta)`; mono for HUD details.
 - Background: dark with neon lines, a perspective grid, light streaks; grain and a vignette.
-- Motion: aggressive. Beat-cut `whip-*` and `zoom-through`, `scramble` and `steps(4)` glitches, shake on hits, `sparks` bursts, render with `--motion-blur 8`.
+- Motion: aggressive. Beat-cut `whip-*` and `zoom-through`, `scramble` and `steps(4)` glitches, shake on hits, `sparks` bursts, motion blur (automatic at render).
 
 ## 7 Soft SaaS
 

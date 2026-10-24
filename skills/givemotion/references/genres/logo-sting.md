@@ -15,6 +15,6 @@ Rules:
 - Use the logo's own SVG paths: draw its strokes (`data-enter="draw"`), or morph simple shapes into its paths with a timeline `morph`.
 - Tagline ≥ 48 px on 1080p; judges called 30 px taglines "barely readable" in every sting.
 - Keep the wordmark clear of the moving mark (chars overlapped the icon while it slid). Check the build with `snapshot --from 0 --to 3 --every 0.2`.
-- "Expensive" means restraint: one palette, one hit, smooth arcs, motion blur (`--motion-blur 8`), no scribbly tangle of lines in the build.
+- "Expensive" means restraint: one palette, one hit, smooth arcs, motion blur (automatic at render), no scribbly tangle of lines in the build.
 
 What judges marked down: nearly empty first frame, 0.5–1.5 s with little change, a tiny tagline, a near-static last second, a build that looked tangled rather than designed.

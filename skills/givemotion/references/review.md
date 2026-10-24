@@ -52,3 +52,9 @@ Remember the motion strip at the top of `check`: long flat runs (`▁▁▁▁`)
 - To match a reference, analyze it first, build, render, then `npx givemotion analyze out/video.mp4 --compare reference.mp4`, which lists the differences ("yours: median shot 2.4 s, reference 0.9 s").
 - Transition types are guesses from the pixels; trust the shot times and the sheets more.
 - On your own render, `analyze` is a good last pass: the share of the picture that changes per half second (judges' favourites changed 26-40%, slide-like videos 12-22%) and the median shot length.
+
+## Is the motion natural?
+
+- `npx givemotion analyze out/video.mp4 --motion` adds a smoothness report: camera dead stops between moves, stop-and-go, sudden velocity changes (full-speed starts/stops, sharp turns), jerk, the share of fast frames that have motion blur (strobing), and a 0–10 naturalness score. Works on any MP4, also a reference video.
+- `--strips [n]` also writes `strip-1.png` … (default 4): the busiest 1 s moments at 10 frames per second, each frame labelled with its time. Open them to see the spacing of a move: even gaps = constant speed, gaps shrinking into the landing = a good ease-out, a jump between two frames = strobing.
+- `check` already warns about the usual causes: `camera-stop`, `fast-no-blur`, `straight-move`, `same-ease` (`references/check-codes.md`).

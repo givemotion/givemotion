@@ -14,11 +14,11 @@ Contents
 
 `npx givemotion render video.html -o out/video.mp4 [options]`
 
-`-o out.mp4|.webm|.mov|.gif|out.mp3|folder/` (format from the extension; a folder gives PNG frames; `--format mp4|webm|mov|gif|png`) · `--quality draft|standard|high|max` · `--crf <n>` · `--fps 60` · `--width` / `--height` · `--scale 2` (4K from a 1080p layout) · `--frames 0-90` or `2s-5s` (only that part, as a new file) · `--redo 4s-7s` · `--no-cache` · `--transparent` (with `.mov` ProRes 4444 or `.webm`) · `--muted` · `--motion-blur 8` (real motion blur from 8 sub-frames; `--shutter 0.5`) · `--codec h265|av1` · `--hardware` (GPU encoder; on a Mac on by default once it checks out, `--no-hardware` to turn off) · `--workers N` · `--data f.json` · `--props '{…}'` · `--seed 7` (seed for `Math.random`, default 1) · `--force` (render even with errors) · `--json`.
+`-o out.mp4|.webm|.mov|.gif|out.mp3|folder/` (format from the extension; a folder gives PNG frames; `--format mp4|webm|mov|gif|png`) · `--quality draft|standard|high|max` · `--crf <n>` · `--fps 60` · `--width` / `--height` · `--scale 2` (4K from a 1080p layout) · `--frames 0-90` or `2s-5s` (only that part, as a new file) · `--redo 4s-7s` · `--no-cache` · `--transparent` (with `.mov` ProRes 4444 or `.webm`) · `--muted` · `--motion-blur auto|off|8` (default `auto`; `--shutter 0.5` = 180°) · `--codec h265|av1` · `--hardware` (GPU encoder; on a Mac on by default once it checks out, `--no-hardware` to turn off) · `--workers N` · `--data f.json` · `--props '{…}'` · `--seed 7` (seed for `Math.random`, default 1) · `--force` (render even with errors) · `--json`.
 
 - `still video.html -t 3.2 -o f.png` (or `--frame <n>`) renders one exact frame; `--transparent` for a PNG with alpha.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack.
-- `--motion-blur` makes fast whips, camera moves and spins look filmed instead of strobing, at the cost of render time (each frame is rendered n times): use it for the final render of fast videos.
+- Motion blur is on by default (`auto`): only frames where something moves fast get extra sub-frames (more for faster moves), so whips, camera moves and spins look filmed instead of strobing at a small cost. The render log says how many frames got blur. `--motion-blur off` turns it off (also `<html data-motion="classic">`); a number forces that many sub-frames on every frame (slow).
 - `npx givemotion doctor` checks Chrome, ffmpeg and which encoder is used; `npx givemotion install` downloads the Chrome build used for rendering; `npx givemotion clean` deletes cached frames.
 
 ## Re-rendering is fast (the parts cache)

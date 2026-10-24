@@ -1,60 +1,35 @@
 <!-- block:
-description: Line chart that draws itself left to right, with a soft area fill and a highlighted last point.
-params: values (comma list), labels (comma list, optional), title, color, suffix, width (px at 1080p; scales with the short side, default 1400), height (default 560), duration (draw time in s, default 1.8)
+description: Line chart that draws itself left to right (built on mw.chart.line): a glowing head a camera can follow, callouts that appear when the line reaches their point, pauses at chosen points, per-segment colors, an axis that can grow with the line.
+params: values (comma list), labels (comma list, optional), title, color, prefix, suffix, width (px at 1080p; scales with the short side, default 1400), height (default 560), delay (when the line starts, s, default 0.3), duration (draw time in s including holds; default 1.8, longer for many points), holds ("Mar:1.2 Aug:1.2" pause at those points), colors ("Mar:#ff4d6d" color of the segment that ends at that point; the head takes it too), rescale ("true": the y axis grows with the highest value so far, so small early moves stay visible), axis (left | right | head | none), dots ("false" hides the point dots), endlabel ("false" hides the last value), overview ("true": after drawing, narrows to the frame width for a camera fit)
 usage: <mw-include src="blocks/line-chart.html" title="Weekly users" values="120,180,160,240,310,420" labels="W1,W2,W3,W4,W5,W6" data-duration="5"></mw-include>
+  Callouts go inside, pinned with data-point="<point> <side> <gap>" (point: 0-based index, a label like Mar, last, max, or head to ride the tip; side: top bottom left right top-left top-right bottom-left bottom-right center); each appears when the line gets there:
+  <mw-include src="blocks/line-chart.html" id="growth" values="{{data.values}}" labels="{{data.months}}" holds="Mar:1.2" colors="Mar:#ff4d6d" rescale="true" duration="8"><div data-point="Mar top-right 30">Outage</div></mw-include>
+  In JS: mw.chart.get('#growth') gives the chart (.timeOf('Mar'), .valueAt(t), .head); a camera follows it with follow: '#growth .mw-chart-head'.
 -->
-<div class="mwb-line" style="--c:{{color|#5eead4}};--w:{{width|1400}};--h:{{height|560}};--d:{{duration|1.8}}s" data-values="{{values|10,14,12,20,26,34}}" data-labels="{{labels}}" data-suffix="{{suffix}}">
+<div class="mwb-line" style="--c:{{color|#5eead4}};--w:{{width|1400}};--h:{{height|560}}" data-values="{{values|10,14,12,20,26,34}}" data-labels="{{labels}}" data-lc-prefix="{{prefix}}" data-lc-suffix="{{suffix}}" data-lc-delay="{{delay}}" data-lc-duration="{{duration}}" data-lc-holds="{{holds}}" data-lc-colors="{{colors}}" data-lc-rescale="{{rescale}}" data-lc-axis="{{axis|left}}" data-lc-dots="{{dots}}" data-lc-endlabel="{{endlabel}}" data-lc-overview="{{overview}}">
   <div class="mwb-line__title" data-enter="fade-up 0.6">{{title}}</div>
-  <div class="mwb-line__plot"><svg class="mwb-line__svg"></svg></div>
-  <div class="mwb-line__labels"></div>
+  <div class="mwb-line__plot">
+    <div class="mwb-line__end" data-point="last top 14" data-chart-text="value"></div>
+    {{content}}
+  </div>
 </div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
-  const svg = root.querySelector('svg');
-  const vals = root.dataset.values.split(',').map(Number);
-  const labels = root.dataset.labels ? root.dataset.labels.split(',') : [];
-  const cs = getComputedStyle(root);
-  const W = parseFloat(cs.getPropertyValue('--w')) || 1400, H = parseFloat(cs.getPropertyValue('--h')) || 560, pad = 24;
-  const min = Math.min(0, ...vals), max = Math.max(...vals) * 1.1;
-  const pts = vals.map((v, i) => [pad + (i * (W - 2 * pad)) / Math.max(1, vals.length - 1), H - pad - ((v - min) / (max - min)) * (H - 2 * pad)]);
-  // smooth path (Catmull-Rom → Bezier)
-  let d = `M${pts[0][0]},${pts[0][1]}`;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
-    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
-    d += ` C${c1},${c2},${p2}`;
-  }
-  const id = 'g' + Math.random().toString(36).slice(2, 8);
-  const last = pts[pts.length - 1];
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="currentColor" stop-opacity=".35"/><stop offset="1" stop-color="currentColor" stop-opacity="0"/></linearGradient>
-</defs>
-    ${[0.25, 0.5, 0.75].map((f) => `<line x1="${pad}" x2="${W - pad}" y1="${pad + f * (H - 2 * pad)}" y2="${pad + f * (H - 2 * pad)}" class="mwb-line__grid"/>`).join('')}
-    <path d="${d} L${last[0]},${H - pad} L${pts[0][0]},${H - pad} Z" fill="url(#${id})" class="mwb-line__area"/>
-    <path class="mwb-line__path" d="${d}" pathLength="1"/>`;
-  const dot = document.createElement('div');
-  dot.className = 'mwb-line__dot';
-  dot.style.left = (last[0] / W) * 100 + '%';
-  dot.style.top = (last[1] / H) * 100 + '%';
-  dot.innerHTML = `<span>${vals[vals.length - 1]}${root.dataset.suffix || ''}</span>`;
-  svg.after(dot);
-  root.querySelector('.mwb-line__labels').innerHTML = labels.map((l, i) => `<span style="left:${(pts[i][0] / W) * 100}%">${l.trim()}</span>`).join('');
+  const d = root.dataset, plot = root.querySelector('.mwb-line__plot');
+  if (d.lcEndlabel === 'false') plot.querySelector('.mwb-line__end').remove();
+  const yes = (v) => /^(true|1|yes)$/i.test(v || '');
+  mw.chart.line(plot, {
+    values: d.values, labels: d.labels, prefix: d.lcPrefix, suffix: d.lcSuffix,
+    delay: d.lcDelay, duration: d.lcDuration, holds: d.lcHolds, colors: d.lcColors,
+    rescale: yes(d.lcRescale), axis: d.lcAxis, dots: d.lcDots !== 'false', overview: yes(d.lcOverview),
+  });
 })();
 </script>
 <style>
-.mwb-line{position:relative;display:flex;flex-direction:column;gap:calc(var(--px)*28);width:calc(var(--px)*var(--w));max-width:calc(var(--stage-w,1920px) - var(--px)*192);color:var(--c)}
-.mwb-line__title{font-size:calc(var(--px)*48);font-weight:700;color:#fff}
+.mwb-line{position:relative;display:flex;flex-direction:column;gap:calc(var(--px)*28);width:calc(var(--px)*var(--w))}
+.mwb-line__title{font-size:calc(var(--px)*48);font-weight:700}
 .mwb-line__title:empty{display:none}
-.mwb-line__plot{position:relative}
-.mwb-line__svg{display:block;width:100%;height:auto;overflow:visible}
-.mwb-line__grid{stroke:rgba(255,255,255,.1);stroke-width:1.5}
-.mwb-line__path{fill:none;stroke:currentColor;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 1;animation:draw var(--d) var(--ease-in-out-cubic) .3s both}
-.mwb-line__area{animation:wipe-right var(--d) var(--ease-in-out-cubic) .3s both}
-.mwb-line__dot{position:absolute;width:calc(var(--px)*26);height:calc(var(--px)*26);margin:calc(var(--px)*-13) 0 0 calc(var(--px)*-13);border-radius:50%;background:currentColor;
-  box-shadow:0 0 0 calc(var(--px)*8) color-mix(in oklab,currentColor,transparent 70%);animation:pop-in .5s var(--ease-out-back) calc(var(--d) + .2s) both}
-.mwb-line__dot span{position:absolute;bottom:calc(100% + var(--px)*18);left:50%;translate:-50% 0;font-size:calc(var(--px)*44);font-weight:800;color:#fff;white-space:nowrap}
-.mwb-line__labels{position:relative;height:calc(var(--px)*36);font-size:calc(var(--px)*28);color:rgba(255,255,255,.65)}
-.mwb-line__labels:empty{display:none}
-.mwb-line__labels span{position:absolute;translate:-50% 0}
+.mwb-line__plot{position:relative;height:calc(var(--px)*var(--h));--chart-line:var(--c)}
+.mwb-line__end{font-size:calc(var(--px)*44);font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 </style>

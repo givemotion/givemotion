@@ -449,3 +449,54 @@ test('cursor block: beat times, show="auto", lands on its target inside a zoomed
   assert.ok(fa.length > 100, 'frames: ' + fa.length);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
 });
+
+test('mw.chart.line: values and points at known times, holds, callouts enter on reach, head followed by a camera; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="3.5" style="position:absolute;inset:0;overflow:hidden">
+    <div id="world" style="position:absolute;left:0;top:0;width:1400px;height:500px">
+      <div id="c" style="position:absolute;left:0;top:0;width:1200px;height:400px">
+        <b id="rider" data-point="head right 10" data-chart-text="value"></b>
+        <i id="lab" data-point="head top 10" data-chart-text="label"></i>
+        <div id="dip" data-point="Mar bottom 20">dip</div>
+      </div>
+    </div>
+  </section>
+  <script>
+    window.ch = mw.chart.line('#c', { values: [0, 10, 5, 20], labels: 'Jan,Feb,Mar,Apr', delay: 0, duration: 3, holds: { Feb: 1 }, ease: 'linear',
+      colors: { Mar: '#f44' }, rescale: true, axis: 'head' });
+    mw.camera('#world').shot(0, { follow: ch.head, zoom: 1.2 }).shot(2.4, { fit: '#c', duration: 0.6 });
+  </script>`));
+  // timing: 2 s of drawing over 3 steps (0.667 s each) plus a 1 s hold at Feb
+  const r = await evalAt(f, 0, `({ t: [0, 1, 2, 3].map((i) => ch.timeOf(i)), mar: ch.timeOf('Mar'), v: [ch.valueAt(1 / 3), ch.valueAt(1), ch.valueAt(1.5), ch.valueAt(7 / 3), ch.valueAt(9)], p: ch.progress(2), pt: ch.pointAt(1) })`);
+  const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, what + ': ' + a + ' vs ' + b);
+  [0, 2 / 3, 7 / 3, 3].forEach((x, i) => near(r.t[i], x, 0.002, 'reach time of point ' + i));
+  near(r.mar, 7 / 3, 0.002, 'timeOf by label');
+  near(r.v[0], 6.25, 0.01, 'value halfway to Feb (monotone curve)'); near(r.v[1], 10, 1e-6, 'held at Feb'); near(r.v[2], 10, 1e-6, 'still held');
+  near(r.v[3], 5, 1e-6, 'at Mar'); near(r.v[4], 20, 1e-6, 'after the end');
+  near(r.p, 1.5, 1e-6, 'progress halfway between Feb and Mar');
+  assert.equal(r.pt.value, 10); assert.equal(r.pt.label, 'Feb');
+  const at = (t) => evalAt(f, t, `(() => {
+    const S = (s) => document.querySelector(s).getBoundingClientRect(), h = S('.mw-chart-head'), rd = S('#rider'), dip = document.querySelector('#dip');
+    const p = ch.pointAt(1, mw.time - mw.timing('#c').start), c = S('#c'), k = c.width / 1200;
+    return { head: [h.left + h.width / 2, h.top + h.height / 2], expect: [c.left + p.x * k, c.top + p.y * k], rider: document.querySelector('#rider').textContent, lab: document.querySelector('#lab').textContent,
+      riderLeft: rd.left - (h.left + h.width / 2), dipOpacity: +getComputedStyle(dip).opacity, color: getComputedStyle(document.querySelector('#c')).getPropertyValue('--chart-color').trim(),
+      line: document.querySelector('#c .mw-chart-line').getAttribute('d') || '', issues: mw.inspect().issues.map((i) => i.code) };
+  })()`);
+  const a = await at(1.2), b = await at(2.2), c = await at(3.2);
+  near(a.head[0], a.expect[0], 1, 'head on Feb during the hold (x)'); near(a.head[1], a.expect[1], 1, 'head on Feb during the hold (y)');
+  near(a.head[0], 320, 1, 'camera follows the head (centered)');
+  assert.equal(a.rider, '10'); assert.equal(a.lab, 'Feb');
+  assert.ok(a.riderLeft > 0, 'rider sits right of the head');
+  assert.equal(a.dipOpacity, 0, 'callout hidden before the line reaches Mar');
+  assert.equal(b.color, '#f44', 'head takes the color of the segment into Mar');
+  assert.equal(c.dipOpacity, 1, 'callout shown after it entered');
+  assert.equal(c.rider, '20');
+  assert.equal(c.line.split('C').length - 1, 3, 'three segments drawn at the end');
+  assert.deepEqual(c.issues.filter((x) => /chart|script|anchor/.test(x)), []);
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 105);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});

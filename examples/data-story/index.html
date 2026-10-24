@@ -1,45 +1,361 @@
 <!doctype html>
-<!-- A data story driven by JSON. Edit data.json (or pass --data other.json / --props '{...}') and re-render.
-     {{data.path}} is filled in before the page loads, so it works in any attribute or text.
-     Render: npx motionwright render examples/data-story/index.html --data examples/data-story/data.json -o out/data-story.mp4 -->
 <html data-width="1920" data-height="1080" data-fps="30">
 <head>
-<meta charset="utf-8">
 <style>
-  body { background: #070910; color: #f2f4f8; font-family: Inter, system-ui, sans-serif; }
-  .scene { display: grid; place-items: center; }
-  .front { position: relative; z-index: 1; }
-  .note { position: absolute; left: 160px; bottom: 96px; z-index: 1; font-size: 36px; color: #aab2c5; }
-  .note b { color: #fff; }
+  :root {
+    --bg: #090d1c;
+    --ink: #f3f5fb;
+    --muted: rgba(214, 222, 255, .62);
+    --teal: #4fe3c1;
+    --violet: #8f7bff;
+    --amber: #ffb84d;
+  }
+  body { background: var(--bg); color: var(--ink); font-family: Inter, system-ui, sans-serif; margin: 0; overflow: hidden; }
+
+  /* ---------- living background (always on screen) ---------- */
+  .bg { position: absolute; inset: 0; overflow: hidden; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(110px); opacity: .55; }
+  .blob.b1 { width: 900px; height: 900px; left: -200px; top: -300px; background: #1d3a7a; animation: drift1 15s ease-in-out both; }
+  .blob.b2 { width: 800px; height: 800px; right: -250px; bottom: -350px; background: #3b1f78; animation: drift2 15s ease-in-out both; }
+  .blob.b3 { width: 500px; height: 500px; left: 45%; top: 55%; background: #0f4d5a; opacity: .45; animation: drift3 15s ease-in-out both; }
+  @keyframes drift1 { to { translate: 380px 220px; } }
+  @keyframes drift2 { to { translate: -420px -160px; } }
+  @keyframes drift3 { from { translate: -300px 0; } to { translate: 260px -380px; } }
+  .grid {
+    position: absolute; inset: -60px;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 80px 80px;
+    mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%);
+    animation: gridmove 15s linear both;
+  }
+  @keyframes gridmove { to { translate: -80px -40px; } }
+
+  .eyebrow { font-size: 30px; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+
+  /* ---------- 1. title ---------- */
+  #intro { display: grid; place-items: center; }
+  #intro .spark { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; }
+  #intro .spark path { fill: none; stroke: var(--teal); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; opacity: .35; }
+  #intro .spark circle { fill: var(--teal); }
+  #intro .center { position: relative; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 34px; }
+  #intro h1 { font-family: 'Inter Display', Inter, sans-serif; font-size: 156px; font-weight: 800; letter-spacing: -.045em; line-height: .98; margin: 0; max-width: 1500px; text-wrap: balance; }
+  #intro h1 .mw-word:last-child { color: var(--teal); }
+  #intro .range { display: flex; align-items: center; gap: 22px; font-size: 40px; font-weight: 600; color: var(--muted); }
+  #intro .range i { display: block; width: 120px; height: 3px; background: linear-gradient(90deg, var(--teal), var(--violet)); border-radius: 3px; transform-origin: left; }
+
+  /* ---------- 2. users line chart ---------- */
+  #users .hud { position: absolute; left: 120px; top: 84px; z-index: 2; }
+  #users .readout { font-family: 'Inter Display', Inter, sans-serif; font-size: 132px; font-weight: 800; letter-spacing: -.04em; line-height: 1; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  #users .readout small { font-size: 40px; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 18px; }
+  #users .growth { position: absolute; right: 120px; top: 84px; text-align: right; z-index: 2; }
+  #users .growth b { display: block; font-family: 'Inter Display', Inter, sans-serif; font-size: 190px; font-weight: 900; letter-spacing: -.05em; line-height: .9;
+    background: linear-gradient(180deg, #fff 20%, var(--teal)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #users .growth span { font-size: 34px; font-weight: 600; color: var(--muted); }
+  #world { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  #chart { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; }
+  #chart .gl { stroke: rgba(255,255,255,.09); stroke-width: 2; }
+  #chart .yl { fill: rgba(214,222,255,.5); font-size: 26px; font-weight: 500; }
+  #chart .xl { fill: rgba(214,222,255,.75); font-size: 30px; font-weight: 600; text-anchor: middle; }
+  #chart .line { fill: none; stroke: var(--teal); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 18px rgba(79,227,193,.55)); }
+  #chart .dot { fill: var(--bg); stroke: var(--teal); stroke-width: 6; }
+  #chart .ring { fill: none; stroke: var(--teal); stroke-width: 4; opacity: 0; }
+  #tip { position: absolute; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: #fff;
+    box-shadow: 0 0 0 10px rgba(79,227,193,.35), 0 0 50px 10px rgba(79,227,193,.6); }
+
+  /* ---------- 3. revenue bars ---------- */
+  #revenue .hud { position: absolute; left: 120px; top: 84px; }
+  #revenue .stage { position: absolute; inset: 0; }
+  #revenue h2 small { font-size: 40px; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 18px; }
+  #revenue h2 { font-family: 'Inter Display', Inter, sans-serif; font-size: 96px; font-weight: 800; letter-spacing: -.035em; margin: 10px 0 0; line-height: 1; }
+  #bars { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+  .bar { position: absolute; bottom: 0; border-radius: 22px 22px 6px 6px; transform-origin: 50% 100%;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--violet), white 22%), color-mix(in oklab, var(--violet), #090d1c 35%)); }
+  .bar.dim { background: linear-gradient(180deg, rgba(143,123,255,.55), rgba(143,123,255,.18)); }
+  .bar.hl { box-shadow: 0 0 80px rgba(143,123,255,.55); }
+  .bval { position: absolute; text-align: center; font-family: 'Inter Display', Inter, sans-serif; font-size: 54px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .blbl { position: absolute; text-align: center; font-size: 34px; font-weight: 600; color: var(--muted); }
+  .baseline { position: absolute; height: 3px; background: rgba(255,255,255,.22); transform-origin: left; }
+  #trend { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; pointer-events: none; }
+  #trend path { fill: none; stroke: var(--amber); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+  .delta { position: absolute; padding: 14px 30px; border-radius: 999px; background: var(--amber); color: #1b1203; font-size: 46px; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
+
+  /* ---------- 4. NPS gauge ---------- */
+  #nps .gauge { position: absolute; left: 50%; top: 170px; width: 1100px; height: 640px; translate: -50% 0; overflow: visible; }
+  #nps .track { fill: none; stroke: rgba(255,255,255,.09); stroke-width: 64; stroke-linecap: round; }
+  #nps .fill { fill: none; stroke: url(#npsgrad); stroke-width: 64; stroke-linecap: round; }
+  #nps .tick { stroke: rgba(255,255,255,.25); stroke-width: 3; }
+  #nps .tl { fill: rgba(214,222,255,.55); font-size: 30px; font-weight: 600; text-anchor: middle; }
+  #knob { fill: #fff; filter: drop-shadow(0 0 18px rgba(255,255,255,.7)); }
+  #nps .readout { position: absolute; left: 0; right: 0; top: 470px; text-align: center; }
+  #nps .readout b { display: block; font-family: 'Inter Display', Inter, sans-serif; font-size: 230px; font-weight: 900; letter-spacing: -.05em; line-height: .9; font-variant-numeric: tabular-nums; }
+  #nps .readout span { display: block; margin-top: 18px; }
 </style>
-<!-- Default data, used when no --data is passed -->
-<script type="application/json" id="mw-data">
-{ "title": "How we grew", "weeks": ["W1","W2","W3","W4"], "users": [10,14,12,20], "growth": "2×",
-  "quarters": ["Q1","Q2"], "revenue": [10,20], "nps": 50 }
-</script>
 </head>
 <body>
-<main data-sequence data-transition="slide-up 0.7 in-out-cubic">
-  <section class="scene" data-duration="3.4">
-    <mw-include src="../../blocks/grid-bg.html" glow="#4f46e5"></mw-include>
-    <mw-include src="../../blocks/title-card.html" kicker="Yearly report" title="{{data.title}}" subtitle="Three numbers that matter"></mw-include>
+
+<div class="bg">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+  <div class="grid"></div>
+</div>
+
+<main data-sequence>
+  <!-- 1. Title -->
+  <section id="intro" class="scene" data-duration="3.3" data-camera="push 1.07">
+    <svg class="spark" viewBox="0 0 1920 1080"><path id="sparkPath" pathLength="1"/><circle id="sparkDot" r="12"/></svg>
+    <div class="center">
+      <div class="range"><span id="rangeFrom"></span><i></i><span id="rangeTo"></span></div>
+      <h1 data-split="words" data-enter="mask-up 0.9 0.12" data-stagger="0.07">{{data.title}}</h1>
+    </div>
   </section>
 
-  <section class="scene" data-duration="5">
-    <mw-include src="../../blocks/grid-bg.html" glow="#0ea5e9"></mw-include>
-    <div class="front"><mw-include src="../../blocks/line-chart.html" title="Weekly active users" values="{{data.users}}" labels="{{data.weeks}}"></mw-include></div>
-    <div class="note" data-enter="fade-up 0.6 2.6">Up <b>{{data.growth}}</b> since January.</div>
+  <!-- 2. Users -->
+  <section id="users" class="scene" data-duration="5.6" data-transition="zoom-through 0.7">
+    <div id="world">
+      <svg id="chart" viewBox="0 0 1920 1080"></svg>
+      <div id="tip"></div>
+    </div>
+    <div class="hud">
+      <div class="eyebrow">{{data.usersLabel|Monthly users}}</div>
+      <div class="readout"><span id="readNum">0</span><small id="readLbl"></small></div>
+    </div>
+    <div class="growth"><b>{{data.growth}}</b><span>{{data.growthLabel|growth}}</span></div>
   </section>
 
-  <section class="scene" data-duration="5">
-    <mw-include src="../../blocks/grid-bg.html" glow="#7c3aed" pattern="dots"></mw-include>
-    <div class="front"><mw-include src="../../blocks/bar-chart.html" title="Revenue (k$)" values="{{data.revenue}}" labels="{{data.quarters}}" suffix="k" highlight="3" color="#a78bfa"></mw-include></div>
+  <!-- 3. Revenue -->
+  <section id="revenue" class="scene" data-duration="4.4" data-transition="whip-left 0.5">
+    <div class="stage" data-camera="push 1.06, float 8">
+      <div id="bars"></div>
+      <svg id="trend" viewBox="0 0 1920 1080"><path id="trendPath" pathLength="1"/><path id="trendHead" d="M-16,-14 L8,0 L-16,14"/></svg>
+    </div>
+    <div class="hud">
+      <div class="eyebrow">{{data.revenueLabel|Quarterly revenue}}</div>
+      <h2><span id="revTotal"></span><small>{{data.totalLabel|total}}</small></h2>
+    </div>
   </section>
 
-  <section class="scene" data-duration="3.8">
-    <mw-include src="../../blocks/gradient-bg.html" c1="#1e40af" c2="#0f766e" c3="#6d28d9"></mw-include>
-    <div class="front"><mw-include src="../../blocks/stat.html" value="{{data.nps}}" label="Customer score (NPS)" delta="best ever" accent="#5eead4"></mw-include></div>
+  <!-- 4. NPS -->
+  <section id="nps" class="scene" data-duration="3.9" data-transition="push-up 0.6" data-camera="push 1.06">
+    <svg class="gauge" viewBox="0 0 1100 640">
+      <defs><linearGradient id="npsgrad" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#ff6b6b"/><stop offset=".5" stop-color="#ffb84d"/><stop offset="1" stop-color="#4fe3c1"/></linearGradient></defs>
+      <path class="track" id="npsTrack"/>
+      <path class="fill" id="npsFill" pathLength="1"/>
+      <g id="npsTicks"></g>
+      <circle id="knob" r="24"/>
+    </svg>
+    <div class="readout">
+      <b><span data-count="0 {{data.nps}}" data-count-duration="1.6" data-count-delay="0.5" data-count-ease="out-cubic"></span></b>
+      <span class="eyebrow">{{data.npsLabel|Net Promoter Score}}</span>
+    </div>
   </section>
 </main>
+
+<script>
+const D = mw.data || {};
+const users = D.users || [], months = D.weeks || [], quarters = D.quarters || [], revenue = D.revenue || [];
+const fmt = (v) => Math.round(v).toLocaleString('en-US');
+const compact = (v) => v >= 1000 ? (v / 1000).toFixed(v % 1000 === 0 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(v));
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent && parent.appendChild(e); return e; };
+function smooth(pts) {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    d += ` C${p1[0] + (p2[0] - p0[0]) / 6},${p1[1] + (p2[1] - p0[1]) / 6} ${p2[0] - (p3[0] - p1[0]) / 6},${p2[1] - (p3[1] - p1[1]) / 6} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+function niceStep(max, ticks) {
+  const raw = max / ticks, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / mag;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * mag;
+}
+
+/* ---------------- 1. Title ---------------- */
+document.getElementById('rangeFrom').textContent = months[0] || '';
+document.getElementById('rangeTo').textContent = months[months.length - 1] || '';
+{
+  const n = users.length, max = Math.max(...users), min = Math.min(...users);
+  const pts = users.map((v, i) => [-40 + i * 2000 / Math.max(1, n - 1), 960 - (v - min) / Math.max(1, max - min) * 260]);
+  document.getElementById('sparkPath').setAttribute('d', smooth(pts));
+}
+// (mw.path.travel does not move SVG elements, so the dot is placed by hand)
+const sparkD = document.getElementById('sparkPath').getAttribute('d'), sparkDot = document.getElementById('sparkDot');
+mw.onFrame('#intro', (t) => {
+  const p = mw.interpolate(t, [0.2, 2.6], [0, 1], { easing: 'in-out-sine' });
+  document.getElementById('sparkPath').style.strokeDasharray = p + ' 2';
+  const q = mw.path.point(sparkD, p);
+  sparkDot.setAttribute('cx', q.x); sparkDot.setAttribute('cy', q.y);
+});
+mw.timeline('#intro')
+  .from('.range span, .range i', { autoAlpha: 0, y: 30, stagger: 0.08, duration: 0.7, ease: 'expo.out' }, 0)
+  .from('.range i', { scaleX: 0, duration: 0.8, ease: 'expo.out' }, 0.25);
+
+/* ---------------- 2. Users line chart ---------------- */
+const CH = { x0: 260, x1: 1680, y0: 420, y1: 900 };   // plot box inside the world
+const uMax = Math.max(...users), step = niceStep(uMax, 5), yTop = Math.ceil(uMax * 1.05 / step) * step;
+const ux = (i) => CH.x0 + i * (CH.x1 - CH.x0) / Math.max(1, users.length - 1);
+const uy = (v) => CH.y1 - v / yTop * (CH.y1 - CH.y0);
+const chart = document.getElementById('chart');
+const gGrid = el('g', {}, chart);
+for (let v = 0; v <= yTop + 1e-9; v += step) {
+  el('line', { class: 'gl', x1: CH.x0 - 40, x2: CH.x1 + 40, y1: uy(v), y2: uy(v) }, gGrid);
+  el('text', { class: 'yl', x: CH.x0 - 70, y: uy(v) + 9, 'text-anchor': 'end' }, gGrid).textContent = compact(v);
+}
+const upts = users.map((v, i) => [ux(i), uy(v)]);
+const ud = smooth(upts);
+const defs = el('defs', {}, chart);
+defs.innerHTML = `<linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fe3c1" stop-opacity=".32"/><stop offset="1" stop-color="#4fe3c1" stop-opacity="0"/></linearGradient>
+  <clipPath id="areaClip"><rect id="areaRect" x="0" y="0" width="0" height="1080"/></clipPath>`;
+el('path', { d: `${ud} L${CH.x1},${CH.y1} L${CH.x0},${CH.y1} Z`, fill: 'url(#area)', 'clip-path': 'url(#areaClip)' }, chart);
+const line = el('path', { class: 'line', id: 'uline', d: ud, pathLength: 1 }, chart);
+const ring = el('circle', { class: 'ring', id: 'lastRing', cx: upts[upts.length - 1][0], cy: upts[upts.length - 1][1], r: 26 }, chart);
+users.forEach((v, i) => {
+  el('circle', { class: 'dot', id: 'ud' + i, cx: upts[i][0], cy: upts[i][1], r: 13 }, chart);
+  el('text', { class: 'xl', id: 'ux' + i, x: upts[i][0], y: CH.y1 + 62 }, chart).textContent = months[i] || '';
+});
+
+const T0 = 0.7, T1 = 3.5;   // line draws from T0 to T1 (scene time)
+const trip = mw.path.travel('#tip', '#uline', { stops: [[T0, 0], [T1, 1]], ease: 'in-out-sine' });
+// when does the tip pass each point? (sampled once, deterministic)
+const passTime = upts.map(([x]) => {
+  // NOTE: trip.progress(t) ignores the ease when called at load time, so use the same curve via mw.interpolate
+  for (let t = T0; t <= T1; t += 1 / 120) if (mw.path.point(ud, mw.interpolate(t, [T0, T1], [0, 1], { easing: 'in-out-sine' })).x >= x - 0.5) return t;
+  return T1;
+});
+const readNum = document.getElementById('readNum'), readLbl = document.getElementById('readLbl');
+mw.onFrame('#users', (t) => {
+  const p = trip.progress(t);
+  line.style.strokeDasharray = p + ' 2';
+  const x = mw.path.point(ud, p).x;
+  document.getElementById('areaRect').setAttribute('width', x);
+  // live readout = value under the tip
+  const f = Math.max(0, Math.min(users.length - 1, (x - CH.x0) / ((CH.x1 - CH.x0) / Math.max(1, users.length - 1))));
+  const i = Math.floor(f), frac = f - i;
+  const v = i >= users.length - 1 ? users[users.length - 1] : users[i] + (users[i + 1] - users[i]) * frac;
+  readNum.textContent = fmt(v);
+  readLbl.textContent = months[Math.round(f)] || '';
+});
+
+const tl2 = mw.timeline('#users')
+  .from('.hud .eyebrow', { autoAlpha: 0, x: -40, duration: 0.6, ease: 'expo.out' }, 0.35)
+  .from('.readout', { autoAlpha: 0, y: 40, duration: 0.7, ease: 'expo.out' }, 0.45)
+  .from('#chart .gl', { scaleX: 0, transformOrigin: '0% 50%', stagger: 0.06, duration: 0.9, ease: 'expo.out' }, 0.2)
+  .from('#chart .yl', { autoAlpha: 0, x: -20, stagger: 0.06, duration: 0.5 }, T1 - 0.2)
+  .from('#tip', { scale: 0, duration: 0.5, ease: 'back.out(3)' }, T0 - 0.3);
+users.forEach((_, i) => {
+  tl2.from('#ud' + i, { scale: 0, duration: 0.5, ease: 'back.out(4)' }, passTime[i] - 0.05)
+     .from('#ux' + i, { autoAlpha: 0, y: 24, duration: 0.5, ease: 'expo.out' }, T1 - 0.3 + i * 0.05);
+});
+tl2.to('#tip', { scale: 0, duration: 0.3, ease: 'power2.in' }, T1 + 0.05)
+   .fromTo('#lastRing', { scale: 0.5, autoAlpha: 1 }, { scale: 3, autoAlpha: 0, duration: 1.1, ease: 'expo.out', immediateRender: false }, T1 + 0.05)
+   .fromTo('.readout', { scale: 1 }, { keyframes: [{ scale: 1.12, duration: 0.15 }, { scale: 1, duration: 0.5, ease: 'back.out(3)' }], transformOrigin: '0% 50%' }, T1)
+   .from('.growth b', { scale: 2.6, autoAlpha: 0, rotate: -8, duration: 0.55, ease: 'expo.in' }, T1 + 0.2)
+   .from('.growth span', { autoAlpha: 0, y: 20, duration: 0.5, ease: 'expo.out' }, T1 + 0.75);
+
+mw.camera('#world')
+  .shot(0, { follow: '#tip', zoom: 1.9, offset: [120, -60] })
+  .shot(T1 - 0.6, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, duration: 1.2, ease: 'in-out-cubic' })
+  .shot(T1 + 0.7, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, zoom: 1.05, offset: [60, 40], duration: 1.6, ease: 'in-out-sine' })
+  .shake(T1 + 0.72, { duration: 0.35, amount: 12 });
+
+/* ---------------- 3. Revenue bars ---------------- */
+const BX = { x0: 200, x1: 1720, base: 930, h: 430 };
+const bars = document.getElementById('bars');
+const rN = revenue.length, rMax = Math.max(...revenue);
+const gap = Math.min(70, (BX.x1 - BX.x0) / rN * 0.3);
+const bw = Math.min(260, ((BX.x1 - BX.x0) - gap * (rN - 1)) / rN);
+const totalW = bw * rN + gap * (rN - 1), bx0 = (BX.x0 + BX.x1) / 2 - totalW / 2;
+const hlIdx = revenue.indexOf(rMax);
+const pre = D.revenuePrefix != null ? D.revenuePrefix : '', suf = D.revenueSuffix != null ? D.revenueSuffix : '';
+const base = document.createElement('div');
+base.className = 'baseline';
+Object.assign(base.style, { left: bx0 - 40 + 'px', width: totalW + 80 + 'px', top: BX.base + 'px' });
+bars.appendChild(base);
+const tops = [];
+revenue.forEach((v, i) => {
+  const h = v / rMax * BX.h, x = bx0 + i * (bw + gap);
+  tops.push([x + bw / 2, BX.base - h]);
+  const b = document.createElement('div');
+  b.className = 'bar ' + (i === hlIdx ? 'hl' : 'dim');
+  b.id = 'bar' + i;
+  Object.assign(b.style, { left: x + 'px', width: bw + 'px', height: h + 'px', top: BX.base - h + 'px', bottom: 'auto' });
+  bars.appendChild(b);
+  const val = document.createElement('div');
+  val.className = 'bval'; val.id = 'bv' + i;
+  Object.assign(val.style, { left: x - 40 + 'px', width: bw + 80 + 'px', top: BX.base - h - 78 + 'px' });
+  val.innerHTML = `<span data-count="0 ${v}" data-count-duration="1" data-count-delay="${0.55 + i * 0.14}" data-count-prefix="${pre}" data-count-suffix="${suf}"></span>`;
+  bars.appendChild(val);
+  const lbl = document.createElement('div');
+  lbl.className = 'blbl'; lbl.id = 'bl' + i;
+  Object.assign(lbl.style, { left: x + 'px', width: bw + 'px', top: BX.base + 22 + 'px' });
+  lbl.textContent = quarters[i] || '';
+  bars.appendChild(lbl);
+});
+// dashed trend from first bar top to last bar top, then the % change badge
+const first = tops[0], last = tops[tops.length - 1];
+const lift = 120;
+document.getElementById('trendPath').setAttribute('d', `M${first[0]},${first[1] - lift} Q${(first[0] + last[0]) / 2},${Math.min(first[1], last[1]) - lift - 160} ${last[0]},${last[1] - lift}`);
+const tp = document.getElementById('trendPath').getAttribute('d');
+const head = mw.path.point(tp, 1), mid = mw.path.point(tp, 0.5);
+document.getElementById('trendHead').setAttribute('transform', `translate(${head.x},${head.y}) rotate(${head.angle})`);
+const total = revenue.reduce((a, b) => a + b, 0);
+const rt = document.getElementById('revTotal');
+rt.setAttribute('data-count', '0 ' + total); rt.setAttribute('data-count-duration', '1.8'); rt.setAttribute('data-count-delay', '0.4');
+rt.setAttribute('data-count-prefix', pre); rt.setAttribute('data-count-suffix', suf);
+const pct = revenue[0] ? Math.round((revenue[rN - 1] / revenue[0] - 1) * 100) : 0;
+const delta = document.createElement('div');
+delta.className = 'delta'; delta.id = 'delta';
+delta.textContent = (pct >= 0 ? '+' : '') + pct + '%';
+bars.appendChild(delta);
+Object.assign(delta.style, { left: mid.x + 'px', top: mid.y + 'px', translate: '-50% -50%' });
+
+const tl3 = mw.timeline('#revenue')
+  .from('.hud .eyebrow', { autoAlpha: 0, x: -40, duration: 0.6, ease: 'expo.out' }, 0.3)
+  .from('h2', { autoAlpha: 0, y: 40, duration: 0.7, ease: 'expo.out' }, 0.4)
+  .from('.baseline', { scaleX: 0, duration: 0.8, ease: 'expo.out' }, 0.25);
+revenue.forEach((_, i) => {
+  const at = 0.45 + i * 0.14;
+  tl3.from('#bar' + i, { scaleY: 0, duration: 0.9, ease: 'back.out(1.6)' }, at)
+     .from('#bv' + i, { autoAlpha: 0, y: 40, duration: 0.6, ease: 'expo.out' }, at + 0.1)
+     .from('#bl' + i, { autoAlpha: 0, y: 20, duration: 0.5, ease: 'expo.out' }, at + 0.05);
+});
+const tEnd = 0.45 + rN * 0.14 + 0.7;
+tl3.from('#trendPath', { draw: 0, duration: 0.8, ease: 'power2.inOut' }, tEnd)
+   .from('#trendHead', { autoAlpha: 0, duration: 0.15 }, tEnd + 0.7)
+   .from('#delta', { scale: 0, rotate: -12, duration: 0.6, ease: 'back.out(2.5)' }, tEnd + 0.3)
+   .to('#bar' + hlIdx, { keyframes: [{ scaleY: 1.04, duration: 0.15 }, { scaleY: 1, duration: 0.4, ease: 'back.out(3)' }] }, tEnd + 0.6);
+
+/* ---------------- 4. NPS gauge ---------------- */
+const G = { cx: 550, cy: 560, r: 440 };
+const npsVal = Math.max(-100, Math.min(100, Number(D.nps) || 0));
+const ang = (v) => Math.PI - (v + 100) / 200 * Math.PI;     // -100 -> left (180deg), 100 -> right (0deg)
+const pt = (v, r) => [G.cx + Math.cos(ang(v)) * r, G.cy - Math.sin(ang(v)) * r];
+const arc = (a, b) => { const [x0, y0] = pt(a, G.r), [x1, y1] = pt(b, G.r); return `M${x0},${y0} A${G.r},${G.r} 0 0 1 ${x1},${y1}`; };
+document.getElementById('npsTrack').setAttribute('d', arc(-100, 100));
+document.getElementById('npsFill').setAttribute('d', arc(-100, npsVal));
+const ticks = document.getElementById('npsTicks');
+[-50, 0, 50].forEach((v) => {
+  const [a, b] = pt(v, G.r - 52), [c, d] = pt(v, G.r - 76);
+  el('line', { class: 'tick', x1: a, y1: b, x2: c, y2: d }, ticks);
+  const [lx, ly] = pt(v, G.r - 112);
+  el('text', { class: 'tl', x: lx, y: ly + 10 }, ticks).textContent = v;
+});
+[-100, 100].forEach((v) => { const [x, y] = pt(v, G.r); el('text', { class: 'tl', x, y: y + 80 }, ticks).textContent = v; });
+const fillD = document.getElementById('npsFill').getAttribute('d'), knob = document.getElementById('knob');
+mw.onFrame('#nps', (t) => {
+  const q = mw.path.point(fillD, mw.interpolate(t, [0.5, 2.1], [0, 1], { easing: 'out-cubic' }));
+  knob.setAttribute('cx', q.x); knob.setAttribute('cy', q.y);
+});
+mw.timeline('#nps')
+  .from('#npsTrack', { draw: 0, duration: 0.9, ease: 'power2.inOut' }, 0.15)
+  .from('#npsTicks > *', { autoAlpha: 0, stagger: 0.04, duration: 0.4 }, 0.5)
+  .from('#npsFill', { draw: 0, duration: 1.6, ease: 'out-cubic' }, 0.5)
+  .from('#knob', { scale: 0, duration: 0.4, ease: 'back.out(3)' }, 0.35)
+  .from('.readout b', { scale: 0.6, autoAlpha: 0, duration: 0.7, ease: 'back.out(2)' }, 0.4)
+  .from('.readout .eyebrow', { autoAlpha: 0, y: 20, duration: 0.6, ease: 'expo.out' }, 0.9)
+  .fromTo('.readout b', { scale: 1 }, { keyframes: [{ scale: 1.1, duration: 0.12 }, { scale: 1, duration: 0.5, ease: 'back.out(3)' }] }, 2.1);
+{ const [kx, ky] = pt(npsVal, G.r);   // where the knob lands, in page px (gauge is centered, top 170px)
+  mw.burst('#nps', { at: 2.1, kind: 'sparks', x: (960 - 550 + kx) / 19.2 + '%', y: (170 + ky) / 10.8 + '%', count: 36, colors: ['#4fe3c1', '#ffb84d', '#ffffff'] }); }
+</script>
 </body>
 </html>

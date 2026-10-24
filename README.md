@@ -104,9 +104,9 @@ title-card · lower-third · captions (word-by-word, from JSON or SRT) · code-w
 | Example | Shows |
 |---|---|
 | [`examples/product-promo`](examples/product-promo) | 22 s launch video: transitions, a fake product UI being built, cursor clicks, counters, music |
-| [`examples/data-story`](examples/data-story) | Charts driven by `data.json` with `{{data.path}}` templating |
-| [`examples/vertical-short`](examples/vertical-short) | 9:16 short with kinetic type and word-by-word captions |
-| [`examples/code-explainer`](examples/code-explainer) | Typed code, a callout, a checklist |
+| [`examples/data-story`](examples/data-story) | Data story where every number and chart shape comes from `data.json` (try `--data examples/data-story/other.json`): a camera that rides the line, bars, a gauge |
+| [`examples/vertical-short`](examples/vertical-short) | 9:16 short: kinetic type synced to word-timed captions, cuts on the music's beats |
+| [`examples/code-explainer`](examples/code-explainer) | Code that types itself, a camera that zooms into one line, and the idea drawn as a timeline |
 | [`examples/generative`](examples/generative) | 1,400 canvas particles drawn as a pure function of time |
 | [`examples/personalized`](examples/personalized) | One template, many videos (`--props`) |
 

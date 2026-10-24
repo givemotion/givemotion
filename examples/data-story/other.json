@@ -1,0 +1,46 @@
+{
+  "title": "Our second year, in numbers",
+  "weeks": [
+    "W1",
+    "W2",
+    "W3",
+    "W4",
+    "W5",
+    "W6",
+    "W7",
+    "W8",
+    "W9",
+    "W10"
+  ],
+  "users": [
+    8200,
+    12900,
+    11400,
+    19800,
+    27500,
+    24100,
+    41000,
+    58300,
+    71200,
+    96400
+  ],
+  "growth": "11.8×",
+  "quarters": [
+    "Q1 '25",
+    "Q2 '25",
+    "Q3 '25",
+    "Q4 '25",
+    "Q1 '26"
+  ],
+  "revenue": [
+    1240,
+    980,
+    1610,
+    2275,
+    2930
+  ],
+  "nps": -12,
+  "usersLabel": "Weekly active users",
+  "revenuePrefix": "$",
+  "revenueSuffix": "k"
+}

@@ -820,6 +820,8 @@
           for (const ch of node.children) {
             if (I.SKIP_TAGS.has(ch.tagName) || ch.hasAttribute('data-mw-internal')) continue;
             if (keep.includes(ch)) continue;
+            // wrappers that draw nothing themselves (display: contents, e.g. blocks) pass the fade to their children
+            if (getComputedStyle(ch).display === 'contents') { fadeKids(ch); continue; }
             if (keep.some((k) => ch.contains(k))) {
               const cs = getComputedStyle(ch);
               const paints = cs.backgroundImage !== 'none' || !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) || cs.boxShadow !== 'none' || parseFloat(cs.borderTopWidth) > 0;
@@ -848,13 +850,17 @@
     if (!p) return 1;
     return p.getBoundingClientRect().width / p.offsetWidth || 1;
   }
+  // layout size without transforms (<svg> has no offsetWidth, use its CSS box)
+  const boxW = (el) => el.offsetWidth ?? el.clientWidth ?? 0;
+  const boxH = (el) => el.offsetHeight ?? el.clientHeight ?? 0;
   function placeAt(el, r, R) {
     // r: where el is now (screen), R: where it should be. Scale happens around the element's own
     // transform-origin, so work that point out on screen, and undo ancestor scaling for the move.
     const k = ancestorScale(el);
     const o = getComputedStyle(el).transformOrigin.split(' ').map(parseFloat);
-    const ox = r.left + (el.offsetWidth ? (o[0] / el.offsetWidth) * r.width : 0);
-    const oy = r.top + (el.offsetHeight ? (o[1] / el.offsetHeight) * r.height : 0);
+    const bw = boxW(el), bh = boxH(el);
+    const ox = r.left + (bw ? (o[0] / bw) * r.width : 0);
+    const oy = r.top + (bh ? (o[1] / bh) * r.height : 0);
     const sx = r.width ? R.width / r.width : 1, sy = r.height ? R.height / r.height : 1;
     const tx = (R.left - ox - sx * (r.left - ox)) / (k || 1), ty = (R.top - oy - sy * (r.top - oy)) / (k || 1);
     el.style.translate = `${r4(tx)}px ${r4(ty)}px`;

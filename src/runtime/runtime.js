@@ -227,12 +227,48 @@
     return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : a * Math.pow(2, -10 * x) * Math.sin(((x - s) * (2 * Math.PI)) / period) + 1);
   }
   function backOut(o = 1.7) { return (x) => 1 + (o + 1) * Math.pow(x - 1, 3) + o * Math.pow(x - 1, 2); }
+  // Physical easing ("natural"): the step response of a damped spring, stretched so it has settled when x reaches 1.
+  // zeta = damping ratio: 1 = critically damped (lands without overshoot), 0.7 = about 5% overshoot that settles.
+  // It starts from rest (mass: it takes a moment to get going) and lands about where out-expo lands (98% at x = 0.53).
+  // v0 = starting speed, in "whole moves per whole duration" (for a move that carries the speed of the one before it).
+  // A pure function of x; the tiny rest left at x = 1 is spread over the move so it ends exactly at 1.
+  const physCache = new Map();
+  function physEase(zeta = 1, v0 = 0) {
+    const z = Math.max(0.3, Math.min(1, +zeta || 1)), v = +v0 || 0, ck = z + ',' + v;
+    if (physCache.has(ck)) return physCache.get(ck);
+    const EPS = 0.0003, env = (w) => (z < 1 ? Math.exp(-z * w) / Math.sqrt(1 - z * z) : Math.exp(-w) * (1 + w));
+    let lo = 0.5, hi = 200, w = 10;
+    for (let i = 0; i < 60; i++) { w = (lo + hi) / 2; if (env(w) > EPS) lo = w; else hi = w; }
+    const wd = z < 1 ? w * Math.sqrt(1 - z * z) : 0;
+    const s = z < 1 ? (x) => 1 - Math.exp(-z * w * x) * (Math.cos(wd * x) + ((z * w - v) / wd) * Math.sin(wd * x)) : (x) => 1 - Math.exp(-w * x) * (1 + (w - v) * x);
+    const r = 1 - s(1);
+    const fn = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : s(x) + r * x * x * x);
+    physCache.set(ck, fn);
+    return fn;
+  }
+  // A move with mass ("natural-move"): a spring that follows a target sliding from 0 to 1 over the first half. It
+  // gathers speed smoothly (no kick), cruises, and settles at the end (zeta 0.7: about 1.5% overshoot). 90% at x = 0.55.
+  const moveCache = new Map();
+  function moveEase(zeta = 0.7) {
+    const z = Math.max(0.3, Math.min(1, +zeta || 1));
+    if (moveCache.has(z)) return moveCache.get(z);
+    const w = 14, Tr = 0.5, a = z * w, b = z < 1 ? w * Math.sqrt(1 - z * z) : 0;
+    // S(t): the integral of the spring's step response (closed form), so the ramp response is (S(t) - S(t - Tr)) / Tr
+    const S = (t) => (t <= 0 ? 0 : z >= 1 ? t - (2 - Math.exp(-w * t) * (2 + w * t)) / w : t - (Math.exp(-a * t) * ((b - (a * a) / b) * Math.sin(b * t) - 2 * a * Math.cos(b * t)) + 2 * a) / (w * w));
+    const f = (t) => (S(t) - S(t - Tr)) / Tr, r = 1 - f(1);
+    const fn = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : f(x) + r * x * x * x);
+    moveCache.set(z, fn);
+    return fn;
+  }
+  // A cubic from 0 to 1 that starts with slope a and ends with slope b (for the middle of a chain of moves).
+  function hermiteEase(a, b) { return (x) => (x <= 0 ? 0 : x >= 1 ? 1 : ((a + b - 2) * x + (3 - 2 * a - b)) * x * x + a * x); }
   const inv = (f) => (x) => 1 - f(1 - x);
   const inOut = (fOut) => (x) => (x < 0.5 ? (1 - fOut(1 - 2 * x)) / 2 : (1 + fOut(2 * x - 1)) / 2);
   const FUNCS = {
     'out-bounce': () => bounceOut, 'in-bounce': () => inv(bounceOut), 'in-out-bounce': () => inOut(bounceOut),
     'out-elastic': (p) => elasticOut(p[0], p[1]), 'in-elastic': (p) => inv(elasticOut(p[0], p[1])), 'in-out-elastic': (p) => inOut(elasticOut(p[0], p[1] ?? 0.45)),
     'out-back': (p) => backOut(p[0]), 'in-back': (p) => inv(backOut(p[0])), 'in-out-back': (p) => inOut(backOut(p[0] ?? 2.5)),
+    'natural': (p) => physEase(p[0] ?? 1, p[1] ?? 0), 'natural-move': (p) => moveEase(p[0] ?? 0.7),
   };
   // GSAP-style names ("power2.out", "back.out(1.7)", "sine.inOut", "none") are accepted because models write them by habit.
   const GS_KIND = { power0: 'linear', none: 'linear', linear: 'linear', power1: 'quad', quad: 'quad', power2: 'cubic', cubic: 'cubic', power3: 'quart', quart: 'quart', power4: 'quint', quint: 'quint', strong: 'quint', sine: 'sine', expo: 'expo', circ: 'circ', back: 'back', elastic: 'elastic', bounce: 'bounce' };
@@ -517,7 +553,8 @@
         if (def.morph) morphPairs.push({ from: kids[i - 1], to: k, dur: t.dur, ease: ez || 'in-out-cubic' });
         const kc = clipOf.get(k);
         if (kc) transitionList.push({ name: t.name, start: round(kc.start), end: round(kc.start + t.dur) });
-        if (def.enter && !k.hasAttribute('data-enter')) k.setAttribute('data-enter', `${def.enter} ${tail}`);
+        // (a scene transition keeps its fixed curve in natural motion too: it is a cut, not an object with mass)
+        if (def.enter && !k.hasAttribute('data-enter')) { k.setAttribute('data-enter', `${def.enter} ${tail}`); k.__gmTransition = true; }
         const prev = kids[i - 1];
         if (prev && def.exit && !prev.hasAttribute('data-exit')) prev.setAttribute('data-exit', `${def.exit} ${tail}`);
       });
@@ -823,39 +860,196 @@
     'none': () => null,
   };
   const EXIT_DEFAULTS = { 'elastic': { ease: 'in-back', dur: 0.5 }, 'grow': { ease: 'in-back', dur: 0.5 }, 'spin-in': { ease: 'in-back', dur: 0.6 }, 'typewriter': { ease: 'steps(1)', dur: 0.02 }, 'drop': { ease: 'in-cubic', dur: 0.6 } };
+  // Natural motion (gm.motion 'natural'): what an entrance does when its data-enter gives no easing / no duration.
+  // z = damping ratio of its spring (1 = lands without overshoot: fades, slides, wipes and text stay crisp; below 1 =
+  // a small overshoot that settles, for things that pop, grow or tilt into place). size = how far it travels, as a
+  // share of the element's own size ('w', 'h' or 'max' side): its duration grows a little with that distance.
+  // Presets not listed (drop, swing, elastic: already springs; draw, write: pen speed; typewriter) keep their curve.
+  const NATURAL_ENTER = {
+    'fade': { z: 1 }, 'blur': { z: 1 }, 'fade-up': { z: 1 }, 'fade-down': { z: 1 }, 'fade-left': { z: 1 }, 'fade-right': { z: 1 }, 'rise': { z: 1 },
+    'scale': { z: 0.85, size: ['max', 0.15] }, 'pop': { z: 0.7, size: ['max', 0.6] }, 'zoom': { z: 0.85, size: ['max', 0.25] },
+    'slide-up': { z: 1, size: ['h', 1] }, 'slide-down': { z: 1, size: ['h', 1] }, 'slide-left': { z: 1, size: ['w', 1] }, 'slide-right': { z: 1, size: ['w', 1] },
+    'whip-up': { z: 1, size: ['h', 1] }, 'whip-down': { z: 1, size: ['h', 1] }, 'whip-left': { z: 1, size: ['w', 1] }, 'whip-right': { z: 1, size: ['w', 1] },
+    'wipe-up': { z: 1, size: ['h', 1] }, 'wipe-down': { z: 1, size: ['h', 1] }, 'wipe-left': { z: 1, size: ['w', 1] }, 'wipe-right': { z: 1, size: ['w', 1] },
+    'diagonal': { z: 1, size: ['w', 1.4] }, 'iris': { z: 1, size: ['max', 1] }, 'clock': { z: 1 },
+    'mask-up': { z: 1 }, 'mask-down': { z: 1 }, 'mask-left': { z: 1 }, 'mask-right': { z: 1 },
+    'flip-up': { z: 0.72 }, 'spin-in': { z: 0.7, size: ['max', 1] }, 'grow': { z: 0.7, size: ['max', 1] },
+    'grow-x': { z: 1, size: ['w', 1] }, 'grow-y': { z: 1, size: ['h', 1] }, 'stretch': { z: 0.75, size: ['max', 0.9] }, 'tilt': { z: 0.8 },
+  };
+  // Bigger moves take a bit longer: duration x (distance / 240px)^0.25, kept within 0.85x-1.3x (distance in 1080p px).
+  function distanceFactor(d, ref = 240, lo = 0.85, hi = 1.3) { return d > 0 ? Math.max(lo, Math.min(hi, Math.pow(d / ref, 0.25))) : 1; }
+  // Layout sizes of elements where they rest (transforms and scale animations do not count; clips that are not on
+  // screen are shown for the measure). Rounded, so every worker gets the same numbers.
+  function restSizes(els) {
+    const out = new Map();
+    if (!els.length) return out;
+    const hidden = [];
+    for (const e of els) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-gm-hidden')) { hidden.push(p); p.removeAttribute('data-gm-hidden'); }
+    try {
+      for (const e of els) {
+        let w = 0, h = 0;
+        if (e instanceof HTMLElement) { w = e.offsetWidth; h = e.offsetHeight; }
+        else if (e instanceof SVGGraphicsElement) {
+          try {
+            const b = e.getBBox(), svg = e.ownerSVGElement || (e instanceof SVGSVGElement ? e : null), vb = svg && svg.viewBox && svg.viewBox.baseVal;
+            const k = vb && vb.width && svg.clientWidth ? svg.clientWidth / vb.width : 1;
+            w = b.width * k; h = b.height * k;
+          } catch (err) {}
+        }
+        out.set(e, { w: Math.round(w), h: Math.round(h) });
+      }
+    } finally { for (const p of hidden) p.setAttribute('data-gm-hidden', ''); }
+    return out;
+  }
+  // A small seeded variation for a stagger (a row of cards should not move like a machine): the first and the last
+  // piece keep their times; the others move by up to +-20% of the stagger step. Same numbers in every worker.
+  function staggerJitter(key, n, amount = 0.2) {
+    const out = new Array(n).fill(0);
+    if (n < 3) return out;
+    const rnd = makeRandom(hashSeed('stagger:' + key));
+    for (let i = 0; i < n; i++) { const r = rnd(); if (i > 0 && i < n - 1) out[i] = (r * 2 - 1) * amount; }
+    return out;
+  }
+  // Natural motion: an entrance or exit whose scale overshoots (a spring that settles, out-back, elastic) is driven
+  // from the clock with inline styles, not as an animation. Chrome keeps the raster of a scaling animated layer at
+  // the largest scale it has drawn it at, so a scale that grows past 1 and comes back is drawn differently by a
+  // worker that started mid-animation (1 worker != N workers, seen under a moving camera). Inline values are drawn
+  // at their exact scale in every frame. Curves that do not overshoot, and those that do not scale, stay animations.
+  const CSS_NUM = /(-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?)([a-z%]*)/gi;
+  function mixCss(a, b, p, prop) {
+    const clampN = (n) => (prop === 'opacity' ? Math.max(0, Math.min(1, n)) : prop === 'filter' ? Math.max(0, n) : n);
+    const r4 = (n) => Math.round(n * 10000) / 10000;
+    if (typeof a === 'number' && typeof b === 'number') return clampN(r4(a + (b - a) * p));
+    const A = String(a), Bv = String(b), ta = [...A.matchAll(CSS_NUM)], tb = [...Bv.matchAll(CSS_NUM)];
+    if (ta.length !== tb.length || A.replace(CSS_NUM, '#') !== Bv.replace(CSS_NUM, '#')) return null;
+    let i = 0, bad = false;
+    const out = A.replace(CSS_NUM, () => {
+      const x = ta[i], y = tb[i]; i++;
+      const ux = x[2], uy = y[2];
+      if (ux !== uy && !(ux === '' && +x[1] === 0) && !(uy === '' && +y[1] === 0)) bad = true;
+      return r4(clampN(+x[1] + (+y[1] - +x[1]) * p)) + (ux || uy);
+    });
+    return bad ? null : out;
+  }
+  // (p) => the keyframes' values at progress p (beyond 1: carried on along the last step, as an animation does)
+  function kfSampler(kf) {
+    const offs = kf.map((k) => k.offset);
+    if (offs[0] == null) offs[0] = 0;
+    if (offs[offs.length - 1] == null) offs[offs.length - 1] = 1;
+    for (let i = 1; i < offs.length - 1; i++) if (offs[i] == null) { let j = i; while (offs[j] == null) j++; const a = offs[i - 1]; for (let k = i; k < j; k++) offs[k] = a + ((offs[j] - a) * (k - i + 1)) / (j - i + 1); }
+    const props = new Map();
+    kf.forEach((k, i) => { for (const key of Object.keys(k)) if (key !== 'offset' && key !== 'easing' && key !== 'composite') { if (!props.has(key)) props.set(key, []); props.get(key).push({ o: offs[i], v: k[key] }); } });
+    for (const [key, list] of props) if (list.length > 1 && key !== 'transformOrigin' && mixCss(list[0].v, list[list.length - 1].v, 0.5, key) == null) return null;
+    const sample = (p) => {
+      const frame = {};
+      for (const [key, list] of props) {
+        if (list.length < 2) { if (p <= 0 && list[0].o === 0) frame[key] = list[0].v; continue; } // visibility: hidden before the start
+        if (key === 'transformOrigin') { frame[key] = list[0].v; continue; }
+        let j = 0;
+        while (j < list.length - 2 && p > list[j + 1].o) j++;
+        const s0 = list[j], e = list[j + 1], q = e.o === s0.o ? 1 : (p - s0.o) / (e.o - s0.o);
+        frame[key] = mixCss(s0.v, e.v, q, key);
+      }
+      return frame;
+    };
+    sample.props = [...props.keys()];
+    return sample;
+  }
+  const driven = [];
+  const kebabCss = (p) => p.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase());
+  function overshoots(ease) { const fn = easing(ease); for (let i = 1; i < 40; i++) { const v = fn(i / 40); if (v > 1.0005 || v < -0.0005) return true; } return false; }
+  function addDriven(el, kf, ease, dur, delay, originTime, enter) {
+    if (!kf || !kf.some((k) => k.scale != null) || !overshoots(ease)) return false;
+    const sample = kfSampler(kf);
+    if (!sample) return false;
+    const orig = {};
+    for (const p of sample.props) { const k = kebabCss(p); orig[p] = [el.style.getPropertyValue(k), el.style.getPropertyPriority(k)]; }
+    driven.push({ el, sample, fn: easing(ease), dur, delay, origin: originTime, enter, orig, last: null });
+    return true;
+  }
+  function updateDriven(T) {
+    let changed = false;
+    for (const d of driven) {
+      if (!d.el.isConnected) continue;
+      const lt = (hasRemap ? mapT(d.el, T) : T) - d.origin - d.delay;
+      // an enter shows its first values before it starts and the page's own after; an exit the other way round
+      const frame = lt < 0 ? (d.enter ? d.sample(0) : null) : lt < d.dur ? d.sample(d.fn(lt / d.dur)) : d.enter ? null : d.sample(1);
+      const sig = frame ? JSON.stringify(frame) : '';
+      if (sig === d.last) continue;
+      d.last = sig;
+      changed = true;
+      for (const p of d.sample.props) {
+        const k = kebabCss(p);
+        if (frame && frame[p] != null) d.el.style.setProperty(k, String(frame[p]));
+        else { const [v, pr] = d.orig[p]; if (v) d.el.style.setProperty(k, v, pr); else d.el.style.removeProperty(k); }
+      }
+    }
+    return changed;
+  }
   function parseMotion(v, el, attr, defDur, defEase) {
     const toks = String(v).trim().split(/\s+/).filter(Boolean);
-    const out = { name: toks[0] || 'fade', dur: defDur, delay: 0, ease: defEase };
+    const out = { name: toks[0] || 'fade', dur: defDur, delay: 0, ease: defEase, durSet: false, easeSet: false };
     const nums = [];
     for (const t of toks.slice(1)) {
-      if (isEasingName(t)) out.ease = t;
+      if (isEasingName(t)) { out.ease = t; out.easeSet = true; }
       else { const n = parseTime(t, el, attr); if (n != null) nums.push(n); }
     }
-    if (nums[0] != null) out.dur = nums[0];
+    if (nums[0] != null) { out.dur = nums[0]; out.durSet = true; }
     if (nums[1] != null) out.delay = nums[1];
     return out;
   }
+  function eeTargets(el, stagger) {
+    return stagger != null ? splitTargets.get(el) || [...el.children].filter((c) => !SKIP_TAGS.has(c.tagName)) : [el];
+  }
   function applyEnterExit() {
-    for (const el of document.querySelectorAll('[data-enter],[data-exit]')) {
+    const natural = naturalMotion();
+    const els = [...document.querySelectorAll('[data-enter],[data-exit]')].filter((el) => !el.__gmEE);
+    // natural motion: measure (once, all together) the elements whose entrance depends on their size
+    let sizes = null;
+    if (natural) {
+      const want = [];
+      for (const el of els) {
+        const en = el.getAttribute('data-enter'), spec = en && NATURAL_ENTER[String(en).trim().split(/\s+/)[0]];
+        if (spec && (spec.size || spec.z < 1)) want.push(...eeTargets(el, parseTime(el.getAttribute('data-stagger'), el, 'data-stagger')));
+      }
+      sizes = restSizes(want);
+    }
+    for (const el of els) {
       if (el.__gmEE) continue;
       el.__gmEE = true;
       const stagger = parseTime(el.getAttribute('data-stagger'), el, 'data-stagger');
-      let targets = [el];
-      if (stagger != null) {
-        targets = splitTargets.get(el) || [...el.children].filter((c) => !SKIP_TAGS.has(c.tagName));
-      }
+      const targets = eeTargets(el, stagger);
       const base = nearestClip(el);
       const cStart = base ? base.start : 0;
       const cEnd = base ? base.end : comp.duration;
       const en = el.getAttribute('data-enter');
       const ex = el.getAttribute('data-exit');
+      const jit = natural && stagger != null ? staggerJitter(selectorOf(el), targets.length) : null;
+      const jrnd = jit ? makeRandom(hashSeed('stagger-dur:' + selectorOf(el))) : null;
       targets.forEach((tg, i) => {
-        const extra = stagger != null ? stagger * i : 0;
+        const extra = stagger != null ? stagger * (i + (jit ? jit[i] : 0)) : 0;
         if (en) {
           const nm = String(en).trim().split(/\s+/)[0];
           // write: as long as a hand needs for the text (about 22 letters a second) unless a duration is given
           const defDur = nm === 'write' ? Math.max(0.35, Math.min(3, (tg.textContent || '').trim().length / 22)) : (PRESET_DEFAULTS[nm] || {}).dur ?? 0.6;
           const m = parseMotion(en, el, 'data-enter', defDur, (PRESET_DEFAULTS[nm] || {}).ease || 'out-expo');
+          const spec = natural && !el.__gmTransition && NATURAL_ENTER[m.name];
+          if (spec) {
+            const sz = sizes && sizes.get(tg), px = PX();
+            if (!m.easeSet) {
+              // a spring; no overshoot for something as big as the frame (it would show its edges)
+              const big = sz && (sz.w >= comp.width * 0.75 || sz.h >= comp.height * 0.75);
+              const z = big ? 1 : spec.z;
+              m.ease = 'natural(' + z + ')';
+            }
+            if (!m.durSet && spec.size && sz) {
+              const [side, share] = spec.size;
+              const len = side === 'w' ? sz.w : side === 'h' ? sz.h : Math.max(sz.w, sz.h);
+              m.dur = Math.round(m.dur * distanceFactor((len * share) / px) * 1000) / 1000;
+            }
+          }
+          // a stagger's pieces also differ a little in duration (never longer than asked)
+          if (jrnd) m.dur = Math.round(m.dur * (1 - 0.07 * jrnd()) * 1000) / 1000;
           if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).filter((k) => !/^(zoom-near|flip-in|dip-in|clock|diagonal)$/.test(k)).join(', ')); }
           else {
             if (m.name === 'draw') prepDraw(tg);
@@ -866,7 +1060,8 @@
             // reveals (clip, scale, dash) are also fully hidden before they start, not just clipped to a sliver
             if (kf && HIDDEN_AT_START.has(m.name)) kf = [{ ...kf[0], visibility: 'hidden' }, ...kf.slice(1)];
             // (el.__gmEnterAt: a chart callout enters when the line reaches its point, its delay counts from there)
-            if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra + (el.__gmEnterAt || 0)) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
+            const delay = m.delay + extra + (el.__gmEnterAt || 0);
+            if (kf && !(natural && addDriven(tg, kf, m.ease, m.dur, delay, cStart, true))) addOwn(tg, kf, { duration: m.dur * 1000, delay: delay * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
           }
         }
         if (ex) {
@@ -878,9 +1073,9 @@
             if (m.name === 'draw') prepDraw(tg);
             const kf = EXIT_PRESETS[m.name]();
             const n = targets.length;
-            const ext = stagger != null ? stagger * (n - 1 - i) : 0;
+            const ext = stagger != null ? stagger * (n - 1 - i - (jit ? jit[i] : 0)) : 0;
             const startAt = (cEnd - cStart) - m.dur - m.delay - ext;
-            if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: Math.max(0, startAt) * 1000, easing: cssEasing(m.ease), fill: 'forwards' }, cStart);
+            if (kf && !(natural && addDriven(tg, kf, m.ease, m.dur, Math.max(0, startAt), cStart, false))) addOwn(tg, kf, { duration: m.dur * 1000, delay: Math.max(0, startAt) * 1000, easing: cssEasing(m.ease), fill: 'forwards' }, cStart);
           }
         }
       });
@@ -1454,6 +1649,7 @@
     dropOwnMutations();
     flushAnimations(T, 'clip');
     let animActive = seekAnimations(T);
+    if (driven.length && updateDriven(T)) animActive = true;
     for (const h of hooks.post) { try { if (h(T)) animActive = true; } catch (e) { pageError(e); } }
     if (layoutFns.length && runFrameFns(T, layoutFns)) animActive = true;
     waitImages();
@@ -1621,6 +1817,7 @@
     addOwnAnim(a, originTime) { ownAnim.add(a); origin.set(a, originTime); known.add(a); },
     setColorMixer(fn) { colorMixer = fn; }, clips: () => clips, waits, pendingWaits, MODE, CONFIG, SKIP_TAGS,
     get now() { return now; }, get initialized() { return initialized; }, motionStyle, naturalMotion,
+    physEase, moveEase, hermiteEase, distanceFactor, restSizes, staggerJitter, hashSeed,
   };
   window.gm = gm;
   window.givemotion = gm;

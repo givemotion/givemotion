@@ -282,7 +282,7 @@
   const TF = { x: 'px', y: 'px', z: 'px', xPercent: '%', yPercent: '%', rotate: 'deg', rotateX: 'deg', rotateY: 'deg', skewX: 'deg', skewY: 'deg', scale: '', scaleX: '', scaleY: '' };
   const ALIAS = { rotation: 'rotate', rotationX: 'rotateX', rotationY: 'rotateY', rotationZ: 'rotate', rotateZ: 'rotate', translateX: 'x', translateY: 'y', translateZ: 'z' };
   const UNITLESS = new Set(['opacity', 'zIndex', 'fontWeight', 'lineHeight', 'flexGrow', 'flexShrink', 'order', 'zoom', 'fillOpacity', 'strokeOpacity', 'stopOpacity', 'scale', 'aspectRatio', 'columnCount', 'orphans', 'widows', 'strokeMiterlimit']);
-  const RESERVED = new Set(['hideBefore', 'duration', 'delay', 'ease', 'stagger', 'repeat', 'yoyo', 'repeatDelay', 'onUpdate', 'onStart', 'onComplete', 'immediateRender', 'overwrite', 'id', 'paused', 'keyframes', 'yoyoEase', 'lazy', 'callbackScope', 'data', 'runBackwards', 'startAt', 'inherit']);
+  const RESERVED = new Set(['hideBefore', 'duration', 'delay', 'ease', 'stagger', 'repeat', 'yoyo', 'repeatDelay', 'onUpdate', 'onStart', 'onComplete', 'immediateRender', 'overwrite', 'id', 'paused', 'keyframes', 'yoyoEase', 'lazy', 'callbackScope', 'data', 'runBackwards', 'startAt', 'inherit', 'arc', '__natFly']);
   const tlList = [];
   const sharedTracks = new Map(); // element -> write state when several timelines animate it
   let tlSeq = 0;
@@ -399,6 +399,86 @@
     return from;
   }
 
+  // Natural motion: how far a tween moves its target (in 1080p px), from its x/y/z, scale and rotate values, so that
+  // its duration can grow with the distance. Worked out while building (the same in every worker): "from" values of a
+  // to() come from the earlier tweens of this timeline (or the CSS start: 0, scale 1). Sizes for scale/rotate are
+  // layout sizes where the element rests.
+  const restSizeMemo = new WeakMap();
+  function restSize(el) {
+    if (!(el instanceof Element)) return null;
+    if (!restSizeMemo.has(el)) restSizeMemo.set(el, I.restSizes([el]).get(el) || null);
+    return restSizeMemo.get(el);
+  }
+  function natNum(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    if (typeof v === 'string' && /^-?[\d.]+(px|deg)?$/.test(v.trim())) return parseFloat(v);
+    return null;
+  }
+  function natRel(v, ref) {
+    if (typeof v === 'string') { const m = /^([-+])=\s*([-+]?[\d.]+)(px|deg)?$/.exec(v.trim()); if (m) return ref == null ? null : ref + parseFloat(m[2]) * (m[1] === '-' ? -1 : 1); }
+    return natNum(v);
+  }
+  function natDistance(el, it, lastTF) {
+    let st = lastTF.get(el);
+    if (!st) { st = {}; lastTF.set(el, st); }
+    const delta = {};
+    for (const k of Object.keys(it.props)) {
+      if (!(k in TF)) continue;
+      const sp = it.props[k], b = k in st ? st[k] : /^scale/.test(k) ? 1 : 0;
+      let from, to;
+      if (it.type === 'to') { from = b; to = natRel(sp.to, b); }
+      else if (it.type === 'from') { from = natRel(sp.from, b); to = b; }
+      else { from = sp.from !== undefined ? natRel(sp.from, b) : b; to = sp.to !== undefined ? natRel(sp.to, from) : from; }
+      if (from == null || to == null) { st[k] = null; continue; }
+      delta[k] = to - from;
+      if (it.type !== 'from') st[k] = to;
+    }
+    let d = Math.hypot(delta.x || 0, delta.y || 0, delta.z || 0);
+    const ds = Math.max(Math.abs(delta.scale || 0), Math.abs(delta.scaleX || 0), Math.abs(delta.scaleY || 0));
+    const dr = Math.max(Math.abs(delta.rotate || 0), Math.abs(delta.rotateX || 0), Math.abs(delta.rotateY || 0));
+    const dp = Math.max(Math.abs(delta.xPercent || 0), Math.abs(delta.yPercent || 0));
+    if (ds || dr || dp) {
+      const sz = restSize(el);
+      if (sz) { const m = Math.max(sz.w, sz.h); d = Math.max(d, ds * m, (dr * Math.PI / 180) * m / 2, (Math.abs(delta.xPercent || 0) * sz.w + Math.abs(delta.yPercent || 0) * sz.h) / 100); }
+    }
+    return d / I.PX();
+  }
+
+  // Natural motion, per (element, property): a tween without its own ease gets a spring, chosen in _build (an entrance
+  // springs in like data-enter, a move gathers speed and settles; a slight overshoot for x/y/scale/rotate, none for
+  // opacity, colors and the rest). Back-to-back tweens (one ends where and when
+  // the next starts) carry their speed through instead of stopping between them: the run eases in at its start,
+  // passes each joint at a shared speed (0 where the direction turns back) and eases out at its end.
+  function naturalChain(k, segs) {
+    const spatial = k in TF;
+    for (const sg of segs) if (sg.it.natural) sg.ease = spatial ? sg.it.ease : sg.it.easeSoft;
+    const ok = (sg) => sg.it.natural && sg.it.dur > 0 && !sg.it.rep && !sg.it.yoyo && typeof sg.from === 'number' && typeof sg.to === 'number' && sg.to !== sg.from;
+    let i = 0;
+    while (i < segs.length) {
+      let j = i;
+      while (j + 1 < segs.length && ok(segs[j]) && ok(segs[j + 1]) && Math.abs(segs[j + 1].it.start - (segs[j].it.start + segs[j].it.dur)) < 1e-4 && Math.abs(segs[j + 1].from - segs[j].to) < 1e-6) j++;
+      if (j > i) {
+        const run = segs.slice(i, j + 1);
+        const slope = run.map((sg) => (sg.to - sg.from) / sg.it.dur);
+        // speed at each joint (monotone: never overshoots between two keys)
+        const m = run.map((sg, n) => {
+          if (n === 0) return 0;
+          const s1 = slope[n - 1], s2 = slope[n];
+          if (s1 * s2 <= 0) return 0;
+          const h1 = run[n - 1].it.dur, h2 = sg.it.dur, w1 = 2 * h2 + h1, w2 = h2 + 2 * h1;
+          return (w1 + w2) / (w1 / s1 + w2 / s2);
+        });
+        run.forEach((sg, n) => {
+          const d = sg.it.dur, dv = sg.to - sg.from;
+          const a = Math.max(0, Math.min(3, (m[n] * d) / dv)), b = n + 1 < run.length ? Math.max(0, Math.min(3, (m[n + 1] * d) / dv)) : 0;
+          sg.ease = I.hermiteEase(a, b);
+          sg.chained = true;
+        });
+      }
+      i = j + 1;
+    }
+  }
+
   class Timeline {
     constructor(scope, opts) {
       if (scope && !(scope instanceof Element) && typeof scope === 'object' && !Array.isArray(scope)) { opts = scope; scope = opts.scope; }
@@ -433,9 +513,12 @@
         }
         return memo.get(el);
       };
+      // natural motion: no fixed duration or curve (a spring that settles, a duration that grows with the distance,
+      // a slight arc); classic: 0.8 s power3.inOut on a straight line
+      const defs = I.naturalMotion() ? { __natFly: true } : { duration: 0.8, ease: 'power3.inOut' };
       return this.fromTo(t,
         { x: (i, el) => off(el).x, y: (i, el) => off(el).y, scaleX: (i, el) => off(el).sx, scaleY: (i, el) => off(el).sy },
-        Object.assign({ x: 0, y: 0, scaleX: 1, scaleY: 1, duration: 0.8, ease: 'power3.inOut', hideBefore: true }, v), pos);
+        Object.assign({ x: 0, y: 0, scaleX: 1, scaleY: 1, hideBefore: true }, defs, v), pos);
     }
     addLabel(name, pos) { return this._op({ type: 'label', name, pos }); }
     label(name, pos) { return this.addLabel(name, pos); }
@@ -473,6 +556,13 @@
       this.calls = [];
       const cursor = { end: 0, prevStart: 0, prevEnd: 0 };
       let opIndex = 0;
+      // natural motion (gm.motion): tweens without an ease of their own get a spring, without a duration one that
+      // grows with the distance; diagonal moves and flies get a slight arc; staggers a small seeded variation
+      const nat = I.naturalMotion(), udef = this.opts.defaults || {};
+      const vars = (op) => (op.type === 'from' ? op.a : op.b) || {};
+      const natEase = (op) => vars(op).ease != null || udef.ease != null;
+      const natDur = (op) => vars(op).duration != null || udef.duration != null;
+      const lastTF = new Map(); // element -> { prop: value at the end of its last tween here } (for distances)
       for (const op of this.ops) {
         opIndex++;
         if (op.type === 'label') { this.labels[op.name] = this._pos(op.pos, cursor); continue; }
@@ -492,9 +582,12 @@
             const o = timing.keyframes, keys = Object.keys(o).filter((k) => Array.isArray(o[k]));
             const n = Math.max(...keys.map((k) => o[k].length));
             const total = timing.duration;
-            return new Array(n - 1).fill(0).map((_, i) => Object.assign({ duration: total / (n - 1), ease: o.ease || timing.ease }, Object.fromEntries(keys.map((k) => [k, o[k][Math.min(i + 1, o[k].length - 1)]]))));
+            const ez = o.ease || (nat && !natEase(op) ? undefined : timing.ease);
+            return new Array(n - 1).fill(0).map((_, i) => Object.assign({ duration: total / (n - 1) }, ez != null ? { ease: ez } : {}, Object.fromEntries(keys.map((k) => [k, o[k][Math.min(i + 1, o[k].length - 1)]]))));
           })();
-          const sub = new Timeline(this.scopeSpec, { defaults: Object.assign({}, this.defaults, { ease: timing.ease }) });
+          // (natural motion: steps without an ease of their own keep the natural default, so they carry speed between them)
+          const subDefs = nat && !natEase(op) ? Object.assign({}, this.opts.defaults || {}) : Object.assign({}, this.defaults, { ease: timing.ease });
+          const sub = new Timeline(this.scopeSpec, { defaults: subDefs });
           tlList.splice(tlList.indexOf(sub), 1);
           // start values: fromTo's from-vars and the first entry of { x: [a, b, c] } keyframes, shown before the start
           // like any fromTo (unless immediateRender: false); hideBefore applies to the first step
@@ -521,19 +614,45 @@
         const offs = staggerOffsets(timing.stagger, targets.length, this.rnd, targets);
         const fromProps = op.a ? flattenProps(op.a) : null, toProps = op.b ? flattenProps(op.b) : null;
         const keys = Object.keys(Object.assign({}, fromProps || {}, toProps || {}));
+        const natE = nat && !natEase(op), natD = nat && !natDur(op) && dur > 0, fly = !!timing.__natFly;
+        // an entrance (it starts invisible or at scale 0) springs in like data-enter; anything else is a move with
+        // mass: it gathers speed, then settles
+        const zero = (k) => fromProps && k in fromProps && typeof fromProps[k] !== 'function' && natNum(fromProps[k]) != null && Math.abs(natNum(fromProps[k])) <= 0.05;
+        const entrance = !fly && ['opacity', 'autoAlpha', 'scale', 'scaleX', 'scaleY'].some(zero);
+        // arc: explicit (any mode) or, in natural motion, by default for flies and for tweens that move both x and y
+        const arc = timing.arc === true ? 0.1 : timing.arc != null && timing.arc !== false ? +timing.arc || 0 : nat && (fly || (keys.includes('x') && keys.includes('y'))) ? 0.1 : 0;
+        if (arc && keys.includes('x') && !keys.includes('y')) { keys.push('y'); if (toProps) toProps.y = '+=0'; else fromProps.y = '+=0'; }
+        // a stagger's pieces vary a little (the first and the last keep their times; durations only get shorter,
+        // and the timeline's layout does not move)
+        let jit = null;
+        if (nat && targets.length > 2 && timing.stagger != null && typeof timing.stagger !== 'function') {
+          const r = I.makeRandom(I.hashSeed('tl-stagger:' + this.id + ':' + opIndex));
+          let lo = 0, hi = 0;
+          offs.forEach((o, i) => { if (o < offs[lo]) lo = i; if (o > offs[hi]) hi = i; });
+          const step = (offs[hi] - offs[lo]) / (targets.length - 1);
+          jit = offs.map((o, i) => { const a = r(), b = r(); return { off: i === lo || i === hi ? 0 : (a * 2 - 1) * 0.2 * step, dur: 1 - 0.07 * b }; });
+        }
         let last = start;
         targets.forEach((el, i) => {
           const rnd = I.makeRandom(1 + this.id * 1000003 + opIndex * 7919 + i * 104729);
-          const s = start + offs[i];
+          const s = start + offs[i] + (jit ? jit[i].off : 0);
           const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: gm.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, seq: this.items.length };
           for (const k of keys) it.props[k] = { from: fromProps && k in fromProps ? evalVal(fromProps[k], i, el, targets, rnd) : undefined, to: toProps && k in toProps ? evalVal(toProps[k], i, el, targets, rnd) : undefined };
+          if (natE) { it.natural = true; it.ease = entrance ? I.physEase(0.8) : I.moveEase(0.7); it.easeSoft = entrance ? I.physEase(1) : I.moveEase(1); }
+          if (arc) { it.arc = arc; it.arcDefault = timing.arc == null; }
+          if (nat) {
+            const d = natDistance(el, it, lastTF);
+            if (natD) it.dur = Math.round((fly ? 0.8 : dur) * I.distanceFactor(d, fly ? 300 : 200, 0.8, 1.3) * 1000) / 1000;
+          }
+          const layoutDur = it.dur; // (the stagger variation below does not move later tweens)
+          if (jit) it.dur = Math.round(it.dur * jit[i].dur * 1000) / 1000;
           this.items.push(it);
           // hideBefore: hidden (visibility) until this tween starts, then shown; nothing else changes
           if (timing.hideBefore) {
             this.items.push({ el, i, n: targets.length, type: 'to', start: -1e6, dur: 0, rep: 0, rd: 0, yoyo: false, ease: gm.easing('linear'), props: { visibility: { from: undefined, to: 'hidden' } }, onUpdate: null, immediate: false, seq: this.items.length });
             this.items.push({ el, i, n: targets.length, type: 'to', start: s, dur: 0, rep: 0, rd: 0, yoyo: false, ease: gm.easing('linear'), props: { visibility: { from: undefined, to: 'visible' } }, onUpdate: null, immediate: false, seq: this.items.length });
           }
-          const end = s + (rep === Infinity ? dur : dur * (rep + 1) + rd * rep);
+          const end = s - (jit ? jit[i].off : 0) + (rep === Infinity ? layoutDur : layoutDur * (rep + 1) + rd * rep);
           last = Math.max(last, end);
         });
         cursor.prevStart = start;
@@ -598,6 +717,17 @@
             else sg.interp = makeInterp(from, to, k);
             prev = to;
           }
+          if (segs.some((sg) => sg.it.natural)) naturalChain(k, segs);
+        }
+        // arcs: the path bends up like a thrown object, by `arc` x the horizontal distance at the middle of the move
+        // (straight vertical moves stay straight). Not on a move that carries speed into the next one (a default arc).
+        const xs = tm.props.get('x'), ys = tm.props.get('y');
+        if (xs && ys) for (const sg of xs) {
+          const it = sg.it;
+          const ysg = ys.find((y) => y.it === it);
+          if (!it.arc || typeof sg.from !== 'number' || typeof sg.to !== 'number' || !ysg) continue;
+          if (it.arcDefault && (sg.chained || ysg.chained)) continue;
+          it.arcY = -it.arc * Math.abs(sg.to - sg.from);
         }
       }
       this.tracks = tracks;
@@ -635,6 +765,7 @@
         if (!ct.vis) continue;
         const t = ct.t;
         const vals = {}, prio = {};
+        let arcIt = null, arcE = 0, ySeg = null;
         for (const [k, segs] of tm.props) {
           let seg = null;
           for (let i = segs.length - 1; i >= 0; i--) if (segs[i].it.start <= t + 1e-9) { seg = segs[i]; break; }
@@ -655,13 +786,17 @@
               p = w >= it.dur ? 1 : w / it.dur;
               if (it.yoyo && cyc % 2) p = 1 - p;
             }
-            v = seg.interp(it.ease(Math.max(0, Math.min(1, p))));
+            const e = (seg.ease || it.ease)(Math.max(0, Math.min(1, p)));
+            v = seg.interp(e);
+            if (it.arcY && k === 'x' && p > 0 && p < 1) { arcIt = it; arcE = e; }
             if (it.onUpdate && k === (it.firstKey ??= Object.keys(it.props)[0])) { try { it.onUpdate.call(it, p, el, it.i); } catch (e) { I.pageError(e); } }
           }
           vals[k] = v;
+          if (k === 'y') ySeg = seg;
           // When two timelines drive the same property, the tween that started last (in video time) wins.
           prio[k] = seg ? T - t + seg.it.start : v === undefined ? -Infinity : -1e9;
         }
+        if (arcIt && ySeg && ySeg.it === arcIt && typeof vals.y === 'number') vals.y += arcIt.arcY * 4 * arcE * (1 - arcE);
         if (sink && sink.shared.has(el)) sink.list.push({ tm, vals, prio });
         else if (write(tm, vals)) changed = true;
       }

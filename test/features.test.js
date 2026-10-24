@@ -594,3 +594,94 @@ test('speed: idle enter/exit and finished from-only CSS animations hold no layer
   assert.ok(fa.length >= 90);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
 });
+
+// Natural motion (gm.motion 'natural', the default) vs classic (<html data-motion="classic">)
+async function sampleAt(file, times, expr) {
+  const ctx = await openComposition(file, { mode: 'render' });
+  try { const out = []; for (const t of times) { await ctx.page.seek(t); out.push(await ctx.page.evaluate(expr)); } return out; } finally { await ctx.page.close(); await ctx.server.close(); }
+}
+
+test('natural motion: data-enter springs (pop overshoots, fade does not), duration grows with size, explicit ease wins; classic unchanged', { skip }, async () => {
+  const d = tmp(), body = `<div data-duration="3">
+    <div id="pop" style="position:absolute;left:20px;top:20px;width:100px;height:60px;background:#48f" data-enter="pop"></div>
+    <div id="fade" style="position:absolute;left:140px;top:20px;width:100px;height:60px;background:#48f" data-enter="fade"></div>
+    <div id="small" style="position:absolute;left:20px;top:120px;width:40px;height:40px;background:#f84" data-enter="slide-left"></div>
+    <div id="big" style="position:absolute;left:0;top:200px;width:600px;height:100px;background:#f84" data-enter="slide-left"></div>
+    <div id="given" style="position:absolute;left:300px;top:20px;width:100px;height:60px;background:#4f8" data-enter="pop 0.5 out-expo"></div></div>`;
+  const fN = join(d, 'n.html'), fC = join(d, 'c.html');
+  writeFileSync(fN, page(body));
+  writeFileSync(fC, page(body, 'data-width="640" data-height="360" data-fps="30" data-motion="classic"'));
+  const expr = `JSON.stringify(Object.fromEntries(['pop', 'fade', 'small', 'big', 'given'].map((id) => { const e = document.getElementById(id), a = e.getAnimations()[0], t = a && a.effect.getTiming(); return [id, { dur: t ? t.duration : null, ease: t ? t.easing : null, scale: getComputedStyle(e).scale, op: +getComputedStyle(e).opacity }]; })))`;
+  const nat = (await sampleAt(fN, [0, 0.1, 0.15, 0.2, 0.25, 0.3], expr)).map(JSON.parse);
+  const cls = (await sampleAt(fC, [0, 0.2], expr)).map(JSON.parse);
+  assert.equal(cls[0].pop.dur, 600);
+  assert.match(cls[0].pop.ease, /^cubic-bezier\(0\.16, ?1, ?0\.3, ?1\)$/);
+  assert.equal(cls[0].big.dur, 600);
+  assert.equal(nat[0].pop.ease, null, 'natural: a scale that overshoots is driven from the clock (inline), not an animation');
+  assert.match(nat[0].fade.ease, /^linear\(/, 'natural: a sampled spring');
+  assert.ok(nat.some((s) => parseFloat(s.pop.scale) > 1.01), 'pop overshoots a little: ' + nat.map((s) => s.pop.scale));
+  assert.ok(nat.every((s) => s.pop.scale === 'none' || parseFloat(s.pop.scale) < 1.08), 'only a little');
+  assert.ok(nat.every((s) => s.fade.op <= 1));
+  assert.ok(nat[0].big.dur > nat[0].small.dur, 'a bigger slide takes longer ' + nat[0].big.dur + ' ' + nat[0].small.dur);
+  assert.ok(nat[0].small.dur >= 600 * 0.85 - 1 && nat[0].big.dur <= 600 * 1.3 + 1);
+  assert.equal(nat[0].given.dur, 500, 'a given duration is kept');
+  assert.match(nat[0].given.ease, /^cubic-bezier\(0\.16/, 'a given ease is kept');
+});
+
+test('natural motion: timeline moves gather speed and settle, back-to-back tweens carry speed, diagonal moves arc (arc: 0 = straight), explicit ease wins', { skip }, async () => {
+  const d = tmp(), body = `<div data-duration="4">
+    <i id="m" style="position:absolute;left:0;top:0;width:10px;height:10px;background:#fff"></i>
+    <i id="c" style="position:absolute;left:0;top:100px;width:10px;height:10px;background:#fff"></i>
+    <i id="a" style="position:absolute;left:0;top:200px;width:10px;height:10px;background:#fff"></i>
+    <i id="s" style="position:absolute;left:0;top:250px;width:10px;height:10px;background:#fff"></i>
+    <i id="l" style="position:absolute;left:0;top:300px;width:10px;height:10px;background:#fff"></i></div>
+    <script>
+      gm.timeline().to('#m', { x: 300, duration: 1 }, 0);
+      gm.timeline().to('#c', { x: 100, duration: 1 }, 0).to('#c', { x: 200, duration: 1 });
+      gm.timeline().to('#a', { x: 300, y: 100, duration: 1 }, 0);
+      gm.timeline().to('#s', { x: 300, y: 100, duration: 1, arc: 0 }, 0);
+      gm.timeline().to('#l', { x: 300, duration: 1, ease: 'linear' }, 0);
+    </script>`;
+  const fN = join(d, 'n.html'), fC = join(d, 'c.html');
+  writeFileSync(fN, page(body));
+  writeFileSync(fC, page(body, 'data-width="640" data-height="360" data-fps="30" data-motion="classic"'));
+  const expr = `JSON.stringify(Object.fromEntries(['m', 'c', 'a', 's', 'l'].map((id) => { const m = new DOMMatrix(getComputedStyle(document.getElementById(id)).transform); return [id, [Math.round(m.e * 100) / 100, Math.round(m.f * 100) / 100]]; })))`;
+  const T = [0.1, 0.5, 0.95, 1, 1.05, 2.5];
+  const [n01, n05, n095, n1, n105, nEnd] = (await sampleAt(fN, T, expr)).map(JSON.parse);
+  const [c01, , c095, c1] = (await sampleAt(fC, T, expr)).map(JSON.parse);
+  // classic: power1.out (an "out" curve: fast at the start), stops dead between back-to-back tweens
+  assert.ok(Math.abs(c01.m[0] - 300 * 0.19) < 3, 'classic power1.out ' + c01.m[0]);
+  assert.ok(c1.c[0] - c095.c[0] < 1, 'classic: stops before the joint ' + c095.c[0] + ' ' + c1.c[0]);
+  assert.ok(Math.abs(c01.a[1] / c01.a[0] - 1 / 3) < 0.01, 'classic: straight line');
+  // natural: gathers speed (slower start than power1.out), lands exactly, settles
+  assert.ok(n01.m[0] < c01.m[0] * 0.6, 'natural move starts gently ' + n01.m[0]);
+  assert.equal(nEnd.m[0], 300);
+  assert.ok(n1.c[0] - n095.c[0] > 3 && n105.c[0] - n1.c[0] > 3, 'natural: speed carried through the joint ' + [n095.c[0], n1.c[0], n105.c[0]]);
+  assert.ok(Math.abs(n1.c[0] - 100) < 0.5, 'the joint is still on the key');
+  assert.equal(nEnd.c[0], 200);
+  assert.ok(n05.a[1] < n05.s[1] - 10, 'diagonal move bends up ' + n05.a[1] + ' vs straight ' + n05.s[1]);
+  assert.ok(Math.abs(n05.s[1] / n05.s[0] - 1 / 3) < 0.01, 'arc: 0 stays straight');
+  assert.deepEqual([nEnd.a, nEnd.s], [[300, 100], [300, 100]]);
+  assert.equal(n05.l[0], 150, 'an explicit ease is kept');
+});
+
+test('natural motion: staggers vary a little (seeded, first and last on time); renders the same with 1 and 2 workers', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="2"><div id="row" data-enter="fade-up 0.5" data-stagger="0.1" style="display:flex;gap:10px;padding:40px">${'<b style="width:50px;height:50px;background:#fc3"></b>'.repeat(6)}</div>
+    <div id="cards" style="position:absolute;top:200px;left:40px;display:flex;gap:10px">${'<i class="k" style="width:50px;height:50px;background:#4cf"></i>'.repeat(5)}</div>
+    <div id="fl" style="position:absolute;left:500px;top:40px;width:80px;height:50px;background:#f48"></div><div id="src" style="position:absolute;left:40px;top:280px;width:40px;height:25px"></div></div>
+    <script>gm.timeline().from('.k', { y: 60, opacity: 0, stagger: 0.1 }, 0.2); gm.fly('#fl', { from: '#src', at: 0.6 });</script>`));
+  const read = () => sampleAt(f, [0], `JSON.stringify([...document.querySelectorAll('#row > b')].map((e) => e.getAnimations()[0].effect.getTiming().delay))`).then((r) => JSON.parse(r[0]));
+  const delays = await read();
+  assert.equal(delays[0], 0);
+  assert.ok(Math.abs(delays[5] - 500) < 1e-6, 'last on time ' + delays[5]);
+  assert.ok(delays.slice(1, 5).some((v, i) => Math.abs(v - 100 * (i + 1)) > 2), 'interior pieces vary ' + delays);
+  assert.ok(delays.slice(1, 5).every((v, i) => Math.abs(v - 100 * (i + 1)) <= 20 + 1e-6), 'by at most 20% of the step ' + delays);
+  assert.deepEqual(await read(), delays, 'the same every time');
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, ...quiet });
+  await render(f, { output: b, workers: 2, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.ok(fa.length >= 55);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+});

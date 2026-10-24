@@ -94,7 +94,7 @@ project's own docs and command-line help; tell us if something changed.
 | You write | HTML, CSS, JavaScript (React optional) | HTML, CSS, JavaScript | React |
 | Instructions for AI agents | Yes, one command (`npx motionwright skill`) | Yes, many skills (Claude Code, Codex, Cursor, Gemini CLI and more) | Yes, Agent Skills (Claude Code, Codex, Cursor and more) |
 | Agent checks its own video | Yes: cut-off, covered, overlapping, tiny and low-contrast text, broken files, script errors with line numbers, pacing (long still parts, empty first frame) | Yes: lint, script errors, layout overflow, motion, WCAG contrast | No built-in checks² |
-| Agent sees key frames | Yes: one picture with the key moments of every scene, or a frame-by-frame strip of one move | Yes: key frames, a review set around every cut, side by side with a reference video | Renders single frames (`still`) |
+| Agent sees key frames | Yes: one picture with the key moments of every scene, or a frame-by-frame strip of one move; `analyze` reports the cuts, pacing, camera and colors of any video and compares it with a reference | Yes: key frames, a review set around every cut, side by side with a reference video | Renders single frames (`still`) |
 | Music beats | Tempo, beats, bar starts, big hits | Beats, hits, loudness, silence | Audio data helpers |
 | Output | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3 | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR | MP4, WebM, ProRes, GIF, image sequences, audio |
 | Rendering in the cloud | No (renders wherever Node runs) | AWS Lambda, Google Cloud Run, HeyGen's cloud | AWS Lambda, Google Cloud Run |

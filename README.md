@@ -220,6 +220,9 @@ Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K fr
 `--frames 2s-5s`, `--transparent`, `--motion-blur 8`, `--codec h265|av1`, `--hardware`, `--workers`,
 `--muted`, `--data file.json`, `--props '{…}'`. Every command takes `--json`.
 
+Rendering again after a change only redoes the parts of the video that changed (edit one scene → only its 1-2 s parts
+are rendered), and the result is byte-identical to a full render. `--redo 4s-7s` forces a range, `--no-cache` turns it off.
+
 ### Programmatic API
 
 ```js

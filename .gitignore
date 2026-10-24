@@ -11,3 +11,4 @@ benchmarks/**/node_modules/
 benchmarks/vs-hyperframes/mw/
 benchmarks/vs-hyperframes/hf/
 bench/agents/runs/
+.mw-parts/

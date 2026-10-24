@@ -288,7 +288,10 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   for (const i of out) {
     try { const e = i.selector && document.querySelector(i.selector); const sc = e && (e.closest('.scene') || e.closest('[data-start],[data-duration]')); if (sc) { i.scene = sel(sc); i.sceneStart = mw.timing(sc).start; } } catch (er) {}
   }
-  return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
+  // the biggest readable text on screen (an "empty" frame with a heading on it is not empty)
+  let maxFont = 0;
+  for (const t of texts) { if (t.hidden || t.covered) continue; const k = t.el.offsetHeight ? t.el.getBoundingClientRect().height / t.el.offsetHeight : 1; maxFont = Math.max(maxFont, parseFloat(getComputedStyle(t.el).fontSize) * (isFinite(k) && k > 0 ? k : 1)); }
+  return { issues: out, textCount: texts.length, maxFont: maxFont / PX, boxes: window.__mwTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
 })`;
 
 const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__mw_hide'); if (!s) { s = document.createElement('style'); s.id='__mw_hide'; document.head.appendChild(s); }
@@ -424,7 +427,7 @@ export async function check(input, opts = {}) {
         const g = await ctx.page.evaluate(`window.__mwGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
         { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++;
           if (t < 0.6) openFrames.push({ t, empty: off / g.length < 0.01 && !a.textCount });
-          emptyGrid.push([t, off / g.length < 0.015]); }
+          emptyGrid.push([t, off / g.length < 0.015 && !(a.maxFont >= 24)]); }
         if (lastGrid) { let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - lastGrid[i]) > 6) n++; change.push([t, n / g.length, busy]); }
         lastGrid = g; lastGridT = t; busy = false;
       }

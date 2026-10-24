@@ -52,10 +52,17 @@ experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modu
   attach points other than side midpoints (`fromAt`/`toAt`). Files: `src/runtime/sketch.js`.
 - **Cursor block**: `times` in video time or beats, hidden until its first move (and after its last), works inside a
   camera world. Files: `blocks/cursor.html`.
-- **Morph** between two different shapes or texts reads as a muddy crossfade: fade the old one out faster, or scale
-  the pair to a shared box first. Files: `src/runtime/motion.js` (morphs).
-- **Ride / fly helpers**: one object riding another along a route (package on the robot, then the truck), and a
-  same-scene "fly from #a to #b" (`mw.fly(el, { from: '#slot' })`).
+- Done: **Morph** between different shapes or texts: a pair whose content differs (text, SVG shapes, image src) hands
+  over in flight (old out by 45%, new in from 30% to 75%, inline opacity so 1 worker == N stays exact); same-content
+  pairs keep the old look. Inline `<span>` pairs now move at all (they were stuck: translate does nothing on inline
+  boxes; that was the data-story "48,000" bug). `check`: ghost-overlap skips a morph pair and reads `filter: opacity()`.
+  Open: a blur at the crossing looked better, but a filter on a scaled element is not byte-exact across workers.
+- Done: **Fly**: `mw.fly(el, { from, at, duration, ease, size })` / `tl.fly(el, vars, pos)`, a fromTo of x/y/scaleX/
+  scaleY measured once at load where both boxes rest (animations taken off, hidden clips shown for the measure).
+  `check` no longer reports text covered by something flying over it, and text-overlap / text-overflows-box need
+  0.15 s (a tween's first frame was reported). **Ride**: no new API; SKILL.md has the recipe (one leg per vehicle,
+  a package copy per vehicle with `data-anchor`, swap at the hand-over). Open: travel stops by point or waypoint id
+  (`stops: [[t, '#dock']]`) would remove the remaining progress math (explainer-2).
 - **Balance check**: judges marked layouts that leave most of the frame empty or crowd the top half (5 notes); a
   warning when the content's bounding box covers little of the frame for long. Files: `src/check.js`.
 - Run a shorter round (3-4 briefs, 2 runs) after these to see whether the "errors" score (6.9, the lowest) moves.

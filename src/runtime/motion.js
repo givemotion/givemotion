@@ -417,6 +417,26 @@
     from(t, vars, pos) { return this._op({ type: 'from', t, a: vars || {}, b: null, pos }); }
     fromTo(t, a, b, pos) { return this._op({ type: 'fromTo', t, a: a || {}, b: b || {}, pos }); }
     set(t, vars, pos) { return this._op({ type: 'to', t, a: null, b: Object.assign({}, vars, { duration: 0 }), pos }); }
+    // The target flies from where another element is (its box) to its own place: a fromTo of x, y, scaleX, scaleY
+    // worked out from the layout (see flyOffset). Options: from (selector or element), size (true | false | 'stretch'),
+    // and any tween option (duration 0.8, ease 'power3.inOut', hideBefore true: hidden until it takes off).
+    fly(t, vars, pos) {
+      const v = Object.assign({}, vars || {});
+      const from = v.from, size = v.size === undefined ? true : v.size;
+      delete v.from; delete v.size;
+      const memo = new Map();
+      const off = (el) => {
+        if (!memo.has(el)) {
+          const src = typeof from === 'string' ? (this.scope && this.scope.querySelector(from)) || document.querySelector(from) : from instanceof Element ? from : null;
+          if (!src) I.report('warning', 'fly-no-from', `fly: from "${typeof from === 'string' ? from : 'element'}" matched nothing, so the element does not fly.`, el instanceof Element ? el : null, 'Give from: a selector (or element) of the element it should take off from.');
+          memo.set(el, (src && el instanceof Element && flyOffset(el, src, size)) || { x: 0, y: 0, sx: 1, sy: 1 });
+        }
+        return memo.get(el);
+      };
+      return this.fromTo(t,
+        { x: (i, el) => off(el).x, y: (i, el) => off(el).y, scaleX: (i, el) => off(el).sx, scaleY: (i, el) => off(el).sy },
+        Object.assign({ x: 0, y: 0, scaleX: 1, scaleY: 1, duration: 0.8, ease: 'power3.inOut', hideBefore: true }, v), pos);
+    }
     addLabel(name, pos) { return this._op({ type: 'label', name, pos }); }
     label(name, pos) { return this.addLabel(name, pos); }
     add(x, pos) {
@@ -845,6 +865,8 @@
         const ea = map.get(eb.getAttribute('data-morph'));
         if (!ea) continue;
         found++;
+        // translate/scale do nothing on an inline box (a <span> or <b> in a line of text): make it an inline-block
+        for (const e of [ea, eb]) if (!(e instanceof SVGElement) && getComputedStyle(e).display === 'inline') e.style.display = 'inline-block';
         morphs.push({ a: ea, b: eb, sceneB: B, dur: pair.dur, ease: mw.easing(pair.ease), on: false });
       }
       // Fade out everything in the old scene except the morphing elements (they must stay solid).
@@ -912,7 +934,7 @@
       if (!c) continue;
       const lt = T - c.start;
       const active = lt >= 0 && lt < m.dur;
-      if (!active) { if (m.on) { clearMorph(m.a); clearMorph(m.b); m.on = false; changed = true; } continue; }
+      if (!active) { if (m.on) { clearMorph(m.a); clearMorph(m.b); setFade(m.a, null); setFade(m.b, null); m.on = false; changed = true; } continue; }
       m.on = true; changed = true;
       clearMorph(m.a); clearMorph(m.b);
       const ra = m.a.getBoundingClientRect(), rb = m.b.getBoundingClientRect();
@@ -930,8 +952,94 @@
         placeAt(m.a, ra, R);
         placeAt(m.b, rb, R);
       }
+      // Same content (a logo, a card, the same number): the old one stays solid and the new one fades in on top, so
+      // it reads as one object. Different content ("</>" into a play button, "48,000" into "1,200 → 48,000"): the old
+      // one is gone by a bit past the middle of the flight and the new one arrives in the second half, so the two
+      // never sit half and half on top of each other.
+      {
+        const tt = Math.max(0, Math.min(1, lt / m.dur));
+        if (morphSig(m.a) === morphSig(m.b)) { setFade(m.a, null); setFade(m.b, null); }
+        else {
+          const oa = 1 - smooth01(tt / 0.45), want = smooth01((tt - 0.3) / 0.45);
+          // the new scene fades in as a whole too: give the element what is missing so it arrives on time
+          let anc = 1;
+          for (let e = m.b.parentElement; e; e = e.parentElement) { anc *= parseFloat(getComputedStyle(e).opacity) || 0; if (e === m.sceneB) break; }
+          const ob = want <= 0 ? 0 : anc > 0.02 ? Math.min(1, want / anc) : 1;
+          setFade(m.a, oa); setFade(m.b, ob);
+        }
+      }
     }
     return changed;
+  }
+  const smooth01 = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+  // o = the share of the element's own opacity to show (null: no fade). The element's opacity without this fade is
+  // read first and the product is set inline with !important (above its own animations), so a fade the page put on it
+  // is kept; the page's own inline opacity is put back afterwards. (Not a filter or an opacity animation: those give
+  // the element its own layer, and a scaled layer rasterizes a hair differently in a fresh worker.)
+  function setFade(el, o) {
+    const st = el.style;
+    if (el.__mwFadeV != null) {
+      // still the value written last frame: put the page's own value back (if the page wrote since, keep that)
+      if (st.getPropertyValue('opacity') === el.__mwFadeV && st.getPropertyPriority('opacity') === 'important') {
+        if (el.__mwFadeOwn) st.setProperty('opacity', el.__mwFadeOwn); else st.removeProperty('opacity');
+      }
+      el.__mwFadeV = null;
+    }
+    if (o == null || o >= 1) return;
+    el.__mwFadeOwn = st.getPropertyValue('opacity');
+    st.setProperty('opacity', String(r4(Math.max(0, o) * (parseFloat(getComputedStyle(el).opacity) || 0))), 'important');
+    el.__mwFadeV = st.getPropertyValue('opacity');
+  }
+  // What a morph element shows: its text and the kind and geometry of its pictures (SVG shapes, images).
+  function morphSig(el) {
+    let s = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    const media = el.matches('svg,img,video,canvas,path,circle,rect,ellipse,polygon,polyline,line') ? [el] : [];
+    for (const n of el.querySelectorAll('img,video,canvas,path,circle,rect,ellipse,polygon,polyline,line')) media.push(n);
+    for (const n of media) s += '|' + n.tagName + ':' + (n.getAttribute('src') || '') + (n.getAttribute('d') || '') + (n.getAttribute('points') || '') + (n.getAttribute('r') || '');
+    return s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // fly (tl.fly / mw.fly): where an element must start so that it sits on another element's box.
+  // ---------------------------------------------------------------------------
+  // Measured once, while loading (the same in every worker), where both elements rest: clips that are not on screen
+  // yet are shown for a moment, and the animations on both and on their parents (entrances, camera pushes) are taken
+  // off for the measure. Returns the x/y (in the target's own parent units) and scaleX/scaleY that put it on `src`.
+  function flyOffset(el, src, size) {
+    const hidden = [], held = [], tfs = [];
+    for (const e of [el, src]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-mw-hidden')) { hidden.push(p); p.removeAttribute('data-mw-hidden'); }
+    try {
+      try {
+        for (const a of document.getAnimations()) {
+          const tg = a.effect && a.effect.target;
+          if (tg && (tg.contains(el) || tg.contains(src))) { held.push([a, a.effect, a.currentTime]); a.effect = null; }
+        }
+      } catch (e) {}
+      // a timeline's own transform written in an earlier frame (when built late): back to the element's CSS
+      for (const e of [el, src]) for (let p = e; p && p.nodeType === 1; p = p.parentElement) if (p.__mwOwnTf !== undefined && p.style.transform !== p.__mwOwnTf) { tfs.push([p, p.style.transform]); p.style.transform = p.__mwOwnTf; }
+      const H = el.getBoundingClientRect(), F = src.getBoundingClientRect();
+      if (!H.width || !H.height || !F.width || !F.height) return null;
+      let k = 1, ox = H.left + H.width / 2, oy = H.top + H.height / 2;
+      if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) {
+        // SVG shapes: units are the parent's user units; the timeline scales them around their own center
+        const m = el.parentNode && el.parentNode.getScreenCTM && el.parentNode.getScreenCTM();
+        if (m) k = Math.hypot(m.a, m.b) || 1;
+      } else {
+        k = ancestorScale(el) || 1;
+        const o = getComputedStyle(el).transformOrigin.split(' ').map(parseFloat), bw = boxW(el), bh = boxH(el);
+        if (bw && bh && isFinite(o[0]) && isFinite(o[1])) { ox = H.left + (o[0] / bw) * H.width; oy = H.top + (o[1] / bh) * H.height; }
+      }
+      let sx = F.width / H.width, sy = F.height / H.height;
+      if (size === false || size === 'none') sx = sy = 1;
+      else if (size !== 'stretch' && size !== 'box' && Math.abs(Math.log(sx / sy)) > 0.2) sx = sy = Math.min(sx, sy); // other proportions: no squash, start inside its box
+      const fx = F.left + F.width / 2, fy = F.top + F.height / 2, hx = H.left + H.width / 2, hy = H.top + H.height / 2;
+      const r2 = (x) => Math.round(x * 100) / 100;
+      return { x: r2((fx - ox - sx * (hx - ox)) / k), y: r2((fy - oy - sy * (hy - oy)) / k), sx: r4(sx), sy: r4(sy) };
+    } finally {
+      for (const [p, v] of tfs) p.style.transform = v;
+      for (const [a, eff, ct] of held) { try { a.effect = eff; if (ct != null) a.currentTime = ct; } catch (e) {} }
+      for (const p of hidden) p.setAttribute('data-mw-hidden', '');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1666,6 +1774,8 @@
     from: (t, v) => tween('from', t, v),
     fromTo: (t, a, b) => tween('fromTo', t, a, b),
     set: (t, v) => tween('set', t, v),
+    // mw.fly('#event', { from: '#slot', at: 7.5, duration: 0.8 }): at = seconds in the element's own clip
+    fly: (t, v) => { const o = Object.assign({}, v || {}), at = o.at || 0; delete o.at; return new Timeline(null, {}).fly(t, o, at); },
     color: { mix: mixColor, parse: toRGBA },
     path: { point: pointAt, length: (d) => pathInfo(d).len, morph: morphInterp, interpolate: morphInterp, travel },
     shape,

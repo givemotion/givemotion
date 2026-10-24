@@ -52,4 +52,6 @@ Ask before going ahead if a change would drift from the goal above, for example:
 
 ## Where things are
 
+- Open work: docs/NEXT.md (start here when continuing). Past test rounds and what they changed: docs/experiments/.
+
 See AGENTS.md for the code layout and contributor rules. User-facing docs: README.md, skills/motionwright/SKILL.md.

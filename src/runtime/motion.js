@@ -862,9 +862,19 @@
       clearMorph(m.a); clearMorph(m.b);
       const ra = m.a.getBoundingClientRect(), rb = m.b.getBoundingClientRect();
       const p = m.ease(Math.max(0, Math.min(1, lt / m.dur)));
-      const R = { left: ra.left + (rb.left - ra.left) * p, top: ra.top + (rb.top - ra.top) * p, width: ra.width + (rb.width - ra.width) * p, height: ra.height + (rb.height - ra.height) * p };
-      placeAt(m.a, ra, R);
-      placeAt(m.b, rb, R);
+      const ar = (r) => r.width / Math.max(1, r.height);
+      if (Math.abs(Math.log(ar(ra) / ar(rb))) > 0.2) {
+        // different shapes (e.g. two text boxes): fly center to center and scale evenly, no stretching
+        const cx = (ra.left + ra.width / 2) * (1 - p) + (rb.left + rb.width / 2) * p, cy = (ra.top + ra.height / 2) * (1 - p) + (rb.top + rb.height / 2) * p;
+        const h = ra.height * (1 - p) + rb.height * p;
+        const box = (r) => { const k = h / r.height; return { left: cx - (r.width * k) / 2, top: cy - (r.height * k) / 2, width: r.width * k, height: r.height * k }; };
+        placeAt(m.a, ra, box(ra));
+        placeAt(m.b, rb, box(rb));
+      } else {
+        const R = { left: ra.left + (rb.left - ra.left) * p, top: ra.top + (rb.top - ra.top) * p, width: ra.width + (rb.width - ra.width) * p, height: ra.height + (rb.height - ra.height) * p };
+        placeAt(m.a, ra, R);
+        placeAt(m.b, rb, R);
+      }
     }
     return changed;
   }
@@ -915,7 +925,8 @@
       const box = target != null ? this._box(target, M) : { x: view.w / 2, y: view.h / 2, w: 0, h: 0 };
       if (!box) return null;
       let zoom = sh.zoom;
-      if (sh.fit != null && zoom == null) zoom = Math.min((view.w - 2 * sh.padding) / Math.max(1, box.w), (view.h - 2 * sh.padding) / Math.max(1, box.h));
+      // with fit, zoom multiplies the fitted zoom (1.05 = a little closer)
+      if (sh.fit != null) zoom = Math.min((view.w - 2 * sh.padding) / Math.max(1, box.w), (view.h - 2 * sh.padding) / Math.max(1, box.h)) * (sh.zoom ?? 1);
       zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom ?? 1));
       const off = sh.offset || [0, 0];
       return { cx: box.x + box.w / 2 + off[0], cy: box.y + box.h / 2 + off[1], zoom, rot: sh.rotate || 0 };

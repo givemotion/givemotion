@@ -282,3 +282,9 @@ test('data-pulse scales on the beat grid and sets --beat; data-cuts can be writt
   const [s2] = await at(0.7);
   assert.ok(+s2 > 1 && +s2 < 1.1);
 });
+
+test('check: empty-start when the first half second shows only a gradient background, not when a title is there', { skip }, async () => {
+  const d = tmp(), mk = (delay) => { const f = join(d, `e${delay}.html`); writeFileSync(f, `<!doctype html><html data-width="640" data-height="360" data-fps="30"><head><style>body{background:linear-gradient(135deg,#2a1b5c,#0b6e8a);color:#fff;font-family:sans-serif}</style></head><body><section class="scene" data-duration="2"><h1 data-enter="fade 0.3 ${delay}" style="font-size:60px;text-align:center;margin-top:120px">Hello</h1></section></body></html>`); return f; };
+  assert.ok((await check(mk(0.7))).issues.some((i) => i.code === 'empty-start'));
+  assert.ok(!(await check(mk(0))).issues.some((i) => i.code === 'empty-start'));
+});

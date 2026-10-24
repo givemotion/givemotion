@@ -491,7 +491,8 @@ export async function check(input, opts = {}) {
         const jpg = await ctx.page.capture('jpeg', 60);
         const g = await ctx.page.evaluate(`window.__mwGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
         { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++;
-          if (t < 0.6) openFrames.push({ t, empty: off / g.length < 0.01 && !a.textCount });
+          // (the opening frame: empty = no readable text and almost no edges; a smooth gradient or a flat color is empty)
+          if (t < 0.6) { let edge = 0; for (let i = 0; i < g.length; i++) if ((i % GW < GW - 1 && Math.abs(g[i] - g[i + 1]) > 12) || (i + GW < g.length && Math.abs(g[i] - g[i + GW]) > 12)) edge++; openFrames.push({ t, empty: edge / g.length < 0.01 && !(a.maxFont >= 24) }); }
           emptyGrid.push([t, off / g.length < 0.015 && !(a.maxFont >= 24)]); }
         if (lastGrid) { let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - lastGrid[i]) > 6) n++; change.push([t, n / g.length, busy]); }
         lastGrid = g; lastGridT = t; busy = false;
@@ -515,7 +516,7 @@ export async function check(input, opts = {}) {
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
     const logs = groupLogs(await ctx.page.evaluate('window.mw && mw.__logs ? mw.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
-    if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second is an empty frame. The first frame is the thumbnail and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
+    if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second shows only the background. The first frame is often the thumbnail, and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
     // Almost nothing on screen for a second or more in the middle (a camera between two far-apart parts, a gap
     // between scenes, a zoom so far out that everything is a speck)
     for (let i = 0; i < emptyGrid.length; i++) {

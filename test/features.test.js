@@ -360,3 +360,72 @@ test('check: ghost-overlap when a crossfade stacks two headlines, not for a push
   assert.ok((await check(mk('fade'))).issues.some((i) => i.code === 'ghost-overlap'));
   assert.ok(!(await check(mk('push-left'))).issues.some((i) => i.code === 'ghost-overlap'));
 });
+
+test('mw.connect: label at a place along the line and on a chosen side; attach points along a side (fromAt, "top 0.25", corners)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="2" style="position:absolute;inset:0">
+    <div id="a" style="position:absolute;left:100px;top:100px;width:200px;height:100px;background:#345"></div>
+    <div id="b" style="position:absolute;left:1000px;top:100px;width:200px;height:100px;background:#345"></div>
+    <div id="c" style="position:absolute;left:100px;top:700px;width:200px;height:100px;background:#345"></div>
+    <div id="e" style="position:absolute;left:1000px;top:700px;width:200px;height:100px;background:#345"></div></div>
+    <script>
+      mw.connect('#a', '#b', { head: 'none', class: 'c1', fromAt: 0.25, toAt: 0.75, label: { text: 'below', at: 0.25, side: 'below', offset: 20 } });
+      mw.connect('#a', '#c', { head: 'none', class: 'c2', from: 'bottom 0.1', to: 'top-right' });
+      mw.connect('#c', '#e', { sketch: true, class: 'c3', curve: 0.3, label: 'mid' });
+      mw.connect('#c', '#e', { head: 'none', class: 'c4', label: { text: 'x', side: 'sideways' } });
+    </script>`, 'data-width="1920" data-height="1080" data-fps="30"'));
+  const v = await evalAt(f, 1, `(() => {
+    const nums = (c) => document.querySelector('.' + c + ' path').getAttribute('d').match(/-?[\\d.]+/g).map(Number);
+    const lab = (c) => { const t = document.querySelector('.' + c + ' text'); return { x: +t.getAttribute('x'), y: +t.getAttribute('y'), w: t.getBBox().width, h: t.getBBox().height }; };
+    return { c1: nums('c1'), l1: lab('c1'), c2: nums('c2'), l3: lab('c3'), issues: mw.inspect().issues.map((i) => i.code) };
+  })()`);
+  const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, what + ': ' + a + ' vs ' + b);
+  // fromAt 0.25 on the side the line leaves from (right of #a), toAt 0.75 on the side it enters (left of #b); gap 10
+  near(v.c1[0], 310, 0.2, 'start x'); near(v.c1[1], 125, 0.2, 'start y'); near(v.c1[2], 990, 0.2, 'end x'); near(v.c1[3], 175, 0.2, 'end y');
+  // the label a quarter of the way along, below the line: its top edge 20px under the line
+  // (measured along the line and across it: its box clears the line by 20px)
+  const L = Math.hypot(680, 50), tx = 680 / L, ty = 50 / L, dx = v.l1.x - 310, dy = v.l1.y - 125;
+  near((dx * tx + dy * ty) / L, 0.25, 0.002, 'label at 0.25 along');
+  near(dx * -ty + dy * tx - (ty * v.l1.w + tx * v.l1.h) / 2, 20, 0.5, 'label box 20px below the line');
+  // 'bottom 0.1': a tenth of the way along the bottom side; 'top-right': the corner (gap on the diagonal)
+  near(v.c2[0], 120, 0.2, 'bottom 0.1 x'); near(v.c2[1], 210, 0.2, 'bottom 0.1 y');
+  near(v.c2[2], 300 + 7.07, 0.2, 'corner x'); near(v.c2[3], 700 - 7.07, 0.2, 'corner y');
+  // a sketched curved arrow: the label sits at the middle of the curve (not pulled toward the head), outside the bend
+  near(v.l3.x, 650, 2, 'sketched label at the middle');
+  assert.ok(v.l3.y > 750 + 0.3 * 900 * 0.5, 'below the sagging curve: ' + v.l3.y);
+  assert.ok(v.issues.includes('connect-label-side'), 'unknown side is reported');
+});
+
+test('cursor block: beat times, show="auto", lands on its target inside a zoomed camera world (no sized wrapper); 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence data-cuts="0 1" data-cut-align="middle" data-transition="fade 0.4">
+    <section class="scene" style="position:absolute;inset:0;background:#222"></section>
+    <section class="scene" id="s2" data-duration="4" style="position:absolute;inset:0;overflow:hidden">
+      <div id="world" style="position:absolute;left:0;top:0;width:1200px;height:800px;background:#123">
+        <div id="btn" style="position:absolute;left:400px;top:300px;width:100px;height:50px;background:#36f">Go</div>
+        <mw-include src="${join(ROOT, 'blocks/cursor.html')}" points="100,100 #btn!" times="beats: 2 3" show="auto"></mw-include>
+      </div>
+    </section></main>
+    <script>mw.camera('#world').shot(0, { center: { x: 450, y: 325 }, zoom: 2 });</script>`,
+    'data-width="640" data-height="360" data-fps="30" data-bpm="60" data-beat-offset="0"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  const at = async (t) => { await ctx.page.seek(t); return ctx.page.evaluate(`(() => {
+    const c = document.querySelector('#s2 .mwb-cursor'), r = c.getBoundingClientRect(), b = document.getElementById('btn').getBoundingClientRect();
+    return { op: +getComputedStyle(c).opacity, x: r.left, y: r.top, bx: b.left + b.width / 2, by: b.top + b.height * 0.56, hover: document.getElementById('btn').hasAttribute('data-mw-hover'), issues: mw.inspect().issues.map((i) => i.code) };
+  })()`); };
+  let v1, v2, v3, v4;
+  try { v1 = await at(1.5); v2 = await at(2.5); v3 = await at(3.2); v4 = await at(4.2); } finally { await ctx.page.close(); await ctx.server.close(); }
+  // beats 2 and 3 are video times 2 s and 3 s (the scene itself starts at 0.8, half a transition before its cut)
+  assert.equal(v1.op, 0, 'hidden before its first move');
+  assert.equal(v2.op, 1, 'shown while it moves');
+  assert.ok(Math.abs(v3.x - v3.bx) < 1 && Math.abs(v3.y - v3.by) < 1, 'on the button through the 2x camera: ' + JSON.stringify(v3));
+  assert.ok(v3.hover, 'hover set on the target');
+  assert.equal(v4.op, 0, 'hidden after its last point');
+  assert.deepEqual(v3.issues.filter((c) => /cursor|script/.test(c)), []);
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, ...quiet });
+  await render(f, { output: b, workers: 2, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.ok(fa.length > 100, 'frames: ' + fa.length);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+});

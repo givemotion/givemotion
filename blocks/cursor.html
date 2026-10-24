@@ -1,9 +1,9 @@
 <!-- block:
-description: A mouse pointer that glides between targets and clicks them. Aim at real elements with CSS selectors (the pointer follows them even while they move), or at "x,y" points (px at 1080p). Add ! to click. Clicked elements get a short press, and the attribute data-mw-pressed while pressed and data-mw-hover while the pointer is over them, so you can style them.
-params: points (e.g. "#email #submit! 1500,900"), times (seconds, one per point, relative to the clip), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
-usage: <mw-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node:nth-child(2)!" times="0.3 1.4 3 4.2"></mw-include>
+description: A mouse pointer that glides between targets and clicks them. Aim at real elements with CSS selectors (the pointer follows them even while they move, through any camera zoom), or at "x,y" points (px at 1080p, in the box the cursor sits in: inside a mw.camera world that is world px). Add ! to click. Clicked elements get a short press, and the attribute data-mw-pressed while pressed and data-mw-hover while the pointer is over them, so you can style them. Put it inside a camera world (it zooms with the world) or after the world in the scene (it keeps its size and still lands on the targets in the world).
+params: points (e.g. "#email #submit! 1500,900"), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, and fades out after its last point), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
+usage: <mw-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node:nth-child(2)!" times="0.3 1.4 3 4.2" show="auto"></mw-include>
 -->
-<div class="mwb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-style="{{style|auto}}">
+<div class="mwb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-show="{{show|always}}" data-style="{{style|auto}}">
   <div class="mwb-cursor__ring"></div>
   <svg class="mwb-cursor__arrow" viewBox="0 0 24 24"><path d="M4 2.5l15.5 9.2-6.6 1.6-3.4 6.2z"/></svg>
   <svg class="mwb-cursor__hand" viewBox="0 0 24 24"><path d="M9 3.2c.9 0 1.6.7 1.6 1.6v6.1l.6-.1c.8 0 1.5.6 1.6 1.4l.1.2c.3-.5.8-.8 1.4-.8.8 0 1.5.6 1.6 1.4.3-.3.7-.5 1.2-.5.9 0 1.6.7 1.6 1.6v2.3c0 3.1-2.5 5.6-5.6 5.6h-1.3c-1.9 0-3.6-1-4.6-2.6l-2.9-4.8c-.4-.7-.2-1.6.5-2 .6-.4 1.4-.2 1.9.3l.8 1V4.8c0-.9.7-1.6 1.6-1.6z"/></svg>
@@ -20,35 +20,63 @@ usage: <mw-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node
     const m = /^(-?[\d.]+),(-?[\d.]+)$/.exec(s);
     return m ? { x: +m[1], y: +m[2], click } : { sel: s, click, el: null };
   });
-  const ts = root.dataset.times ? root.dataset.times.trim().split(/\s+/).map(Number) : pts.map((_, i) => 0.3 + i * 1.2);
-  const style = root.dataset.style;
+  // times: seconds into the clip, or "video: 12.5 13.4" / "beats: 16 18" / "bars: 4 4.5" (then video times)
+  const tAttr = (root.dataset.times || '').trim();
+  const unit = /^(video|global|beats?|bars?)\s*:/i.exec(tAttr);
+  const video = !!unit;
+  let ts = (unit ? tAttr.slice(unit[0].length) : tAttr).trim().split(/[\s,]+/).filter(Boolean).map(Number);
+  if (ts.some((x) => !isFinite(x))) { mw.__report('error', 'cursor-times', `cursor: times="${tAttr}" has something that is not a number.`, root, 'Give one number per point: times="0.4 1.6 3", or times="video: 12.5 13.4" / "beats: 16 18".'); ts = ts.filter((x) => isFinite(x)); }
+  if (unit && /^beat/i.test(unit[1])) ts = ts.map((b) => mw.beat(b));
+  if (unit && /^bar/i.test(unit[1])) ts = ts.map((b) => mw.bar(b));
+  // no times, or fewer than points: 0.3 s in, then 1.2 s apart
+  while (ts.length < pts.length) ts.push(ts.length ? ts[ts.length - 1] + 1.2 : 0.3);
+  const style = root.dataset.style, show = (root.dataset.show || 'always').trim();
+  // show="auto": in just before the first move (or the first point, when that is a click), out after the last point
+  const n = pts.length, appear = pts[0].click || n < 2 ? ts[0] : ts[1] - Math.min(ts[1] - ts[0], 0.9);
+  const leave = ts[n - 1] + (pts[n - 1].click ? 0.6 : 0.25);
   const targetOf = (p) => { if (!p.sel) return null; if (!p.el || !p.el.isConnected) p.el = scope.querySelector(p.sel) || document.querySelector(p.sel); return p.el; };
   for (const p of pts) if (p.sel && !targetOf(p)) mw.__report('error', 'cursor-target', `cursor: "${p.sel}" matched nothing.`, root, 'Use a selector for an element in the same scene, e.g. #button.');
-  // Where a point is right now, in this block's coordinates (px at 1080p)
-  function where(p) {
+  // Three invisible points next to the pointer (same containing block): screen <-> the pointer's own coordinates,
+  // through any camera zoom, pan or rotation above it
+  const probes = [[0, 0], [1000, 0], [0, 1000]].map(([x, y]) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:0;height:0;margin:0;pointer-events:none;visibility:hidden`; root.parentElement.insertBefore(d, root); return d; });
+  function space() {
+    const [o, a, b] = probes.map((d) => d.getBoundingClientRect());
+    const ax = (a.left - o.left) / 1000, ay = (a.top - o.top) / 1000, bx = (b.left - o.left) / 1000, by = (b.top - o.top) / 1000, det = ax * by - ay * bx || 1;
+    return {
+      toLocal: (sx, sy) => { const dx = sx - o.left, dy = sy - o.top; return [(dx * by - dy * bx) / det, (dy * ax - dx * ay) / det]; },
+      toScreen: (x, y) => [o.left + x * ax + y * bx, o.top + x * ay + y * by],
+    };
+  }
+  // Where a point is right now, in the pointer's own coordinates (CSS px)
+  function where(p, S) {
     const el = targetOf(p);
-    if (!el) return { x: p.x || 0, y: p.y || 0 };
-    const r = el.getBoundingClientRect(), base = root.parentElement.getBoundingClientRect();
-    const k = (root.parentElement.offsetWidth ? base.width / root.parentElement.offsetWidth : 1) * mw.px;
+    if (!el) return { x: (p.x || 0) * mw.px, y: (p.y || 0) * mw.px };
+    const r = el.getBoundingClientRect();
     // aim a little below the middle, like a real hand would
-    return { x: (r.left + r.width * 0.5 - base.left) / k, y: (r.top + r.height * 0.56 - base.top) / k, el, r };
+    const [x, y] = S.toLocal(r.left + r.width * 0.5, r.top + r.height * 0.56);
+    return { x, y };
   }
   const pressed = new Set();
-  mw.onLayout(root, (t) => {
+  mw.onLayout(root, (local, info) => {
+    const t = video ? info.time : local;
+    const S = space();
     let i = 0;
-    while (i < pts.length - 1 && t >= ts[i + 1]) i++;
-    let P = where(pts[i]);
+    while (i < n - 1 && t >= ts[i + 1]) i++;
+    const P = where(pts[i], S);
     let x = P.x, y = P.y;
-    if (i < pts.length - 1 && t > ts[i]) {
+    if (i < n - 1 && t > ts[i]) {
       const seg = ts[i + 1] - ts[i], move = Math.min(seg, 0.9);
       const p = mw.interpolate(t, [ts[i + 1] - move, ts[i + 1]], [0, 1], { easing: 'in-out-cubic' });
       if (p > 0) {
-        const Q = where(pts[i + 1]);
-        const mx = (P.x + Q.x) / 2, my = Math.min(P.y, Q.y) - 60; // slight arc
+        const Q = where(pts[i + 1], S);
+        const mx = (P.x + Q.x) / 2, my = Math.min(P.y, Q.y) - 60 * mw.px; // slight arc
         const q = (a, b, c) => (1 - p) * (1 - p) * a + 2 * (1 - p) * p * b + p * p * c;
         x = q(P.x, mx, Q.x); y = q(P.y, my, Q.y);
       }
     }
+    const opacity = show === 'auto'
+      ? Math.min(mw.interpolate(t, [appear - 0.25, appear], [0, 1]), mw.interpolate(t, [leave, leave + 0.3], [1, 0]))
+      : mw.interpolate(local, [0, 0.25], [0, 1]);
     // clicks: press + ripple right after arriving at a point marked with !
     let press = 1, rp = -1;
     const nowPressed = new Set();
@@ -66,25 +94,26 @@ usage: <mw-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node
     for (const el of pressed) if (!nowPressed.has(el)) { el.style.removeProperty('scale'); el.removeAttribute('data-mw-pressed'); }
     for (const el of nowPressed) el.setAttribute('data-mw-pressed', '');
     pressed.clear(); nowPressed.forEach((e) => pressed.add(e));
-    // hover state + hand pointer over targets
+    // hover state + hand pointer over targets (not while the pointer is hidden)
     let over = false;
-    const px = mw.px, base = root.parentElement.getBoundingClientRect(), k = root.parentElement.offsetWidth ? base.width / root.parentElement.offsetWidth : 1;
+    const [sx, sy] = S.toScreen(x, y);
     for (const pt of pts) {
       const el = targetOf(pt);
       if (!el) continue;
       const r = el.getBoundingClientRect();
-      const sx = base.left + x * px * k, sy = base.top + y * px * k;
-      const inside = sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom;
+      const inside = opacity > 0 && sx >= r.left && sx <= r.right && sy >= r.top && sy <= r.bottom;
       if (inside) { over = true; el.setAttribute('data-mw-hover', ''); } else el.removeAttribute('data-mw-hover');
     }
+    // resting on its own target is the point: check should not call the pointer a line through that label
+    if (over) root.setAttribute('data-check', 'ignore'); else root.removeAttribute('data-check');
     const useHand = style === 'hand' || (style === 'auto' && over);
     arrow.style.display = useHand ? 'none' : '';
     hand.style.display = useHand ? '' : 'none';
-    root.style.translate = `${x * px}px ${y * px}px`;
+    root.style.translate = `${x}px ${y}px`;
     arrow.style.scale = hand.style.scale = press;
     ring.style.opacity = rp < 0 ? 0 : 1 - rp;
     ring.style.scale = rp < 0 ? 0 : 0.3 + rp * 1.4;
-    root.style.opacity = mw.interpolate(t, [0, 0.25], [0, 1]);
+    root.style.opacity = opacity;
   });
 })();
 </script>

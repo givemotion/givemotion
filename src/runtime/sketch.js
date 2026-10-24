@@ -534,21 +534,27 @@
     path.style.strokeLinecap = 'round'; path.style.strokeLinejoin = 'round';
     if (c.o.dash) path.style.strokeDasharray = c.o.dash;
     svg.appendChild(path);
-    // a label on the arrow: label: 'GET /' or { text, offset, size, color }
+    // a label on the arrow: label: 'GET /' or { text, at, side, offset, size, color, font, weight, class, check }
     if (c.o.label != null) {
       const L = typeof c.o.label === 'object' ? c.o.label : { text: String(c.o.label) };
       const tx = document.createElementNS(SVGNS, 'text');
       tx.textContent = L.text;
       tx.setAttribute('text-anchor', 'middle');
       tx.setAttribute('dominant-baseline', 'middle');
+      if (L.class) tx.setAttribute('class', L.class);
+      if (L.check) tx.setAttribute('data-check', L.check);
       tx.style.fill = L.color || c.o.color || 'currentColor';
-      tx.style.fontSize = (L.size ?? 30) * px() + 'px';
+      // px at 1080p in the arrow's own space (world px inside a camera world, like an HTML label there)
+      tx.style.fontSize = (L.size ?? (c.o.sketch ? 44 : 36)) * px() + 'px';
       // hand-drawn arrows get handwriting; otherwise the text around the arrow's own font
       tx.style.fontFamily = L.font || (c.o.sketch ? 'Caveat, cursive' : 'inherit');
       if (L.weight) tx.style.fontWeight = L.weight;
       tx.style.stroke = 'none';
       svg.appendChild(tx);
-      c.label = tx; c.labelOpt = L;
+      const side = String(L.side || 'auto').toLowerCase();
+      if (!LABEL_SIDES.has(side)) I.report('warning', 'connect-label-side', `mw.connect: label side "${L.side}" is not one of ${[...LABEL_SIDES].join(' ')}.`, null, "Use side: 'above', 'below', 'left', 'right', 'outside' (of the bend) or 'inside'.");
+      const at = L.at == null ? 0.5 : parseFrac(L.at);
+      c.label = tx; c.labelOpt = L; c.labelSide = LABEL_SIDES.has(side) ? side : 'auto'; c.labelAt = at == null ? 0.5 : at;
     }
     if (c.o.behind) c.space.insertBefore(svg, c.space.firstChild); else c.space.appendChild(svg);
     if (c.space !== document.body && getComputedStyle(c.space).position === 'static') c.space.style.position = 'relative';
@@ -564,6 +570,46 @@
       path.setAttribute('pathLength', '1');
     }
   }
+  // where along the line (0 = start, 1 = end) a point is, by length: { x, y, tx, ty } with the unit tangent
+  function pointOnLine(g, f) {
+    f = Math.max(0, Math.min(1, f));
+    const { x1, y1, x2, y2, qx, qy } = g;
+    if (!g.curve) { const l = Math.hypot(x2 - x1, y2 - y1) || 1; return { x: x1 + (x2 - x1) * f, y: y1 + (y2 - y1) * f, tx: (x2 - x1) / l, ty: (y2 - y1) / l }; }
+    const N = 64, P = (u) => [(1 - u) * (1 - u) * x1 + 2 * (1 - u) * u * qx + u * u * x2, (1 - u) * (1 - u) * y1 + 2 * (1 - u) * u * qy + u * u * y2];
+    const acc = [0];
+    let prev = P(0);
+    for (let i = 1; i <= N; i++) { const p = P(i / N); acc.push(acc[i - 1] + Math.hypot(p[0] - prev[0], p[1] - prev[1])); prev = p; }
+    const want = acc[N] * f;
+    let i = 1;
+    while (i < N && acc[i] < want) i++;
+    const u = (i - 1 + (acc[i] > acc[i - 1] ? (want - acc[i - 1]) / (acc[i] - acc[i - 1]) : 0)) / N;
+    const [x, y] = P(u);
+    let tx = 2 * (1 - u) * (qx - x1) + 2 * u * (x2 - qx), ty = 2 * (1 - u) * (qy - y1) + 2 * u * (y2 - qy);
+    const l = Math.hypot(tx, ty) || 1;
+    return { x, y, tx: tx / l, ty: ty / l };
+  }
+  const LABEL_SIDES = new Set(['auto', 'outside', 'inside', 'above', 'top', 'below', 'bottom', 'under', 'left', 'right']);
+  const ATTACH_SIDES = { top: 'top', above: 'top', bottom: 'bottom', below: 'bottom', under: 'bottom', left: 'left', right: 'right', center: 'center', middle: 'center', 'top-left': 'top-left', 'top-right': 'top-right', 'bottom-left': 'bottom-left', 'bottom-right': 'bottom-right', 'left-top': 'top-left', 'right-top': 'top-right', 'left-bottom': 'bottom-left', 'right-bottom': 'bottom-right' };
+  // 0.25, '0.25', '25%' -> 0.25 (clamped to 0..1); anything else -> null
+  function parseFrac(v) {
+    const m = /^\s*(-?(?:\d+\.?\d*|\.\d+))\s*(%?)\s*$/.exec(String(v));
+    if (!m) return null;
+    const n = parseFloat(m[1]) / (m[2] ? 100 : 1);
+    return Math.max(0, Math.min(1, n));
+  }
+  // from: 'top' | 'top 0.25' | 'top-left' | 'center' | 0.25, plus fromAt: 0.25 -> { side, at }
+  function parseAttach(v, at, what) {
+    let side = null, f = at == null ? null : parseFrac(at);
+    if (at != null && f == null) I.report('warning', 'connect-bad-attach', `mw.connect: ${what}At "${at}" is not a number from 0 to 1.`, null, `${what}At: 0.25 attaches a quarter of the way along the side (from its left or top end).`);
+    if (v != null && v !== '') {
+      for (const tok of String(v).trim().toLowerCase().split(/[\s,]+/)) {
+        if (ATTACH_SIDES[tok]) side = ATTACH_SIDES[tok];
+        else if (parseFrac(tok) != null) { if (f == null) f = parseFrac(tok); }
+        else I.report('warning', 'connect-bad-attach', `mw.connect: ${what}: "${v}" is not a side.`, null, `Use 'top' 'right' 'bottom' 'left' 'center', a corner like 'top-left', or a side and a place along it: 'top 0.25'.`);
+      }
+    }
+    return { side, at: f };
+  }
   // the arrow's line right now, in its space's coordinates (null while an end is not displayed)
   function connGeom(c) {
     if (!c.path && !c.dead) setupConnector(c);
@@ -575,10 +621,33 @@
     const mx = (ra.cx + rb.cx) / 2, my = (ra.cy + rb.cy) / 2, len = Math.hypot(rb.cx - ra.cx, rb.cy - ra.cy) || 1;
     const nx = -(rb.cy - ra.cy) / len, ny = (rb.cx - ra.cx) / len;
     const qx = mx + nx * curve * len, qy = my + ny * curve * len;
-    // from/to: 'top' 'right' 'bottom' 'left' (middle of that side) or 'center'; default: where the line crosses the edge
-    const side = (r, sd, gp) => ({ top: [r.cx, r.y - gp], bottom: [r.cx, r.y + r.h + gp], left: [r.x - gp, r.cy], right: [r.x + r.w + gp, r.cy], center: [r.cx, r.cy] })[sd];
-    const [x1, y1] = side(ra, o.from, gap) || edgePoint(ra, curve ? qx : rb.cx, curve ? qy : rb.cy, gap);
-    const [x2, y2] = side(rb, o.to, gap) || edgePoint(rb, curve ? qx : ra.cx, curve ? qy : ra.cy, gap);
+    // from/to: a side ('top' 'right' 'bottom' 'left'), a corner ('top-left' …) or 'center', optionally with where along
+    // the side ('top 0.25': a quarter of the way from its left end; fromAt/toAt do the same); default: where the line
+    // between the centers crosses the edge
+    const end = (r, spec, gp, ox, oy) => {
+      if (!spec.side && spec.at == null) return edgePoint(r, ox, oy, gp);
+      let sd = spec.side;
+      if (!sd) {
+        // only a position along the side: the side the automatic attach point is on
+        const dx = ox - r.cx, dy = oy - r.cy;
+        sd = Math.abs(dx) * r.h > Math.abs(dy) * r.w ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'bottom' : 'top';
+      }
+      const f = spec.at == null ? 0.5 : spec.at, dg = gp * Math.SQRT1_2;
+      switch (sd) {
+        case 'top': return [r.x + r.w * f, r.y - gp];
+        case 'bottom': return [r.x + r.w * f, r.y + r.h + gp];
+        case 'left': return [r.x - gp, r.y + r.h * f];
+        case 'right': return [r.x + r.w + gp, r.y + r.h * f];
+        case 'top-left': return [r.x - dg, r.y - dg];
+        case 'top-right': return [r.x + r.w + dg, r.y - dg];
+        case 'bottom-left': return [r.x - dg, r.y + r.h + dg];
+        case 'bottom-right': return [r.x + r.w + dg, r.y + r.h + dg];
+        default: return [r.cx, r.cy];
+      }
+    };
+    if (!c.ends) c.ends = [parseAttach(o.from, o.fromAt, 'from'), parseAttach(o.to, o.toAt, 'to')];
+    const [x1, y1] = end(ra, c.ends[0], gap, curve ? qx : rb.cx, curve ? qy : rb.cy);
+    const [x2, y2] = end(rb, c.ends[1], gap, curve ? qx : ra.cx, curve ? qy : ra.cy);
     return { x1, y1, x2, y2, qx, qy, curve };
   }
   function updateConnectors(T) {
@@ -606,16 +675,28 @@
       if (d !== c.lastD) { c.path.setAttribute('d', d); c.lastD = d; changed = true; }
       if (c.label && !d && c.label.style.visibility !== 'hidden') { c.label.style.visibility = 'hidden'; changed = true; }
       if (c.label && d) {
-        // halfway along the line, pushed off to the outside of the bend (or above a straight line)
-        const m = measure(d.replace(/^(M[^M]*?)M.*$/, '$1')), L = m.getTotalLength(), q = m.getPointAtLength(L / 2), q2 = m.getPointAtLength(Math.min(L, L / 2 + 1));
-        let nx = -(q2.y - q.y), ny = q2.x - q.x; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
-        const curve = o.curve ?? 0;
-        // the bend bulges toward +normal when curve > 0; a straight line gets its label above it
-        const sgn = curve > 0 ? 1 : curve < 0 ? -1 : ny > 0 ? -1 : 1; nx *= sgn; ny *= sgn;
-        const off = (c.labelOpt.offset ?? (c.labelOpt.size ?? 30) * 0.6 + 12) * px();
+        // at its spot along the line itself (the geometric line between the ends: not the sketched strokes or the
+        // head), pushed off to one side so that its box clears the line by offset px
+        const q = pointOnLine(g, c.labelAt), b = c.label.getBBox();
+        let nx = -q.ty, ny = q.tx; // the bend bulges toward +normal when curve > 0
+        const curve = o.curve ?? 0, sd = c.labelSide;
+        // outside the bend (above a straight line); inside is the other way
+        let sgn = curve > 0 ? 1 : curve < 0 ? -1 : ny > 0 ? -1 : ny < 0 ? 1 : nx > 0 ? 1 : -1;
+        if (sd === 'inside') sgn = -sgn;
+        const dir = { above: [0, -1], top: [0, -1], below: [0, 1], bottom: [0, 1], under: [0, 1], left: [-1, 0], right: [1, 0] }[sd];
+        if (dir) {
+          // that side of the line on screen; a line running that way (side 'above' on a vertical arrow) gets it on
+          // its right (above for 'left'/'right')
+          const dot = nx * dir[0] + ny * dir[1];
+          sgn = Math.abs(dot) > 0.05 ? Math.sign(dot) : dir[1] ? (nx >= 0 ? 1 : -1) : (ny <= 0 ? 1 : -1);
+        }
+        nx *= sgn; ny *= sgn;
+        // the label's half size along the normal, plus the gap
+        const off = (c.labelOpt.offset ?? 12) * px() + (Math.abs(nx) * b.width + Math.abs(ny) * b.height) / 2;
         const pos = `${f1(q.x + nx * off)},${f1(q.y + ny * off)}`;
         if (pos !== c.lastLabel) { const [lx, ly] = pos.split(','); c.label.setAttribute('x', lx); c.label.setAttribute('y', ly); c.lastLabel = pos; changed = true; }
-        const vis = c.progressAt ? (c.progressAt(T) >= 0.5 ? '' : 'hidden') : '';
+        // shown once the arrow has been drawn past it
+        const vis = c.progressAt ? (c.progressAt(T) >= Math.max(0.02, c.labelAt) ? '' : 'hidden') : '';
         if (c.label.style.visibility !== vis) { c.label.style.visibility = vis; changed = true; }
       }
       if (c.progressAt) {

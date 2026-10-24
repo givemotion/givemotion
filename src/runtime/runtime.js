@@ -686,7 +686,8 @@
     'zoom-near': () => [{ opacity: 0, scale: '0.55' }, { opacity: 1, scale: '1' }],
     'flip-in': () => [{ transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0 }, { transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0.5 }, { opacity: 1, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 1 }],
     'dip-in': () => [{ opacity: 0, filter: 'brightness(0)', offset: 0 }, { opacity: 0, filter: 'brightness(0)', offset: 0.5 }, { opacity: 1, filter: 'brightness(0)', offset: 0.5001 }, { opacity: 1, filter: 'brightness(1)', offset: 1 }],
-    'draw': () => [{ strokeDasharray: '1 1', strokeDashoffset: 1 }, { strokeDasharray: '1 1', strokeDashoffset: 0 }],
+    // (dash 1, gap 2, starting just inside the gap: nothing is painted before the draw, not even a round-cap dot)
+    'draw': () => [{ strokeDasharray: '1 2', strokeDashoffset: 1.002 }, { strokeDasharray: '1 2', strokeDashoffset: 0 }],
     // handwriting: the text appears left to right at pen speed (pairs with a hand font and data-split="lines")
     'write': () => [{ clipPath: 'inset(-40% 100% -40% -4%)' }, { clipPath: 'inset(-40% -4% -40% -4%)' }],
     // Text and object entrances
@@ -743,7 +744,7 @@
     'zoom-past': () => [{ opacity: 1, scale: '1', filter: B(0) }, { opacity: 0, scale: '2.4', filter: B(14) }],
     'flip-out': () => [{ transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 0 }, { transform: 'perspective(2400px) rotateY(-90deg)', opacity: 1, offset: 0.5 }, { opacity: 0, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(-90deg)', opacity: 0, offset: 1 }],
     'dip-out': () => [{ filter: 'brightness(1)', offset: 0 }, { filter: 'brightness(0)', offset: 0.5 }, { filter: 'brightness(0)', offset: 1 }],
-    'draw': () => [{ strokeDasharray: '1 1', strokeDashoffset: 0 }, { strokeDasharray: '1 1', strokeDashoffset: -1 }],
+    'draw': () => [{ strokeDasharray: '1 2', strokeDashoffset: 0 }, { strokeDasharray: '1 2', strokeDashoffset: -1.002 }],
     'mask-up': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '0 -100%', clipPath: 'inset(100% -10% -18% -10%)' }],
     'mask-down': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '0 100%', clipPath: 'inset(-30% -10% 100% -10%)' }],
     'mask-left': () => [{ translate: '0 0', clipPath: MASK_OUT }, { translate: '-100% 0', clipPath: 'inset(-30% -10% -18% 100%)' }],

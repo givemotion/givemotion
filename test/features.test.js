@@ -153,3 +153,24 @@ test('analyze: finds a hard cut and a fade with their times, and the colors', { 
   assert.equal(r.shots.length, 3);
   assert.equal(r.colors.theme, 'dark');
 });
+
+test('determinism: a line drawing on in a zoomed world is the same with 1 and 3 workers (no partial raster)', { skip }, async () => {
+  // this exact page gave one frame that differed by a pixel or two with partial raster on
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, `<!doctype html><html data-width="1280" data-height="720" data-fps="30"><head><style>
+body{background:#fbfaf6;color:#1e1e1e;font-family:Caveat}
+.card{position:absolute;padding:24px 34px;font-size:44px;border:4px solid #1971c2;background:#fff}
+</style></head><body>
+<section class="scene" data-duration="4"><div id="world" style="position:absolute;left:0;top:0;width:2000px;height:1200px;transform-origin:0 0;transform:translate(-68.8534px,54.394px) scale(1.0885)">
+<div class="card" id="c1" style="left:100px;top:100px" data-enter="fade 0.4 0.2">browser</div>
+<p style="position:absolute;left:100px;top:320px;font-size:56px;margin:0;width:700px" data-enter="write 1 0.5">The address is <span id="ip">93.184.216.34</span> and it is <span>fast</span>, <span>really</span>.</p>
+<svg viewBox="0 0 2000 1200" style="position:absolute;inset:0;width:2000px;height:1200px" data-sketch><rect x="900" y="100" width="300" height="160" fill="#ffd8a8" stroke="none" data-enter="draw 1 0.3"/><line x1="900" y1="400" x2="1200" y2="400" stroke="#1e1e1e" stroke-width="6" data-enter="draw 1 2"/></svg>
+</div></section>
+</body></html>`);
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, ...quiet });
+  await render(f, { output: b, workers: 3, ...quiet });
+  const fa = readdirSync(a).sort();
+  const diff = fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x))));
+  assert.deepEqual(diff, []);
+});

@@ -294,7 +294,9 @@
       const r = scope ? [...scope.querySelectorAll(t)] : [];
       return r.length ? r : [...document.querySelectorAll(t)];
     }
-    if (t instanceof Element || t === window || !(Symbol.iterator in Object(t)) || typeof t.length !== 'number') return [t];
+    // a shape that data-sketch replaced (a reference taken before the video started) means its replacement
+    if (t instanceof Element) return [(I.replaced && I.replaced.get(t)) || t];
+    if (t === window || !(Symbol.iterator in Object(t)) || typeof t.length !== 'number') return [t];
     return [...t].flatMap((x) => toArray(x, scope));
   }
   function staggerOffsets(st, n, rnd, targets) {
@@ -681,6 +683,8 @@
           const cso = getComputedStyle(el);
           tm.svgOrigin = !el.style.transformOrigin && !('transformOrigin' in vals) && /^0px 0px/.test(cso.transformOrigin) && cso.transformBox === 'view-box';
           if (tm.svgOrigin) { el.style.transformBox = 'fill-box'; el.style.transformOrigin = '50% 50%'; }
+          // an origin in % on an SVG shape means "% of the shape" to everyone (not of the whole <svg>)
+          else if (cso.transformBox === 'view-box' && /%/.test(String(vals.transformOrigin || el.style.transformOrigin || ''))) el.style.transformBox = 'fill-box';
         }
         if (setCached(tm, 'transform', s, (v) => { el.style.transform = v; })) changed = true;
       }
@@ -963,7 +967,22 @@
       const w = this.world;
       // the whole world: fit: 'all' (or the world's own selector)
       if (target === 'all' || target === w || (typeof target === 'string' && w.matches(target))) return { x: 0, y: 0, w: w.offsetWidth, h: w.offsetHeight };
-      const els = (Array.isArray(target) ? target : [target]).flatMap((t) => typeof t === 'string' ? [...w.querySelectorAll(t)] : t ? [t] : []);
+      // 'content': everything drawn in the world (shapes, text, images), without its empty margins
+      // (measured once while the page loads, before the camera moves: the same in every worker and every frame;
+      //  marks and arrows added later do not count)
+      if (target === 'content') {
+        if (this._contentBox) return this._contentBox;
+        const hidden = [];
+        for (let a = w; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
+        for (const a of w.querySelectorAll('[data-mw-hidden]')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
+        const els = this._content || (this._content = [...w.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon,text,img,canvas,video,svg image')].concat([...w.querySelectorAll('*')].filter((e) => !(e instanceof SVGElement) && [...e.childNodes].some((n) => n.nodeType === 3 && n.data.trim()))).filter((e) => !e.closest('[data-mw-internal],defs,clipPath,mask,marker,pattern,[data-mw-sketch-guide],.mw-sketch-mark,.mw-connect,[data-check~="ignore"]')));
+        let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+        for (const e of els) { const q = e.getBoundingClientRect(); if (!q.width && !q.height) continue; l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); }
+        for (const a of hidden) a.setAttribute('data-mw-hidden', '');
+        const r4b = (x) => Math.round(x * 100) / 100;
+        return (this._contentBox = l === Infinity ? { x: 0, y: 0, w: w.offsetWidth, h: w.offsetHeight } : { x: r4b((l - M.ox) / M.k), y: r4b((t - M.oy) / M.k), w: r4b((r - l) / M.k), h: r4b((b - t) / M.k) });
+      }
+      const els = (Array.isArray(target) ? target : [target]).flatMap((t) => typeof t === 'string' ? [...w.querySelectorAll(t)] : t ? [(I.replaced && I.replaced.get(t)) || t] : []);
       if (!els.length) {
         if (!this._warned) { this._warned = true; I.report('warning', 'camera-no-target', `mw.camera: shot target ${JSON.stringify(typeof target === 'string' ? target : String(target))} matched nothing inside the world, so that shot does nothing.`, null, "Use a selector of elements inside the world, a list of them, {x, y, w, h}, or fit: 'all' for the whole world."); }
         return null;
@@ -1044,7 +1063,7 @@
   // ---------------------------------------------------------------------------
   const travels = [];
   function setupTravel(tr) {
-    const el = typeof tr.el === 'string' ? document.querySelector(tr.el) : tr.el;
+    const el = typeof tr.el === 'string' ? document.querySelector(tr.el) : (I.replaced && I.replaced.get(tr.el)) || tr.el;
     let pth = typeof tr.path === 'string' && !/^\s*[Mm]/.test(tr.path) ? document.querySelector(tr.path) : tr.path;
     // a sketched shape (data-sketch) is a group: travel along its exact shape
     if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-mw-sketch-guide]') || pth.querySelector('path') || pth;
@@ -1439,6 +1458,7 @@
   // Hook into the runtime
   // ---------------------------------------------------------------------------
   I.hooks.preinit.push(setupFit);
+  I.hooks.init.push(() => { for (const c of cameras) if (c.world && c.shots.some((sh) => sh.fit === 'content' || sh.center === 'content')) { try { c._box('content', c._markers()); } catch (e) {} } });
   I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); for (const b of bursts) if (!b.canvas) setupBurst(b); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
   I.hooks.post.push(updateCameras);

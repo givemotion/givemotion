@@ -10,6 +10,8 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const f1 = (x) => Math.round(x * 10) / 10;
   const px = () => (typeof I.PX === 'function' ? I.PX() : 1);
+  // original shape → the sketched group that replaced it (so references taken by scripts still work)
+  const replaced = I.replaced = I.replaced || new WeakMap();
 
   function hashStr(s) { let h = 2166136261; s = String(s); for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function rng(seed) {
@@ -317,7 +319,8 @@
       fp.setAttribute('data-mw-sketch-fill', mode);
       grp.appendChild(fp);
     }
-    for (const d of outlines) {
+    const noStroke = (el.getAttribute('stroke') === 'none' || cs.stroke === 'none') && fillColor;
+    if (!noStroke) for (const d of outlines) {
       const op = document.createElementNS(SVGNS, 'path');
       op.setAttribute('d', d);
       op.setAttribute('fill', 'none');
@@ -336,13 +339,112 @@
     }
     grp.style.fill = 'none';
     el.replaceWith(grp);
+    replaced.set(el, grp);
     return grp;
   }
+  // ---------------------------------------------------------------------------
+  // HTML: data-sketch on a box gives it a hand-drawn border; data-sketch-mark highlights, underlines, circles,
+  // boxes or strikes a piece of text. Both are measured on the first frame they are visible (fonts loaded, layout done).
+  // ---------------------------------------------------------------------------
+  const marks = [];
+  function startTime(el, attr) {
+    const v = el.getAttribute(attr);
+    if (v != null && v !== '') return parseFloat(v) || 0;
+    // default: right after the element's own entrance (data-enter="name dur delay")
+    const en = (el.closest('[data-enter]') || el).getAttribute('data-enter');
+    if (!en) return 0;
+    const nums = en.trim().split(/\s+/).slice(1).map((x) => parseFloat(x)).filter((x) => isFinite(x));
+    return (nums[1] || 0) + (nums[0] ?? 0.6);
+  }
+  function addMark(el, kind) {
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('data-check', 'ignore');
+    svg.setAttribute('class', 'mw-sketch-mark');
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none;z-index:1' + (kind === 'highlight' ? ';mix-blend-mode:multiply' : '');
+    marks.push({ el, kind, svg, seed: (el.id || 'm') + ':' + marks.length, at: startTime(el, 'data-sketch-mark-at'), dur: parseFloat(el.getAttribute('data-sketch-mark-duration')) || (kind === 'highlight' || kind === 'underline' || kind === 'strike' ? 0.5 : 0.7) });
+  }
+  function addBorder(el) {
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('data-check', 'ignore');
+    svg.setAttribute('class', 'mw-sketch-border');
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none';
+    marks.push({ el, kind: 'border', svg, seed: (el.id || 'b') + ':' + marks.length, opts: parseOpts(el, {}) });
+  }
+  function buildMark(m) {
+    const el = m.el;
+    if (!el.isConnected) return false;
+    // Built once while the page loads (the same for every worker). Things in clips that are not on screen yet are
+    // shown for a moment to be measured.
+    const hidden = [];
+    for (let a = el; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
+    try { return buildMarkNow(m); } finally { for (const a of hidden) a.setAttribute('data-mw-hidden', ''); }
+  }
+  function buildMarkNow(m) {
+    const el = m.el;
+    const R2 = { roughness: 1, seed: m.seed };
+    if (m.kind === 'border') {
+      const cs = getComputedStyle(el), w = el.offsetWidth, h = el.offsetHeight;
+      if (!w || !h) return false;
+      const bw = parseFloat(cs.borderTopWidth) || 0;
+      const col = bw > 0 && cs.borderTopStyle !== 'none' ? cs.borderTopColor : 'currentColor';
+      if (cs.position === 'static') el.style.position = 'relative';
+      el.style.borderColor = 'transparent';
+      // the svg's 0,0 is the padding box corner: step back over the border
+      const box = `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
+      const ds = [path(box, { ...R2, roughness: m.opts.roughness ?? 1, passes: 1 }), path(box, { ...R2, seed: m.seed + 'b', roughness: m.opts.roughness ?? 1, passes: 1 })];
+      m.svg.innerHTML = ds.map((d) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="${Math.max(2, bw || 3 * px())}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
+      el.appendChild(m.svg);
+      return true;
+    }
+    // Text marks live inside the element, so they move, fade and hide with it. Line boxes are measured relative to the
+    // element's own box (entrance moves and camera zoom scale all of them alike).
+    const B = el.getBoundingClientRect(), k = el.offsetWidth ? B.width / el.offsetWidth : 1;
+    if (!B.width || !(k > 0.05)) return false;
+    const rects = [...el.getClientRects()].map((r) => ({ x: (r.left - B.left) / k, y: (r.top - B.top) / k, w: r.width / k, h: r.height / k })).filter((r) => r.w > 1 && r.h > 1);
+    if (!rects.length) return false;
+    const cs = getComputedStyle(el);
+    const color = el.getAttribute('data-sketch-mark-color') || (m.kind === 'highlight' ? '#ffd43b' : m.kind === 'circle' ? '#e03131' : cs.color);
+    const fs = parseFloat(cs.fontSize) || 40;
+    const sw = Math.max(2.5, fs * 0.07);
+    let d = '';
+    const U = rects.reduce((u, r) => ({ x: Math.min(u.x, r.x), y: Math.min(u.y, r.y), r: Math.max(u.r, r.x + r.w), b: Math.max(u.b, r.y + r.h) }), { x: Infinity, y: Infinity, r: -Infinity, b: -Infinity });
+    const pad = fs * 0.25;
+    if (m.kind === 'circle') d = ellipse((U.x + U.r) / 2, (U.y + U.b) / 2, (U.r - U.x) / 2 + pad * 1.6, (U.b - U.y) / 2 + pad, { ...R2, passes: 1 });
+    else if (m.kind === 'box') d = rect(U.x - pad, U.y - pad * 0.6, U.r - U.x + pad * 2, U.b - U.y + pad * 1.2, { ...R2, passes: 1 });
+    else for (const r of rects) {
+      const y = m.kind === 'underline' ? r.y + r.h * 0.92 : r.y + r.h * 0.55;
+      d += strokeLine(r.x - fs * 0.05, y, r.x + r.w + fs * 0.05, y + (m.kind === 'highlight' ? 0 : fs * 0.02), { roughness: 0.6, bow: 1, overshoot: 0.5, raw: {} }, rng(m.seed + ':' + Math.round(y)), !d);
+    }
+    // a highlighter multiplies with what is under it, so it can sit on top of the text and still look behind it
+    m.svg.innerHTML = `<path d="${d}" fill="none" stroke="${color}" stroke-width="${m.kind === 'highlight' ? (rects[0].h * 0.62).toFixed(1) : sw.toFixed(1)}" stroke-linecap="${m.kind === 'highlight' ? 'butt' : 'round'}" stroke-linejoin="round" pathLength="1"${m.kind === 'highlight' ? ' opacity="0.7"' : ''}/>`;
+    m.p = m.svg.firstChild;
+    if (cs.position === 'static') el.style.position = 'relative';
+    el.appendChild(m.svg);
+    m.base = mw.timing(el).start;
+    m.svg.style.visibility = 'hidden';
+    return true;
+  }
+  function updateMarks(T) {
+    let changed = false;
+    for (const m of marks) {
+      if (!m.p) continue;
+      // drawn on over m.dur seconds, m.at seconds into the element's clip
+      const pr = Math.max(0, Math.min(1, (T - m.base - m.at) / m.dur)), e = pr < 0.5 ? 2 * pr * pr : 1 - Math.pow(-2 * pr + 2, 2) / 2;
+      const dash = e >= 1 ? 'none' : `${e.toFixed(4)} 2`, vis = e > 0 ? '' : 'hidden';
+      if (dash !== m.lastDash || vis !== m.lastVis) { m.p.style.strokeDasharray = dash; m.svg.style.visibility = vis; m.lastDash = dash; m.lastVis = vis; changed = true; }
+    }
+    return changed;
+  }
+  I.hooks.init.push(() => { for (const m of marks) if (!m.built) m.built = buildMark(m); });
+  I.hooks.seek.push(updateMarks);
+
   function setupSketch() {
     let i = 0;
+    for (const el of document.querySelectorAll('[data-sketch-mark]')) if (!el.__mwMark) { el.__mwMark = true; addMark(el, (el.getAttribute('data-sketch-mark') || 'underline').trim()); }
     for (const host of [...document.querySelectorAll('[data-sketch]')]) {
       if (!host.isConnected) continue;
       const tag = host.tagName.toLowerCase();
+      if (!(host instanceof SVGElement)) { if (!host.__mwBorder) { host.__mwBorder = true; addBorder(host); } continue; }
       const o = parseOpts(host, {});
       if (GEOM[tag]) { sketchOne(host, o, i++); continue; }
       // on an <svg> or <g>: every shape inside (a shape's own data-sketch options win)
@@ -372,7 +474,7 @@
     // screen → space
     return (sx, sy) => { const dx = sx - o.left, dy = sy - o.top; return [(dx * by - dy * bx) / det, (dy * ax - dx * ay) / det]; };
   }
-  const elOf = (t) => (typeof t === 'string' ? document.querySelector(t) : t);
+  const elOf = (t) => (typeof t === 'string' ? document.querySelector(t) : (t && replaced.get(t)) || t);
   function rectIn(target, space) {
     const el = elOf(target), sp = space ? elOf(space) : null;
     if (!el) return null;
@@ -410,7 +512,6 @@
     c.space = c.o.in ? elOf(c.o.in) : commonParent(A, B);
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('class', 'mw-connect' + (c.o.class ? ' ' + c.o.class : ''));
-    svg.setAttribute('data-check', 'ignore');
     svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none';
     const path = document.createElementNS(SVGNS, 'path');
     path.setAttribute('fill', 'none');
@@ -479,6 +580,7 @@
         }
       }
       if (d !== c.lastD) { c.path.setAttribute('d', d); c.lastD = d; changed = true; }
+      if (c.label && !d && c.label.style.visibility !== 'hidden') { c.label.style.visibility = 'hidden'; changed = true; }
       if (c.label && d) {
         // halfway along the line, pushed off to the outside of the bend (or above a straight line)
         const m = measure(d.replace(/^(M[^M]*?)M.*$/, '$1')), L = m.getTotalLength(), q = m.getPointAtLength(L / 2), q2 = m.getPointAtLength(Math.min(L, L / 2 + 1));

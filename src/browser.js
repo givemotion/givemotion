@@ -110,6 +110,9 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
     '--autoplay-policy=no-user-gesture-required', '--disable-dev-shm-usage', '--password-store=basic', '--use-mock-keychain',
     '--disable-features=Translate,MediaRouter,OptimizationHints,PaintHolding,BackForwardCache,DialMediaRouteProvider,CalculateNativeWinOcclusion,InterestFeedContentSuggestions',
     '--enable-features=SharedArrayBuffer',
+    // Partial raster redraws only the changed part of a tile, on top of pixels from whenever that tile was last drawn:
+    // the result then depends on the frame history (1 worker != N workers by a pixel or two). Costs no measurable speed.
+    '--disable-partial-raster',
   ];
   if (platform() === 'linux' && (process.getuid && process.getuid() === 0 || process.env.MOTIONWRIGHT_NO_SANDBOX)) args.push('--no-sandbox');
   const mode = gl === 'auto' ? (hasGPU() ? 'gpu' : 'swiftshader') : gl;

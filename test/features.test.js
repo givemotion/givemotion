@@ -1,8 +1,9 @@
 // Tests for motion tools, React mode, audio analysis and the checker's motion handling.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, copyFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { findChrome } from '../src/browser.js';
@@ -12,6 +13,7 @@ import { render, check, inspect, openComposition } from '../src/api.js';
 const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
 const hasEsbuild = await import('esbuild').then(() => true, () => false);
 const tmp = () => mkdtempSync(join(tmpdir(), 'mw-feat-'));
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const quiet = { quiet: true, log: () => {} };
 const page = (body, attrs = 'data-width="640" data-height="360" data-fps="30"') => `<!doctype html><html ${attrs}><head><style>body{background:#111;color:#fff;font-family:sans-serif}</style></head><body>${body}</body></html>`;
 async function evalAt(file, t, expr) {
@@ -173,4 +175,18 @@ body{background:#fbfaf6;color:#1e1e1e;font-family:Caveat}
   const fa = readdirSync(a).sort();
   const diff = fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x))));
   assert.deepEqual(diff, []);
+});
+
+test('code-window: ⟦marks⟧ on later lines wrap the right text and keep one element per line', { skip }, async () => {
+  const d = tmp();
+  mkdirSync(join(d, 'blocks'));
+  copyFileSync(join(ROOT, 'blocks', 'code-window.html'), join(d, 'blocks', 'code-window.html'));
+  const f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="1"><mw-include src="blocks/code-window.html" lang="js">function f() {
+  let timer;
+  ⟦clearTimeout(timer);⟧
+  timer = ⟦setTimeout⟧(go, 300);
+}</mw-include></section>`));
+  const r = await evalAt(f, 0.5, `({ marks: [...document.querySelectorAll('.mw-mark')].map((m) => [m.textContent, m.closest('.mw-line').dataset.line]), lines: document.querySelectorAll('.mw-line').length })`);
+  assert.deepEqual(r, { marks: [['clearTimeout(timer);', '3'], ['setTimeout', '4']], lines: 5 });
 });

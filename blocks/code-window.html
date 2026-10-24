@@ -22,7 +22,8 @@ usage: <mw-include src="blocks/code-window.html" title="app.ts" lang="ts" typing
   let src = lines.map((l) => l.slice(isFinite(ind) ? ind : 0)).join('\n');
   // ⟦marked⟧ parts: remember where they are (in characters of the shown code) and drop the brackets
   const marks = [];
-  { let out = '', open = -1; for (const ch of src) { if (ch === '\u27e6') open = out.length; else if (ch === '\u27e7' && open >= 0) { marks.push([open, out.length]); open = -1; } else out += ch; } src = out; }
+  // (offsets skip the newlines: each line becomes its own element below, so the DOM text has none)
+  { let out = '', open = -1, nl = 0; for (const ch of src) { if (ch === '\u27e6') open = out.length - nl; else if (ch === '\u27e7' && open >= 0) { marks.push([open, out.length - nl]); open = -1; } else { if (ch === '\n') nl++; out += ch; } } src = out; }
   const KW = {
     js: 'await|async|break|case|catch|class|const|continue|default|delete|do|else|export|extends|finally|for|from|function|if|import|in|instanceof|let|new|of|return|static|super|switch|this|throw|try|typeof|var|void|while|yield|true|false|null|undefined',
     py: 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield|self|print',

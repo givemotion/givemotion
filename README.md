@@ -82,6 +82,7 @@ Every command takes `--json`.
 | `check [file]` | Errors, layout and contrast problems, with fixes |
 | `inspect [file]` | Timeline as JSON; `--at 3.2 --el "#logo"` for where elements are at a moment |
 | `audio <file>` | Tempo, beats, bar starts and big hits of a song |
+| `analyze <video.mp4>` | Report on any video (a reference, or your render): shots and cuts, transitions, camera, pacing, colors, cuts on the beat, contact sheets. `--compare ref.mp4` lists how yours differs |
 | `bundle [file] -o dir` | Standalone page + `<mw-player>` to embed the video in any site |
 | `blocks` / `add <name>` | Ready-made, editable blocks |
 | `install` / `doctor` | Get Chrome / check the setup |

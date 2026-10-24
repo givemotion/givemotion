@@ -627,7 +627,7 @@ function sceneAt(info, t) {
 }
 const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-async function renderHtmlToPng(page, html, w, h) {
+export async function renderHtmlToPng(page, html, w, h) {
   await page.setViewport(w, h);
   const { frameTree } = await page.s('Page.getFrameTree');
   await page.s('Page.setDocumentContent', { frameId: frameTree.frame.id, html });

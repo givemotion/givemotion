@@ -213,6 +213,10 @@ The most common failure is a video that looks like a slideshow or a website: a c
 - Prefer depth: soft gradients, subtle grain, shadows, slight blur on entrance. Avoid pure #000 backgrounds and pure #fff text on busy images (add a scrim).
 - Use `.scene` for full-frame scenes and absolute layout inside; use flex/grid for groups.
 
+## Learning from a reference video (and reviewing your render)
+
+`npx motionwright analyze reference.mp4` turns any video into a report you can read: every shot with its length and camera move, the scene changes and their type (`cut` `fade` `dip` `wipe-*` `push-*` `zoom-in/out` `iris`, best guesses), a pacing strip, the palette (background, accents), where the detail sits, and how many cuts land on the beat. It ends with a style recipe in motionwright terms, and writes `analysis/<name>/sheet.png` (the whole video at even steps) and `shots.png` (start, middle, end of every shot): **open both**. To match a reference, analyze it first, build, render, then `npx motionwright analyze out/video.mp4 --compare reference.mp4`, which lists the differences ("yours: median shot 2.4 s, reference 0.9 s"). Transition types are guesses from the pixels; trust the shot times and the sheets more.
+
 ## Overlays with transparency
 
 Leave `<html>` and `<body>` without a background, then `npx motionwright render overlay.html -o out/overlay.mov --transparent` (ProRes 4444) or `-o out/overlay.webm --transparent` (VP9 with alpha). `check` and `snapshot` detect a transparent page automatically: contrast is not judged against nothing, and the sheet shows a checkerboard. Pass `--transparent` to `still` for a PNG with alpha.

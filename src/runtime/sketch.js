@@ -16,10 +16,9 @@
     let a = (typeof seed === 'number' ? seed * 2654435761 : hashStr(seed)) >>> 0 || 1;
     return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
-  let autoSeed = 0;
   function opts(o) {
     o = o || {};
-    return { roughness: o.roughness ?? 1, bow: o.bow ?? 1, passes: Math.max(1, Math.min(3, o.passes ?? 2)), seed: o.seed ?? ++autoSeed, overshoot: o.overshoot ?? 1, raw: o.raw };
+    return { roughness: o.roughness ?? 1, bow: o.bow ?? 1, passes: Math.max(1, Math.min(3, o.passes ?? 2)), seed: o.seed ?? 1, overshoot: o.overshoot ?? 1, raw: o.raw };
   }
 
   // One stroke from a to b: jittered ends, a slight overshoot, a gentle bow and a wobble, as one cubic curve.
@@ -431,17 +430,25 @@
 
   mw.rect = rectIn;
   mw.connect = connect;
+  // Without a seed, the shape's own numbers are the seed: the same call gives the same drawing in every frame and
+  // every worker (a counter would make lines boil when called from onFrame).
+  const seeded = (fn, n) => (...a) => {
+    let o = a[n] && typeof a[n] === 'object' && !Array.isArray(a[n]) ? a[n] : {};
+    if (o.seed == null) o = { ...o, seed: 'g' + hashStr(JSON.stringify(a.slice(0, n))) };
+    a[n] = o;
+    return fn(...a);
+  };
   mw.sketch = {
-    line: (x1, y1, x2, y2, o) => line(x1, y1, x2, y2, o),
-    rect: (x, y, w, h, o) => rect(x, y, w, h, o),
-    ellipse: (cx, cy, rx, ry, o) => ellipse(cx, cy, rx, ry, o),
-    circle: (cx, cy, r, o) => circle(cx, cy, r, o),
-    polygon: (points, o) => polygon(points, o),
-    polyline: (points, o) => polyline(points, o),
-    path: (d, o) => path(d, o),
-    arrow: (x1, y1, x2, y2, o) => arrow(x1, y1, x2, y2, { ...o, raw: o || {} }),
-    hachure: (shape, o) => hachure(shape, o),
-    underline: (x1, y1, x2, y2, o) => { if (y2 != null && typeof y2 === 'object') { o = y2; y2 = undefined; } return underline(x1, y1, x2, y2, { ...o, raw: o || {} }); },
+    line: seeded((x1, y1, x2, y2, o) => line(x1, y1, x2, y2, o), 4),
+    rect: seeded((x, y, w, h, o) => rect(x, y, w, h, o), 4),
+    ellipse: seeded((cx, cy, rx, ry, o) => ellipse(cx, cy, rx, ry, o), 4),
+    circle: seeded((cx, cy, r, o) => circle(cx, cy, r, o), 3),
+    polygon: seeded((points, o) => polygon(points, o), 1),
+    polyline: seeded((points, o) => polyline(points, o), 1),
+    path: seeded((d, o) => path(d, o), 1),
+    arrow: seeded((x1, y1, x2, y2, o) => arrow(x1, y1, x2, y2, { ...o, raw: o || {} }), 4),
+    hachure: seeded((shape, o) => hachure(shape, o), 1),
+    underline: (x1, y1, x2, y2, o) => { if (y2 != null && typeof y2 === 'object') { o = y2; y2 = undefined; } return seeded((a, b, c, e, oo) => underline(a, b, c, e, { ...oo, raw: oo || {} }), 4)(x1, y1, x2, y2 ?? y1, o); },
     apply: setupSketch,
   };
 })();

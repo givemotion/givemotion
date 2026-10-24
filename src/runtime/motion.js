@@ -621,7 +621,7 @@
             else v = undefined; // untouched: leave the page's own value
           } else {
             const it = seg.it;
-            let lt = t - it.start, p;
+            let lt = Math.max(0, t - it.start), p; // (a frame a hair before the start, by float error, is the start, not cycle -1)
             if (it.dur <= 0) p = 1;
             else {
               const period = it.dur + it.rd;

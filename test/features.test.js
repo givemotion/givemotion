@@ -202,3 +202,12 @@ test('check: a line through text is found (also dashed), not when an opaque pane
   assert.deepEqual(by('text-over-line'), ['#bad']);
   assert.deepEqual(by('low-contrast'), []);
 });
+
+test('timeline: a tween starting on a frame shows its start values there, even when float error puts the frame a hair early', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  // 0.1 + 0.2 = 0.30000000000000004: the third scene starts just after the frame at 0.3 s
+  writeFileSync(f, page(`<main data-sequence><section class="scene" data-duration="0.1"></section><section class="scene" data-duration="0.2"></section>
+    <section class="scene" id="c" data-duration="1"><b id="x" style="display:block">X</b></section></main>
+    <script>mw.timeline('#c').fromTo('#x', { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0);</script>`));
+  assert.equal(await evalAt(f, 0.3, `getComputedStyle(document.getElementById('x')).opacity`), '0');
+});

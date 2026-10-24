@@ -270,8 +270,8 @@ export async function render(input, opts = {}) {
     const todoFrames = ranges.reduce((s, r) => s + r.b - r.a, 0);
     const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames), Math.max(1, todoFrames)));
     const auto = blur.mode === 'auto';
-    // Auto blur: frames are not equally expensive, so workers take ranges from one queue (most work first) instead of
-    // fixed runs; a single range (--frames, png) is cut into 1 s pieces for that. Every range starts with its own warm-up.
+    // Auto blur: frames are not equally expensive, so ranges are handed out by cost (below) instead of in fixed runs;
+    // a single range (--frames, png) is cut into 1 s pieces for that. Every range starts with its own warm-up.
     if (auto && !useParts && todoFrames) {
       const { a: f0r, b: f1r, file } = ranges[0];
       ranges = [];
@@ -322,8 +322,9 @@ export async function render(input, opts = {}) {
           run.slice(1).forEach((f, n) => steps.set(f, d[n]));
         }
         if (await page.evaluate('gm.__usesRAF ? gm.__usesRAF() : false')) rafLate = true;
-        // pages driven by timers cannot seek back: start them again
-        if (await page.evaluate('gm.__stateful()')) await reopen(page);
+        // start every page again, so what it renders next does not depend on which frames it measured (Chrome keeps
+        // some paint state between frames; pages driven by timers also cannot seek back)
+        await reopen(page);
       }));
       if (rafLate) { steps.clear(); if (!opts.quiet) log('  no motion blur: the page uses requestAnimationFrame'); } // (see above)
       blurStats.probeMs = Date.now() - q0;
@@ -343,6 +344,14 @@ export async function render(input, opts = {}) {
         return { a, b, file, whole, cost: costOf(a, b) };
       });
     }).sort((x, y) => y.cost - x.cost || x.a - y.a) : null;
+    // hand the work out by its cost (most first, to the least busy worker), each worker in time order. Fixed for a
+    // given number of workers: Chrome's paint caches can keep a little history, so who renders what must not depend on
+    // timing.
+    if (auto) {
+      const load = groups.map(() => 0);
+      for (const r of queue) { let w = 0; for (let i = 1; i < groups.length; i++) if (load[i] < load[w]) w = i; groups[w].push(r); load[w] += r.cost; }
+      for (const g of groups) g.sort((x, y) => x.a - y.a);
+    }
     const joinPieces = async (whole) => {
       const list = join(tmp, basename(whole.file) + '.pieces.txt'), tmpWhole = whole.file + '.tmp.' + plan.segExt;
       writeFileSync(list, whole.pieces.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n'));
@@ -380,7 +389,9 @@ export async function render(input, opts = {}) {
       // (warm up on frame a-1), so any split between workers and any re-rendered part gives the same bytes.
       const captureAuto = async (a, b, writer) => {
         let q0 = Date.now();
-        if (prevFrame >= a && (await page.evaluate('gm.__stateful()'))) await reopen(page);
+        // every range on a freshly loaded page: Chrome keeps some paint state (raster scales of moving layers) from frame to
+        // frame, so this is what makes a range the same bytes whichever worker renders it, after whatever it rendered before
+        if (prevFrame >= -1) { const q1 = Date.now(); await reopen(page); prof.reopen = (prof.reopen || 0) + Date.now() - q1; }
         last = null;
         // warm up on the frame before (on frame 1 for the start): the paint caches then do not depend on what this
         // page rendered before
@@ -388,6 +399,7 @@ export async function render(input, opts = {}) {
         // (a page that went stateful on frame 1 cannot step back to 0: fresh page, warm up on 0)
         if (a === 0 && (await page.evaluate('gm.__stateful()'))) { await reopen(page); await page.seek(0); }
         await page.capture(captureFormat, jpegQ);
+        await page.capture(captureFormat, jpegQ); // a fresh page may still be painting parts of the first frame
         const blenders = new Map();
         let chain = Promise.resolve();
         const put = (f, img) => {
@@ -431,7 +443,7 @@ export async function render(input, opts = {}) {
           throw e;
         }
       };
-      const next = auto ? () => queue.shift() : ((i) => () => group[i++])(0);
+      const next = ((i) => () => group[i++])(0);
       let frames = 0;
       try {
       for (let r; (r = next());) {
@@ -482,7 +494,7 @@ export async function render(input, opts = {}) {
         await Promise.allSettled(ending);
         throw e;
       }
-      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${frames} frames`);
+      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms${prof.reopen ? `, reload ${prof.reopen}ms` : ''} for ${frames} frames`);
     }));
     const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);

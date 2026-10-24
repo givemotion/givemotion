@@ -146,14 +146,15 @@ Add `data-sketch` to an SVG shape (`rect` `circle` `ellipse` `line` `polyline` `
 
 ```html
 <svg viewBox="0 0 1920 1080" data-sketch style="position:absolute;inset:0">
-  <rect x="160" y="300" width="420" height="260" fill="#ffd43b" stroke="#1e1e1e" stroke-width="3" data-enter="draw 1.2 0.5"/>
-  <circle cx="900" cy="430" r="140" fill="#74c0fc" stroke="#1e1e1e" stroke-width="3" data-enter="draw 1 1.5"/>
+  <rect x="160" y="300" width="420" height="260" fill="#ffd43b" stroke="#1e1e1e" stroke-width="5" data-enter="draw 1.2 0.5"/>
+  <circle cx="900" cy="430" r="140" fill="#74c0fc" stroke="#1e1e1e" stroke-width="5" data-enter="draw 1 1.5"/>
 </svg>
 <h2 style="font-family: Caveat; font-size: 72px" data-enter="write 1 2.5">the server</h2>
 ```
 - **`Caveat`** (a handwriting font, weights 400-700) is built in: `font-family: Caveat`. No file or download needed.
 - Path data for your own SVG (dynamic shapes, `onFrame`; passes are one continuous stroke, so `draw` goes around twice): `mw.sketch.rect(x, y, w, h)` `.line(x1, y1, x2, y2)` `.circle(cx, cy, r)` `.ellipse(cx, cy, rx, ry)` `.polygon(points)` `.polyline(points)` `.path(d)` (any path, redrawn by hand) `.arrow(x1, y1, x2, y2, { curve: 0.2, head: 22, heads: 'both' })` `.hachure(shape, { gap, angle, cross })` (shape = path data, points or `{x, y, w, h}`) `.underline(x1, y, x2, { loops: 2 })`. Options for all: `roughness`, `seed` (same seed = same drawing), `passes` (1-3). Put the result in a `<path d>` with `fill: none` and a stroke; `draw` draws it on.
-- Use a light paper background (`#fbfaf6`), dark ink (`#1e1e1e`), 2-4 px strokes and one or two accent colors. Keep everything on one big world and move a `mw.camera` over it; earlier drawings stay, and a last shot that fits everything shows the whole diagram.
+- Use a light paper background (`#fbfaf6`), dark ink (`#1e1e1e`) and one or two accent colors (saturated, not pastel: `#1971c2`, `#e8590c`). Keep everything on one big world and move a `mw.camera` over it; earlier drawings stay, and a last shot that fits everything shows the whole diagram.
+- **Size for the zoomed-out shots.** The final pull-back shows the world at maybe half size, so strokes and labels shrink with it: use 5-7 px strokes and labels of 48 px or more in world units (they then read as ~3 px and ~24 px in the overview). Judges called 3 px ink "thin and faint" and overview labels "tiny". Bold, simple drawings beat detailed thin ones; for the overview, fade out small notes and keep the big labels.
 
 ## Shapes and path morphs
 

@@ -299,7 +299,9 @@
     const attrFill = el.getAttribute('fill');
     const fillColor = visible(cs.fill) ? cs.fill : visible(attrFill) ? attrFill : null;
     const mode = o.fill || (fillColor && g.kind !== 'line' && g.kind !== 'polyline' ? 'hachure' : 'none');
-    const sw = parseFloat(cs.strokeWidth) || 2;
+    // a shape with no stroke width set would sketch at 1 px (too thin for video): give it a marker-like 4 px
+    if (!el.getAttribute('stroke-width') && !el.style.strokeWidth && parseFloat(cs.strokeWidth) <= 1) grp.style.strokeWidth = 4 * px() + 'px';
+    const sw = parseFloat(grp.style.strokeWidth) || parseFloat(cs.strokeWidth) || 2;
     if (fillColor && mode !== 'none') {
       const fp = document.createElementNS(SVGNS, 'path');
       const pts = outlinePoints(g);

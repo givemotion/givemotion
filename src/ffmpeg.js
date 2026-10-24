@@ -146,6 +146,84 @@ export function openSegmentWriter({ fps, inputCodec, out, plan, motionBlur }) {
   };
 }
 
+/** Length of the first complete JPEG (SOI..EOI) or PNG (signature..IEND) image at the start of buf, or 0 if incomplete. */
+export function imageLength(buf, png) {
+  if (png) {
+    let off = 8;
+    while (off + 12 <= buf.length) {
+      const len = buf.readUInt32BE(off);
+      const type = buf.toString('latin1', off + 4, off + 8);
+      off += 12 + len;
+      if (type === 'IEND') return off <= buf.length ? off : 0;
+    }
+    return 0;
+  }
+  let off = 2;
+  while (off + 2 <= buf.length) {
+    if (buf[off] !== 0xff) return 0; // not a marker where one must be: wait for more (never happens with ffmpeg output)
+    const m = buf[off + 1];
+    if (m === 0xd9) return off + 2;
+    if (m === 0xff) { off++; continue; }
+    if ((m >= 0xd0 && m <= 0xd7) || m === 0x01) { off += 2; continue; }
+    if (off + 4 > buf.length) return 0;
+    off += 2 + buf.readUInt16BE(off + 2);
+    if (m === 0xda) {
+      // entropy-coded data: the next 0xFF not followed by 0x00 or a restart marker is the next marker
+      while (off + 1 < buf.length && !(buf[off] === 0xff && buf[off + 1] !== 0 && !(buf[off + 1] >= 0xd0 && buf[off + 1] <= 0xd7))) off++;
+      if (off + 1 >= buf.length) return 0;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Motion blur for single frames: an ffmpeg process that takes groups of `n` images (the sub-frame samples of one frame)
+ * and returns their average as one image of the same kind (JPEG in, JPEG out; PNG in, PNG out). JPEGs go in as a
+ * multipart stream (each image has its length up front), so a frame comes back as soon as its last sample is in.
+ * push(buffers) resolves with the averaged image; end() flushes and closes.
+ */
+export function openBlender({ n, png = false, jpegQuality = 92 }) {
+  const input = png ? ['-f', 'image2pipe', '-c:v', 'png'] : ['-f', 'mpjpeg'];
+  const output = png ? ['-c:v', 'png', '-compression_level', '1'] : ['-c:v', 'mjpeg', '-q:v', jpegQuality > 92 ? '1' : '2'];
+  const args = ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-probesize', '32', '-analyzeduration', '0', ...input, '-i', '-',
+    '-vf', `tmix=frames=${n},select='not(mod(n+1\\,${n}))'`, '-fps_mode', 'passthrough', '-threads', '1', ...output, '-flush_packets', '1', '-f', 'image2pipe', '-'];
+  const proc = spawn(ffmpegPath(), args, { stdio: ['pipe', 'pipe', 'pipe'] });
+  let err = '', buf = Buffer.alloc(0), failed = null;
+  const waiting = [];
+  const fail = (e) => { failed = failed || e; for (const w of waiting.splice(0)) w.reject(failed); };
+  proc.stderr.on('data', (d) => { err += d; });
+  proc.stdout.on('data', (d) => {
+    buf = buf.length ? Buffer.concat([buf, d]) : d;
+    for (let len; buf.length && (len = imageLength(buf, png)); buf = buf.subarray(len)) {
+      const w = waiting.shift();
+      if (w) w.resolve(Buffer.from(buf.subarray(0, len)));
+    }
+  });
+  const done = new Promise((resolve) => {
+    proc.on('close', (code) => {
+      if (code !== 0 || waiting.length) fail(new Error(`ffmpeg (motion blur) failed (${code}): ${err.trim().split('\n').slice(-3).join(' ') || 'missing frames'}`));
+      resolve();
+    });
+    proc.on('error', (e) => { fail(e); resolve(); });
+  });
+  proc.stdin.on('error', () => {});
+  return {
+    push(images) {
+      if (images.length !== n) throw new Error(`Internal: blender for ${n} samples got ${images.length}`);
+      if (failed) return Promise.reject(failed);
+      const p = new Promise((resolve, reject) => waiting.push({ resolve, reject }));
+      for (const b of images) {
+        if (!png) proc.stdin.write(`--gmframe\r\nContent-Type: image/jpeg\r\nContent-Length: ${b.length}\r\n\r\n`);
+        proc.stdin.write(b);
+        if (!png) proc.stdin.write('\r\n');
+      }
+      return p;
+    },
+    async end() { proc.stdin.end(); await done; if (failed) throw failed; },
+    kill() { try { proc.kill('SIGKILL'); } catch {} },
+  };
+}
+
 export function run(args, { quiet = true } = {}) {
   return new Promise((resolve, reject) => {
     const p = spawn(ffmpegPath(), ['-hide_banner', '-loglevel', quiet ? 'error' : 'info', '-y', ...args], { stdio: ['ignore', 'ignore', 'pipe'] });

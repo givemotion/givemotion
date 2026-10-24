@@ -62,8 +62,9 @@ Render options
   --workers <n>          Parallel browsers (default: based on CPU and memory)
   --transparent          Keep transparency (use --format mov or webm)
   --muted                No audio track
-  --motion-blur <n>      Real motion blur with n sub-frames (e.g. 8)
-  --shutter <0-1>        Motion blur shutter (default 0.5)
+  --motion-blur <mode>   auto (default): extra sub-frames only where something moves fast; off; or a number of
+                         sub-frames for every frame (e.g. 8). data-motion="classic" pages default to off.
+  --shutter <0-1>        Motion blur shutter (default 0.5 = 180°)
   --data <file.json>     Data for data-bind / gm.data
   --props '<json>'       Same, inline
   --seed <n>             Seed for Math.random (default 1)
@@ -180,7 +181,7 @@ async function cmdRender(args) {
     const summary = await render(inputOf(args), {
       ...commonOpts(args), output: out, format: args.format, quality: args.quality, crf: args.crf != null ? +args.crf : undefined, codec: args.codec,
       hardware: args.hardware, workers: args.workers ? +args.workers : undefined, frames: args.frames, transparent: args.transparent, muted: args.muted,
-      motionBlur: args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json,
+      motionBlur: args.noMotionBlur ? 'off' : args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json,
       noReuse: args.reuse === false, lossless: args.lossless, redo: args.redo, cache: args.cache,
     });
     if (args.json) console.log(JSON.stringify(summary, null, 2));

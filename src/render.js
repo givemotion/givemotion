@@ -6,7 +6,7 @@ import { join, resolve, dirname, basename, extname, relative, isAbsolute } from 
 import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage, CACHE_DIR } from './browser.js';
 import { startServer } from './server.js';
-import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
+import { requireFfmpeg, encoderPlan, openSegmentWriter, openBlender, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
 import { pagePrints } from './parts.js';
 
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
@@ -28,6 +28,42 @@ function parseRange(range, fps, totalFrames) {
   const a = m[2] ? Math.round(parseFloat(m[1]) * fps) : parseInt(m[1], 10);
   const b = m[3] === '' ? totalFrames : (m[4] ? Math.round(parseFloat(m[3]) * fps) : parseInt(m[3], 10));
   return [Math.max(0, a), Math.min(totalFrames, Math.max(a + 1, b))];
+}
+
+/**
+ * Auto motion blur settings. Speeds are in px per frame on a 1080 px screen (scaled to the composition's short side).
+ * Below `min` a frame is captured once, as without blur. Above it the blur is the distance covered while the shutter is
+ * open (speed x shutter, 0.5 = 180°), sampled every `gap` px or closer (so it reads as a smear, not copies), with at
+ * most `maxN` samples; past that the shutter closes a little so samples stay within `maxGap` px of each other.
+ * Changing any value redoes every cached part (it is in the parts fingerprint).
+ */
+export const AUTO_BLUR = { v: 1, min: 16, gap: 6, maxN: 4, maxGap: 6, counts: [2, 3, 4] };
+
+/** Samples and shutter for one frame moving `speed` px/frame (1080 px scale), or null for a single capture. */
+export function autoBlurPlan(speed, shutter = 0.5) {
+  const A = AUTO_BLUR;
+  if (!(speed >= A.min) || !(shutter > 0)) return null;
+  let s = Math.min(1, shutter);
+  if (speed * s > A.maxN * A.maxGap) s = (A.maxN * A.maxGap) / speed;
+  const want = Math.ceil((speed * s) / A.gap);
+  return { n: A.counts.find((c) => c >= want) || A.maxN, shutter: s };
+}
+
+/**
+ * --motion-blur: unset = auto in natural motion, off in classic motion (data-motion="classic"); "auto"; "off" (also
+ * 0, false, none); a number = that many samples on every frame. Transparent renders get no auto blur (averaging
+ * straight-alpha images darkens edges); a number still forces it.
+ */
+export function resolveMotionBlur(value, { motion = 'natural', transparent = false } = {}) {
+  const v = value == null || value === true ? '' : String(value).trim().toLowerCase();
+  if (v === 'off' || v === 'false' || v === 'none' || v === 'no' || v === '0') return { mode: 'off', samples: 1 };
+  if (v === '' || v === 'auto' || v === 'on') {
+    if (v === '' && motion === 'classic') return { mode: 'off', samples: 1 };
+    return transparent ? { mode: 'off', samples: 1, why: 'transparent' } : { mode: 'auto', samples: 1 };
+  }
+  const n = parseInt(v, 10);
+  if (!(n >= 1)) throw new Error(`Bad --motion-blur "${value}". Use auto, off, or a number of samples per frame (2-32).`);
+  return n === 1 ? { mode: 'off', samples: 1 } : { mode: 'fixed', samples: Math.min(32, n) };
 }
 
 /** Resolve the HTML file and the folder that will be served. */
@@ -160,7 +196,6 @@ export async function render(input, opts = {}) {
   let hardware = format === 'png' ? false : wantsHardware({ hardware: opts.hardware, format, transparent, quality: opts.quality, codec: opts.codec, info });
   if (hardware === 'auto') hardware = encoderIsReproducible(encoderPlan({ format, quality: opts.quality, crf: opts.crf, codec: opts.codec, transparent, info, hardware: true }), info, { cacheFile: join(CACHE_DIR, 'hardware-encoders.json'), tmp: opts.tmpdir });
   const plan = format === 'png' ? null : encoderPlan({ format, quality: opts.quality, crf: opts.crf, codec: opts.codec, transparent, info, hardware });
-  const blurSamples = opts.motionBlur ? Math.max(2, Math.min(32, parseInt(opts.motionBlur, 10) || 8)) : 1;
   const shutter = opts.shutter ?? 0.5;
 
   if (AUDIO_FORMATS[extname(out).toLowerCase()] && !opts.format) return renderAudioOnly(input, out, AUDIO_FORMATS[extname(out).toLowerCase()], opts, log, t0);
@@ -178,6 +213,11 @@ export async function render(input, opts = {}) {
       throw e;
     }
     const fps = comp.fps;
+    // motion blur: off, a fixed number of samples for every frame, or auto (the default in natural motion)
+    const motion = await ctx.page.evaluate('gm.motion').catch(() => 'natural');
+    const blur = resolveMotionBlur(opts.motionBlur, { motion, transparent });
+    const blurSamples = blur.mode === 'fixed' ? blur.samples : 1;
+    const blurStats = { blurred: 0, samples: 0, probeMs: 0, ref: Math.min(comp.width, comp.height) / 1080 };
     const totalFrames = Math.max(1, Math.round(comp.duration * fps));
     const [f0, f1] = parseRange(opts.frames, fps, totalFrames);
     const nFrames = f1 - f0;
@@ -194,7 +234,7 @@ export async function render(input, opts = {}) {
     if (useParts) {
       const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
       const dir = keepParts ? join(dirname(out), '.gm-parts', basename(out)) : join(tmp, 'parts');
-      const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
+      const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, blur: blur.mode === 'auto' ? AUTO_BLUR : null, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
       const old = keepParts ? readJson(join(dir, 'parts.json')) : null;
       const redo = opts.redo ? parseRange(opts.redo, fps, totalFrames) : null;
@@ -229,7 +269,7 @@ export async function render(input, opts = {}) {
     const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : blur.mode === 'auto' ? ', motion blur auto' : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
@@ -246,6 +286,8 @@ export async function render(input, opts = {}) {
 
     let done = 0, reused = 0;
     let lastLog = 0;
+    const setDurations = Object.keys(media.durations).length ? `(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()` : null;
+    const reopen = async (page) => { await page.open(ctx.url, ctx.config); if (setDurations) await page.evaluate(setDurations); };
     const progress = () => {
       const now = Date.now();
       if (now - lastLog < 1000 && done < todoFrames) return;
@@ -265,17 +307,37 @@ export async function render(input, opts = {}) {
       const prof = { seek: 0, cap: 0, write: 0, end: 0 };
       // a finished part's encoder keeps working while the next part is captured (the encoder pipeline stays full)
       const ending = [], open = [];
-      try {
-      for (const { a, b, file } of group) {
-        const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
-        const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
+      const framePath = (f) => (out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`));
+      // Auto motion blur for frames a..b-1: first ask the page how fast things move at each frame (seeks and box reads,
+      // no captures), then capture each frame once, or 2-8 times across the shutter when something moves fast, and
+      // average those samples (openBlender). Frames reach the writer in order. The decision and the sample times depend
+      // only on the time, and every range starts the same way (probe, then warm up on frame a-1), so any split between
+      // workers and any re-rendered part gives the same bytes.
+      const captureAuto = async (a, b, writer) => {
+        let q0 = Date.now();
+        const times = [];
+        for (let f = a - 1; f <= b; f++) times.push(Math.max(0, f / fps));
+        const moved = await page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(times)}, ${shutter})`);
+        // pages driven by requestAnimationFrame or timers cannot seek back: start them again
+        if (await page.evaluate('gm.__stateful()')) await reopen(page);
+        blurStats.probeMs += Date.now() - q0;
+        last = null;
+        if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); }
+        const blenders = new Map();
+        let chain = Promise.resolve();
+        const put = (f, img) => {
+          chain = chain.then(() => img).then((buf) => (writer ? writer.write(buf) : writeFileSync(framePath(f), buf)));
+          chain.catch(() => {});
+        };
         try {
-          // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
-          if (a !== prevFrame + 1) { last = null; if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); } }
           for (let f = a; f < b; f++) {
-            for (let s = 0; s < blurSamples; s++) {
-              const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
-              let q0 = Date.now();
+            const speed = Math.max(moved[f - a], moved[f - a + 1]) / blurStats.ref;
+            const pl = autoBlurPlan(speed, shutter);
+            const n = pl ? pl.n : 1;
+            const bufs = [];
+            for (let s = 0; s < n; s++) {
+              const t = n > 1 ? (f + ((s + 0.5) / n - 0.5) * pl.shutter) / fps : f / fps;
+              q0 = Date.now();
               const r = await page.seek(Math.max(0, t));
               prof.seek += Date.now() - q0; q0 = Date.now();
               if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
@@ -283,13 +345,58 @@ export async function render(input, opts = {}) {
               if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
               else { buf = last; if (s === 0) reused++; }
               last = buf;
-              prof.cap += Date.now() - q0; q0 = Date.now();
-              if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
-              else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
+              bufs.push(buf);
+              prof.cap += Date.now() - q0;
             }
-            prevFrame = f;
+            if (n > 1 && bufs.some((x) => x !== bufs[0])) {
+              let bl = blenders.get(n);
+              if (!bl) blenders.set(n, (bl = openBlender({ n, png: captureFormat === 'png', jpegQuality: jpegQ })));
+              put(f, bl.push(bufs));
+              blurStats.blurred++;
+              blurStats.samples += n;
+            } else put(f, bufs[0]);
             done++;
             progress();
+          }
+          q0 = Date.now();
+          await Promise.all([...blenders.values()].map((bl) => bl.end()));
+          await chain;
+          prof.write += Date.now() - q0;
+        } catch (e) {
+          for (const bl of blenders.values()) bl.kill();
+          throw e;
+        }
+      };
+      try {
+      for (const { a, b, file } of group) {
+        const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
+        const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
+        try {
+          if (blur.mode === 'auto') {
+            await captureAuto(a, b, writer);
+            prevFrame = b - 1;
+          } else {
+            // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
+            if (a !== prevFrame + 1) { last = null; if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); } }
+            for (let f = a; f < b; f++) {
+              for (let s = 0; s < blurSamples; s++) {
+                const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
+                let q0 = Date.now();
+                const r = await page.seek(Math.max(0, t));
+                prof.seek += Date.now() - q0; q0 = Date.now();
+                if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
+                let buf;
+                if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
+                else { buf = last; if (s === 0) reused++; }
+                last = buf;
+                prof.cap += Date.now() - q0; q0 = Date.now();
+                if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
+                else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
+              }
+              prevFrame = f;
+              done++;
+              progress();
+            }
           }
           if (writer) { open.push(writer); ending.push(writer.end().then(() => { renameSync(tmpFile, file); open.splice(open.indexOf(writer), 1); })); }
           // do not let more than two parts queue up behind the encoder
@@ -328,11 +435,16 @@ export async function render(input, opts = {}) {
     const summary = {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
       seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode, encoder: plan ? plan.vargs[plan.vargs.indexOf('-c:v') + 1] : 'png',
+      motionBlur: blur.mode === 'auto' ? { mode: 'auto', frames: todoFrames, blurred: blurStats.blurred, samples: blurStats.samples, extraCaptures: blurStats.samples - blurStats.blurred, probeMs: blurStats.probeMs } : { mode: blur.mode, samples: blurSamples },
       parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
       bytes: format === 'png' ? null : statSync(out).size,
       warnings: comp.issues.filter((i) => i.severity !== 'error'),
       pageErrors: dedupe(pageErrors),
     };
+    if (!opts.quiet && blur.mode === 'auto' && todoFrames) {
+      const pc = (x) => Math.round((x / todoFrames) * 100);
+      log(`  motion blur: ${blurStats.blurred} of ${todoFrames} frames (${pc(blurStats.blurred)}%) moved fast and got ${AUTO_BLUR.counts[0]}-${AUTO_BLUR.maxN} samples: +${blurStats.samples - blurStats.blurred} captures (+${pc(blurStats.samples - blurStats.blurred)}%), motion check ${(blurStats.probeMs / 1000).toFixed(1)}s (--motion-blur off to skip)`);
+    }
     if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s (${summary.renderFps} fps, ${reused} static frames reused) → ${relativeOut(out)}`);
     return summary;
   } finally {
@@ -340,6 +452,98 @@ export async function render(input, opts = {}) {
     await ctx.server.close();
     for (const c of cleanup) { try { c(); } catch {} }
   }
+}
+
+/**
+ * Runs inside the page (it is turned into a string). Seeks to each time in `times` (seconds, increasing) and returns, for
+ * every time after the first, how far anything visible moved on screen since the time before, in CSS px: the largest
+ * displacement of a point of an element's box that is inside the viewport, under the move+scale that takes the box from
+ * one time to the next (so a camera pan, a zoom, a card sliding in or out all count; an element growing off screen does
+ * not). Not motion: elements at opacity 0 or visibility hidden, and boxes that only moved because text or children
+ * changed in that step (typing, counters, a caret: their layout box moved, not a transform). A seek the runtime reports
+ * as not dirty changed nothing and costs no layout read. Every value is a function of the two times only.
+ */
+export async function motionProbe(times, shutter = 0.5) {
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE', 'NOSCRIPT', 'BR', 'HEAD']);
+  const W = innerWidth, H = innerHeight;
+  const all = document.getElementsByTagName('*');
+  // the layout box (no transforms) of the nearest HTML element, in page coordinates
+  const layoutOf = (el, memo) => {
+    let h = el;
+    while (h && !('offsetLeft' in h)) h = h.parentElement;
+    if (!h) return null;
+    let v = memo.get(h);
+    if (v) return v;
+    const p = h.offsetParent, pv = p ? layoutOf(p, memo) : null;
+    v = [h.offsetLeft + (pv ? pv[0] : 0), h.offsetTop + (pv ? pv[1] : 0), h.offsetWidth, h.offsetHeight];
+    memo.set(h, v);
+    return v;
+  };
+  const snap = () => {
+    const rects = new Map(), lay = new Map(), memo = new Map();
+    for (let i = 0; i < all.length; i++) {
+      const el = all[i];
+      if (SKIP.has(el.tagName) || el === document.documentElement || el === document.body) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) { rects.set(el, r); lay.set(el, layoutOf(el, memo)); }
+    }
+    return { rects, lay };
+  };
+  // largest |x' - x| over the visible part of a 1-D interval mapped from [a0,a1] (before) to [b0,b1] (after)
+  const along = (a0, a1, b0, b1, size) => {
+    const s = (b1 - b0) / (a1 - a0);
+    let best = 0;
+    const lo = Math.max(a0, 0), hi = Math.min(a1, size);
+    if (hi >= lo) for (const x of [lo, hi]) best = Math.max(best, Math.abs(b0 + (x - a0) * s - x));
+    const lo2 = Math.max(b0, 0), hi2 = Math.min(b1, size);
+    if (hi2 >= lo2) for (const x of [lo2, hi2]) best = Math.max(best, Math.abs(x - (a0 + (x - b0) / s)));
+    return best;
+  };
+  const seen = (r) => r.right > 0 && r.bottom > 0 && r.left < W && r.top < H;
+  const same = (p, q) => p === q || (!!p && !!q && p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3]);
+  const compare = (prev, cur, reflow) => {
+    const moved = [];
+    for (const [el, b] of cur.rects) {
+      const a = prev.rects.get(el);
+      if (!a || (a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height)) continue;
+      if (!seen(a) && !seen(b)) continue;
+      if (reflow && !same(prev.lay.get(el), cur.lay.get(el))) continue;
+      const d = Math.hypot(along(a.left, a.right, b.left, b.right, W), along(a.top, a.bottom, b.top, b.bottom, H));
+      if (d > 0.5) moved.push([d, el]);
+    }
+    moved.sort((x, y) => y[0] - x[0]);
+    for (const [d, el] of moved) if (shows(el, d)) return Math.round(d * 100) / 100;
+    return 0;
+  };
+  // does motion of d px on this element show? Not when it is (nearly) transparent or already as soft as the blur would
+  // make it (a CSS blur on it or around it)
+  const shows = (el, d) => {
+    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+    let alpha = 1, soft = 0;
+    for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      alpha *= parseFloat(cs.opacity);
+      if (cs.filter && cs.filter !== 'none') for (const m of cs.filter.matchAll(/blur\(([\d.]+)px\)/g)) soft += parseFloat(m[1]);
+    }
+    return alpha >= 0.2 && soft < (d * shutter) / 4;
+  };
+  const mo = new MutationObserver(() => {});
+  mo.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  const out = [];
+  let prev = null;
+  try {
+    for (let k = 0; k < times.length; k++) {
+      let r = gm.seek(times[k]);
+      if (r && r.then) r = await r;
+      const reflow = mo.takeRecords().length > 0;
+      if (k === 0) { prev = snap(); continue; }
+      if (!r || !r.dirty) { out.push(0); continue; }
+      const cur = snap();
+      out.push(compare(prev, cur, reflow));
+      prev = cur;
+    }
+  } finally { mo.disconnect(); }
+  return out;
 }
 
 const hashOf = (s) => createHash('sha1').update(s).digest('hex').slice(0, 20);

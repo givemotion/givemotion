@@ -246,7 +246,7 @@ const PAGE_ANALYZE = String.raw`((dt) => {
   for (const i of out) {
     try { const e = i.selector && document.querySelector(i.selector); const sc = e && (e.closest('.scene') || e.closest('[data-start],[data-duration]')); if (sc) { i.scene = sel(sc); i.sceneStart = mw.timing(sc).start; } } catch (er) {}
   }
-  return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length };
+  return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
 })`;
 
 const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__mw_hide'); if (!s) { s = document.createElement('style'); s.id='__mw_hide'; document.head.appendChild(s); }
@@ -356,12 +356,25 @@ export async function check(input, opts = {}) {
     const contrastEvery = opts.at != null ? 0 : Math.max((to - from) / (opts.contrastSamples || 10), 0.4);
     let lastContrast = -Infinity, prevT = null;
     const perSample = [];
+    // Pacing: a tiny grey picture of the frame every half second finds long stretches where nothing moves.
+    const GW = 192, GH = 108;
+    const pace = opts.at == null && opts.pacing !== false;
+    if (pace) await ctx.page.evaluate(`window.__mwGrid = async (src) => { const im = new Image(); im.src = src; await im.decode(); const c = document.createElement('canvas'); c.width = ${GW}; c.height = ${GH}; const g = c.getContext('2d'); g.drawImage(im, 0, 0, ${GW}, ${GH}); const d = g.getImageData(0, 0, ${GW}, ${GH}).data; const o = new Array(${GW * GH}); for (let i = 0, j = 0; i < d.length; i += 4, j++) o[j] = (54 * d[i] + 183 * d[i + 1] + 19 * d[i + 2]) >> 8; return o; }`);
+    let lastGrid = null, lastGridT = -Infinity, busy = false;
+    const change = []; // [t, fraction of the picture that changed since the previous grid]
     for (const t of times) {
       await ctx.page.seek(t);
       const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT})`);
       prevT = t;
       if (opts.at != null && Math.abs(t - +opts.at) > 0.5 / fps) continue; // warm-up samples only feed motion detection
       perSample.push({ t, issues: a.issues });
+      busy = busy || !!a.busy; // an entrance, exit or moving text since the last grid
+      if (pace && t - lastGridT >= 0.49) {
+        const jpg = await ctx.page.capture('jpeg', 60);
+        const g = await ctx.page.evaluate(`window.__mwGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
+        if (lastGrid) { let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - lastGrid[i]) > 6) n++; change.push([t, n / g.length, busy]); }
+        lastGrid = g; lastGridT = t; busy = false;
+      }
       if (a.boxes && t - lastContrast >= contrastEvery) {
         lastContrast = t;
         await ctx.page.evaluate(PAGE_HIDE_TEXT);
@@ -379,6 +392,7 @@ export async function check(input, opts = {}) {
       push(list.filter((i) => opts.at != null || nb.has(key(i)) || i.code === 'image-broken'), t);
     }
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
+    if (change.length) issues.push(...stillStretches(change, info, from, to));
     let merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
     // Some problems only matter if they last (a label sliding past the frame edge during a pan is fine).
     if (opts.at == null) merged = merged.filter((i) => {
@@ -396,6 +410,31 @@ export async function check(input, opts = {}) {
     await ctx.page.close();
     await ctx.server.close();
   }
+}
+
+/** Long stretches where (almost) nothing on screen changes: viewers read these as the video stalling. */
+function stillStretches(change, info, from, to) {
+  const out = [];
+  const QUIET = 0.05; // under 5% of the picture changed in half a second, and nothing entering, leaving or moving
+  let start = null, prevT = from;
+  const flush = (end, atEnd) => {
+    if (start == null) return;
+    const len = end - start;
+    if (len >= 2.5 - 1e-6) {
+      const r = (x) => Math.round(x * 100) / 100;
+      out.push({ severity: 'warning', code: 'still', time: r(start), until: r(end), ranges: [[r(start), r(end)]],
+        message: 'Little changes on screen from ' + start.toFixed(1) + ' s to ' + end.toFixed(1) + ' s (' + len.toFixed(1) + ' s' + (atEnd ? ', at the end' : '') + '). Viewers read this as the video stalling.',
+        fix: atEnd ? 'End sooner (shorter last scene), or keep a little life in the end card: a slow camera push, a shine, a looping accent.' : 'Cut this hold shorter, or start the next beat earlier: a camera move, the next element entering, a counter or a highlight.' });
+    }
+    start = null;
+  };
+  for (const [t, f, busy] of change) {
+    if (f < QUIET && !busy) { if (start == null) start = prevT; }
+    else flush(prevT, false);
+    prevT = t;
+  }
+  flush(Math.min(to + 1 / info.fps, info.duration), to >= info.duration - 2 / info.fps);
+  return out;
 }
 
 function pickSpread(arr, n) {

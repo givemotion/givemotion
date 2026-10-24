@@ -233,6 +233,7 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `text-clipped` | Text cut by an `overflow:hidden` box. Make it fit or let it wrap. |
 | `text-overflows-box` | Text spills out of its card/background. Add padding/width or shorten. |
 | `text-overlap` | Two texts on top of each other while settled. Move one or change timing. |
+| `still` | Little changes on screen for 2.5 s or more: nothing enters, leaves or moves, and a slow float or a faint glow does not count. Viewers read it as the video stalling. Cut the hold, start the next beat sooner, or end earlier. |
 | `tiny-text` | Hard to read in a video. Use ≥ 24px at 1080p. |
 | `low-contrast` | Text blends into what is behind it. Targets: 4.5:1 normal text, 3:1 large text (≥ 32px, or bold ≥ 24px), 1.6:1 for text with a `text-shadow` or outline. ✖ below two thirds of the target. Fix the color, or add a backing or shadow. |
 | `image-broken`, `http-404`, `video-frame` | A file path is wrong (paths are relative to the HTML file). |

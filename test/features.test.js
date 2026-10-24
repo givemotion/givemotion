@@ -685,3 +685,42 @@ test('natural motion: staggers vary a little (seeded, first and last on time); r
   assert.ok(fa.length >= 55);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
 });
+
+// A world on a grid with cards: moved by back-to-back camera shots (robotic) or by one long eased move (smooth).
+const motionWorld = `<div id="stage" data-duration="4" style="position:absolute;inset:0;overflow:hidden"><div id="world" style="position:absolute;left:0;top:0;width:1800px;height:1000px;transform-origin:0 0;background-image:linear-gradient(#2a3550 2px,transparent 2px),linear-gradient(90deg,#2a3550 2px,transparent 2px);background-size:40px 40px">
+  ${[[80, 80, 'Plan'], [700, 120, 'Build'], [1300, 500, 'Ship'], [400, 700, 'Learn']].map(([x, y, t], i) => `<div id="c${i + 1}" style="position:absolute;left:${x}px;top:${y}px;width:200px;height:120px;border-radius:12px;background:#f4f1ea;color:#111;font:700 30px sans-serif;display:flex;align-items:center;justify-content:center">${t}</div>`).join('')}</div></div>`;
+
+test('analyze --motion: camera stops and strobing in a robotic render, a smooth one scores higher; deterministic; strips of the busiest moments', { skip }, async () => {
+  const { analyzeMotion, motionStrips } = await import('../src/analyze.js');
+  const d = tmp(), fr = join(d, 'robotic.html'), fs = join(d, 'smooth.html');
+  writeFileSync(fr, page(`${motionWorld}<script>gm.camera('#world').shot(0, { fit: '#c1', padding: 100, duration: 0 }).shot(0.4, { fit: '#c2', padding: 100, duration: 0.8 }).shot(1.2, { fit: '#c3', padding: 100, duration: 0.8 }).shot(2, { fit: '#c4', padding: 100, duration: 0.8 }).shot(2.8, { fit: '#c1', padding: 100, duration: 0.8 });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4" data-motion="classic"'));
+  writeFileSync(fs, page(`${motionWorld}<script>gm.timeline('#stage').fromTo('#world', { x: 0, y: 0 }, { x: -1100, y: -600, duration: 3.8, ease: 'in-out-sine' }, 0.1);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"'));
+  const vr = join(d, 'robotic.mp4'), vs = join(d, 'smooth.mp4');
+  await render(fr, { output: vr, ...quiet });
+  await render(fs, { output: vs, motionBlur: 4, ...quiet });
+  const r = await analyzeMotion(vr, { keepEnergy: true }), s = await analyzeMotion(vs);
+  assert.ok(r.camera.stops >= 2, `camera stops between shots: ${JSON.stringify(r.camera)}`);
+  assert.equal(s.camera.stops, 0, 'one long move does not stop');
+  assert.ok(r.blur.fastFrames >= 10 && r.blur.blurredShare <= 0.2, `fast frames strobe: ${JSON.stringify(r.blur)}`);
+  assert.ok(s.naturalness - r.naturalness >= 3, `smooth ${s.naturalness} vs robotic ${r.naturalness}`);
+  const again = await analyzeMotion(vr);
+  assert.deepEqual({ ...again, seconds: 0 }, { ...r, seconds: 0 }, 'the same video gives the same report');
+  const strips = await motionStrips(vr, { output: join(d, 'strips'), energy: r.energy, fps: r.fps, count: 3 });
+  assert.equal(strips.length, 3);
+  for (const st of strips) assert.ok(readFileSync(st.file).subarray(1, 4).toString() === 'PNG' && st.end - st.start <= 1.01);
+  for (let i = 1; i < strips.length; i++) assert.ok(strips[i].start >= strips[i - 1].end - 1e-6, 'windows do not overlap');
+});
+
+test('check: robotic motion warnings (camera-stop, fast-no-blur, straight-move, same-ease) in classic motion, none for smooth motion', { skip }, async () => {
+  const d = tmp(), fr = join(d, 'robotic.html'), fs = join(d, 'smooth.html');
+  const dots = [1, 2, 3, 4, 5].map((i) => `<i id="d${i}" style="position:absolute;left:30px;top:${30 + i * 40}px;width:60px;height:30px;background:#ff5a36"></i>`).join('');
+  writeFileSync(fr, page(`${motionWorld}${dots}<script>gm.camera('#world').shot(0, { fit: '#c1', padding: 100, duration: 0 }).shot(0.4, { fit: '#c2', padding: 100, duration: 0.8, ease: 'power2.out' }).shot(1.2, { fit: '#c3', padding: 100, duration: 0.8, ease: 'power2.out' }).shot(2, { fit: '#c4', padding: 100, duration: 0.8, ease: 'power2.out' });
+    const tl = gm.timeline('#stage');
+    ${[1, 2, 3, 4, 5].map((i) => `tl.to('#d${i}', { x: 300, y: 150, duration: 0.8, ease: 'power2.out' }, ${0.2 * i}); tl.to('#d${i}', { x: 0, y: 0, duration: 0.5, ease: 'power2.out' }, ${2 + 0.2 * i});`).join('\n')}</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4" data-motion="classic"'));
+  writeFileSync(fs, page(`${motionWorld}<script>gm.timeline('#stage').fromTo('#world', { x: 0, y: 0 }, { x: -600, y: -300, duration: 3.8, ease: 'in-out-sine' }, 0.1);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"'));
+  const codes = async (f) => [...new Set((await check(f)).issues.map((i) => i.code))];
+  const rc = await codes(fr);
+  for (const c of ['camera-stop', 'fast-no-blur', 'straight-move', 'same-ease']) assert.ok(rc.includes(c), `${c} in ${rc.join(', ')}`);
+  const sc = await codes(fs);
+  for (const c of ['camera-stop', 'fast-no-blur', 'straight-move', 'same-ease']) assert.ok(!sc.includes(c), `no ${c} for smooth motion (${sc.join(', ')})`);
+});

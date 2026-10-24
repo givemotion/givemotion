@@ -281,7 +281,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     if (op <= 0.3) continue;
     const ctm = sh.getScreenCTM && sh.getScreenCTM();
     if (!ctm || parseFloat(cs.strokeWidth) * Math.hypot(ctm.a, ctm.b) < 1.5 * PX) continue;
-    strokes.push({ sh, b, inv: ctm.inverse() });
+    // (an SVGPoint, not a DOMPoint: Chrome before ~136, e.g. the headless shell 132, throws on a DOMPoint here)
+    const svg = sh.ownerSVGElement;
+    strokes.push({ sh, b, inv: ctm.inverse(), pt: svg && svg.createSVGPoint ? svg.createSVGPoint() : null });
   }
   // Is the stroke covered at this point by something opaque drawn above it (a panel, a filled shape)?
   // (hit testing skips pointer-events:none, so a stroke that is not found counts as visible)
@@ -313,7 +315,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       const ny = Math.min(8, Math.max(3, Math.ceil((tu.bottom - tu.top) / (4 * PX))));
       for (let iy = 0; iy < ny && !hit; iy++) for (let ix = 0; ix < 7 && !hit; ix++) {
         const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 7, y = tu.top + (tu.bottom - tu.top) * (iy + 0.5) / ny;
-        const pt = new DOMPoint(x, y).matrixTransform(st.inv);
+        const p = new DOMPoint(x, y).matrixTransform(st.inv);
+        let pt = p;
+        if (st.pt) { st.pt.x = p.x; st.pt.y = p.y; pt = st.pt; }
         try { if (st.sh.isPointInStroke(pt) && !coveredAt(x, y, st.sh)) hit = st.sh; } catch (e) {}
       }
       if (hit) break;
@@ -395,7 +399,211 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   return { issues: out, textCount: texts.length, maxFont: maxFont / PX, boxes: window.__gmTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
 })`;
 
-const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__gm_hide'); if (!s) { s = document.createElement('style'); s.id='__gm_hide'; document.head.appendChild(s); }
+// ---------------------------------------------------------------------------
+// Robotic motion (page side): where the things that move are, per sample, and which easing curves the page uses
+// ---------------------------------------------------------------------------
+// Per sample: [id, screen cx, cy, local cx, cy (in the parent's own px), parent scale, w, h, own scale, flags]
+// flags: 1 camera world, 2 inside a camera world, 4 moves along a path (offset-path)
+const PAGE_MOTION = String.raw`(() => {
+  const W = gm.width, H = gm.height, out = [], names = {};
+  let id = window.__gmMoId || 0;
+  const cands = new Set(document.querySelectorAll('[data-gm-camera-world]'));
+  for (const a of document.getAnimations()) { const t = a.effect && a.effect.target; if (t && t.nodeType === 1) cands.add(t); }
+  for (const el of document.body.querySelectorAll('[style]')) { const st = el.style; if (st.transform || st.translate || st.offsetDistance || st.left || st.top) cands.add(el); }
+  for (const el of cands) {
+    if (!el.isConnected || el === document.body || el === document.documentElement || el.closest('[data-check~="ignore"],[aria-hidden="true"],[data-gm-internal],[data-gm-hidden]')) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width * r.height < 0.004 * W * H || r.right <= 0 || r.bottom <= 0 || r.left >= W || r.top >= H) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility !== 'visible' || parseFloat(cs.opacity) < 0.3) continue;
+    const p = el.offsetParent || el.parentElement, pr = p ? p.getBoundingClientRect() : { left: 0, top: 0, width: W };
+    const pw = p && (p.offsetWidth || (p.getBBox && p.ownerSVGElement && p.getBBox().width) || 0), pk = pw ? pr.width / pw || 1 : 1;
+    const ow = el.offsetWidth || r.width, cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    const world = el.hasAttribute('data-gm-camera-world');
+    // blurred already (a whip transition, a blur filter on the move)
+    let blurred = 0;
+    for (let a = el; a && a !== document.body && !blurred; a = a.parentElement) { const m = /blur\(([\d.]+)px\)/.exec(getComputedStyle(a).filter); if (m && parseFloat(m[1]) >= 2) blurred = 8; }
+    if (!el.__gmMoId) { el.__gmMoId = ++id; names[id] = gm.__selector(el); }
+    // (and, for a camera world, the middle of the view in its parent's own px)
+    out.push([el.__gmMoId, cx, cy, (cx - pr.left) / pk, (cy - pr.top) / pk, pk, r.width, r.height, r.width / (ow || 1), (world ? 1 : 0) | (!world && el.closest('[data-gm-camera-world]') ? 2 : 0) | (cs.offsetPath && cs.offsetPath !== 'none' ? 4 : 0) | blurred, (W / 2 - pr.left) / pk, (H / 2 - pr.top) / pk]);
+  }
+  window.__gmMoId = id;
+  return { els: out, names };
+})()`;
+
+// Once: is motion blur off (classic motion, or turned off), and which easing curve each tween and entrance uses.
+// Script tweens are read from the page's own scripts (blocks are not the author's choice and are left out).
+const PAGE_EASES = String.raw`(async () => {
+  const I = gm.__internal, html = document.documentElement, classic = gm.motion === 'classic';
+  const off = (v) => v != null && /^(off|0|none|false|no)$/i.test(String(v).trim());
+  const blurOff = classic || off(html.getAttribute('data-motion-blur')) || off(I.CONFIG && I.CONFIG.motionBlur);
+  const blurExplicitOff = !classic && blurOff;
+  const canon = (name) => { try { return I.cssEasing(name); } catch (e) { return String(name); } };
+  const list = []; // { ease: canonical or 'natural', name }
+  const add = (name, natural) => list.push(natural ? { ease: 'natural', name: 'default' } : { ease: canon(name), name: String(name) });
+  // 1. entrances and exits (data-enter="name [duration] [delay] [easing]")
+  for (const el of document.querySelectorAll('[data-enter],[data-exit]')) {
+    if (el.closest('[data-gm-include],[data-check~="ignore"]')) continue;
+    for (const attr of ['data-enter', 'data-exit']) {
+      const v = el.getAttribute(attr);
+      if (!v || /^\s*(none)?\s*$/.test(v)) continue;
+      const toks = v.trim().split(/\s+/).slice(1), e = toks.find((t) => I.isEasingName(t));
+      if (e) { add(e); continue; }
+      if (!classic) { add(null, true); continue; }
+      // classic default: the curve the entrance animation really has
+      let got = null;
+      for (const x of [el, ...el.querySelectorAll('*')]) { for (const a of x.getAnimations()) { const tm = a.effect && a.effect.getTiming(); if (tm && tm.easing && tm.easing !== 'linear' && isFinite(tm.duration) && tm.duration < 5000) { got = tm.easing; break; } } if (got) break; }
+      if (got) list.push({ ease: got, name: v.trim().split(/\s+/)[0] + ' (preset default)' });
+    }
+  }
+  // 2. CSS animations written in the page (not endless loops)
+  for (const a of document.getAnimations()) {
+    if (!(typeof CSSAnimation !== 'undefined' && a instanceof CSSAnimation)) continue;
+    const t = a.effect && a.effect.target, tm = a.effect.getTiming();
+    if (!t || t.closest('[data-gm-include]') || !isFinite(tm.iterations) || tm.iterations > 3 || !(tm.duration <= 3000)) continue;
+    const kf = a.effect.getKeyframes(), e = tm.easing !== 'linear' ? tm.easing : (kf[0] && kf[0].easing) || 'ease';
+    if (e === 'ease' && !classic) continue; // the CSS default, not a choice
+    list.push({ ease: canon(e), name: e });
+  }
+  // 3. tweens in the page's scripts: .to( .from( .fromTo( .fly( .shot( with their ease (or the timeline's defaults)
+  const srcs = [];
+  for (const s of document.querySelectorAll('script')) {
+    if (s.closest('[data-gm-include]') || (s.type && !/javascript|module|babel|jsx/i.test(s.type))) continue;
+    const src = s.getAttribute('src');
+    if (!src) srcs.push(s.textContent || '');
+    else if (!/^\/?__gm\//.test(src) && !/^(https?:)?\/\//.test(src)) { try { srcs.push(await (await fetch(src)).text()); } catch (e) {} }
+  }
+  for (let code of srcs) {
+    code = code.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:'"\x60])\/\/[^\n]*/g, '$1');
+    const dm = /defaults\s*:\s*\{[^}]*?\bease\s*:\s*(['"\x60])([^'"\x60]+)\1/.exec(code), def = dm ? dm[2] : null;
+    const re = /(\b[A-Za-z_$][\w$]*)?\.(to|from|fromTo|fly|shot)\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      if (m[1] && /^[A-Z]/.test(m[1])) continue; // Array.from, Buffer.from…
+      let i = re.lastIndex, depth = 1, q = null;
+      for (; i < code.length && depth; i++) { const c = code[i]; if (q) { if (c === q && code[i - 1] !== '\\') q = null; } else if (c === '"' || c === "'" || c === '\x60') q = c; else if (c === '(') depth++; else if (c === ')') depth--; }
+      const args = code.slice(re.lastIndex, i - 1);
+      if (!/\{/.test(args)) continue;
+      const em = /\bease\s*:\s*(['"\x60])([^'"\x60]+)\1/.exec(args);
+      if (em) add(em[2]);
+      else if (/\bease\s*:/.test(args)) continue; // computed: unknown
+      else if (def) add(def);
+      else if (classic) add(m[2] === 'shot' ? 'in-out-cubic' : 'power1.out');
+      else add(null, true);
+    }
+  }
+  return { classic, blurOff, blurExplicitOff, eases: list };
+})()`;
+
+/**
+ * Robotic motion, from the positions sampled during the check pass. Returns issues:
+ * camera-stop (a camera that brakes to a halt between moves and sets off again), fast-no-blur (fast moves with motion
+ * blur off), straight-move (long straight diagonal moves), same-ease (one easing curve for nearly everything).
+ */
+export function motionIssues(samples, names, setup, info, step) {
+  const out = [];
+  if (!setup) return out;
+  const W = info.width, H = info.height, PX = Math.min(W, H) / 1080, fps = info.fps, halfDiag = Math.hypot(W, H) / 2;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const tracks = new Map();
+  for (const { t, els } of samples) for (const e of els) { if (!tracks.has(e[0])) tracks.set(e[0], []); tracks.get(e[0]).push({ t, sx: e[1], sy: e[2], lx: e[3], ly: e[4], pk: e[5], w: e[6], h: e[7], s: e[8], flags: e[9], vx: e[10], vy: e[11] }); }
+  const runsOf = (ts, gap) => { const rs = []; for (const x of ts) { const l = rs[rs.length - 1]; if (l && x - l[1] <= gap) l[1] = x; else rs.push([x, x]); } return rs.map(([a, b]) => [r2(a), r2(b)]); };
+  const camStops = [], fast = [], straight = [];
+  for (const [id, pts] of tracks) {
+    if (pts.length < 4) continue;
+    const big = pts[0].flags & 1 || pts[0].w * pts[0].h >= 0.4 * W * H;
+    // speed per pair of neighbouring samples (screen px per second); a gap in the samples breaks the series
+    const sp = [];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dt = b.t - a.t;
+      if (dt <= 0 || dt > 0.2) { sp.push(null); continue; }
+      let v;
+      if (big) {
+        // a camera (or a big layer moved like one): how fast the picture under the middle of the view slides, and
+        // zooms, in its parent's px (a scene transition that moves the parent is not the camera)
+        const k0 = a.s / a.pk, k1 = b.s / b.pk;
+        const wa = [(a.vx - (a.lx - a.w / a.pk / 2)) / k0, (a.vy - (a.ly - a.h / a.pk / 2)) / k0], wb = [(b.vx - (b.lx - b.w / b.pk / 2)) / k1, (b.vy - (b.ly - b.h / b.pk / 2)) / k1];
+        v = ((Math.hypot(wb[0] - wa[0], wb[1] - wa[1]) * k1 + Math.abs(Math.log(k1 / k0)) * halfDiag) * b.pk) / dt;
+      } else v = (Math.hypot(b.lx - a.lx, b.ly - a.ly) * b.pk) / dt;
+      sp.push({ t: (a.t + b.t) / 2, v, i, blurred: (a.flags & 8) && (b.flags & 8) });
+    }
+    // 1. a camera that stops dead between two moves: the speed drops to almost nothing and comes back within ~0.45 s
+    if (pts[0].flags & 1 && step <= 0.15) {
+      for (let k = 1; k < sp.length - 1; k++) {
+        const c = sp[k];
+        if (!c) continue;
+        let pb = 0, pa = 0, okB = true, okA = true;
+        for (let q = k - 1; q >= 0 && sp[q] && c.t - sp[q].t <= 0.7; q--) pb = Math.max(pb, sp[q].v);
+        for (let q = k + 1; q < sp.length && sp[q] && sp[q].t - c.t <= 0.7; q++) pa = Math.max(pa, sp[q].v);
+        const minPeak = Math.min(pb, pa);
+        if (!(minPeak >= 250 * PX) || c.v > 0.12 * minPeak) continue;
+        // how long it stays stopped
+        let a = k, b = k;
+        while (a > 0 && sp[a - 1] && sp[a - 1].v <= 0.12 * minPeak) a--;
+        while (b < sp.length - 1 && sp[b + 1] && sp[b + 1].v <= 0.12 * minPeak) b++;
+        if (okB && okA && sp[b].t - sp[a].t <= 0.45) camStops.push({ id, t: r2((sp[a].t + sp[b].t) / 2) });
+        k = b + 1;
+      }
+    }
+    // 2. fast moves with no motion blur (per-frame displacement)
+    if (setup.blurOff && (big || pts[0].w * pts[0].h >= 0.005 * W * H)) {
+      for (let k = 0; k < sp.length; k++) { const c = sp[k]; if (c && !c.blurred && c.v / fps >= 40 * PX) fast.push({ id, t: c.t, d: c.v / fps }); }
+    }
+    // 3. long straight diagonal moves of an element (not the camera, not along a path)
+    if (!big && !(pts[0].flags & 4)) {
+      for (let k = 0; k < sp.length; k++) {
+        if (!sp[k] || sp[k].v < 80 * PX) continue;
+        // (a sharp turn starts a new leg)
+        const dir = (q) => { const a = pts[sp[q].i - 1], b = pts[sp[q].i]; return Math.atan2(b.ly - a.ly, b.lx - a.lx); };
+        const turn = (q) => { let d = Math.abs(dir(q) - dir(q - 1)); if (d > Math.PI) d = 2 * Math.PI - d; return d > 0.6; };
+        let e = k; while (e + 1 < sp.length && sp[e + 1] && sp[e + 1].v >= 80 * PX && !turn(e + 1)) e++;
+        const P = pts.slice(sp[k].i - 1, sp[e].i + 1).map((p) => [p.lx * p.pk, p.ly * p.pk]);
+        const [x0, y0] = P[0], [x1, y1] = P[P.length - 1], L = Math.hypot(x1 - x0, y1 - y0);
+        if (P.length >= 4 && L >= 0.25 * W && Math.min(Math.abs(x1 - x0), Math.abs(y1 - y0)) >= 0.25 * L) {
+          let dev = 0;
+          for (const [x, y] of P) dev = Math.max(dev, Math.abs((x - x0) * (y1 - y0) - (y - y0) * (x1 - x0)) / L);
+          if (dev <= 0.015 * L) straight.push({ id, t0: r2(pts[sp[k].i - 1].t), t1: r2(pts[sp[e].i].t), L: Math.round(L / PX) });
+        }
+        k = e;
+      }
+    }
+  }
+  const classicNote = setup.classic ? ' (data-motion="classic")' : '';
+  if (camStops.length) {
+    const byId = new Map(); for (const c of camStops) { if (!byId.has(c.id)) byId.set(c.id, []); byId.get(c.id).push(c.t); }
+    for (const [id, ts] of byId) out.push({ severity: 'warning', code: 'camera-stop', selector: names[id], time: ts[0], until: ts[ts.length - 1], ranges: ts.map((t) => [t, t]),
+      message: `The camera stops dead between moves at ${ts.slice(0, 5).map((t) => t.toFixed(1) + ' s').join(', ')}${ts.length > 5 ? ', …' : ''} (brakes to a halt, then sets off again)${classicNote}.`,
+      fix: setup.classic ? 'drop data-motion="classic" so gm.camera blends back-to-back shots, or hold each shot 0.5 s+ on purpose.' : 'chain the moves so the camera keeps moving (back-to-back gm.camera shots, one tween with keyframes), or hold each shot 0.5 s+ on purpose.' });
+  }
+  if (fast.length) {
+    const worst = fast.reduce((a, b) => (b.d > a.d ? b : a));
+    const ranges = runsOf(fast.map((f) => f.t).sort((a, b) => a - b), 0.25).filter(([a, b]) => b - a >= 0.05 || fast.filter((f) => f.t >= a - 0.01 && f.t <= b + 0.01).length >= 2);
+    if (ranges.length) out.push({ severity: 'warning', code: 'fast-no-blur', selector: names[worst.id], time: ranges[0][0], until: ranges[ranges.length - 1][1], ranges,
+      message: `Moves ${Math.round(worst.d / PX)} px per frame (at 1080p) with no motion blur: it strobes${classicNote}.`,
+      fix: setup.blurExplicitOff ? 'remove data-motion-blur="off" (fast moves get motion blur by default), or slow the move down.' : 'render with --motion-blur 8, or drop data-motion="classic" (natural motion blurs fast moves).' });
+  }
+  if (straight.length) {
+    const seen = new Set(), list = straight.filter((s) => (seen.has(s.id) ? false : seen.add(s.id)));
+    out.push({ severity: 'warning', code: 'straight-move', selector: names[list[0].id], time: list[0].t0, until: list[0].t1, ranges: list.slice(0, 6).map((s) => [s.t0, s.t1]).sort((a, b) => a[0] - b[0]),
+      message: `${list.slice(0, 3).map((s) => names[s.id]).join(', ')}${list.length > 3 ? ` and ${list.length - 3} more` : ''} ${list.length > 1 ? 'move' : 'moves'} ${list[0].L} px on a dead-straight diagonal (real things travel on slight arcs)${classicNote}.`,
+      fix: setup.classic ? 'drop data-motion="classic" (moves arc by default), or move along a curve with gm.path.travel.' : 'remove arc: 0, or move along a curve with gm.path.travel (or keyframes through an offset midpoint).' });
+  }
+  // 4. one easing curve for nearly everything (springs and the natural defaults are not curves of that kind)
+  const eases = setup.eases || [];
+  if (eases.length >= 8) {
+    const count = new Map();
+    for (const e of eases) if (/^cubic-bezier\(/.test(e.ease)) count.set(e.ease, (count.get(e.ease) || 0) + 1);
+    const top = [...count].sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] / eases.length > 0.9) {
+      const name = eases.find((e) => e.ease === top[0]).name;
+      out.push({ severity: 'warning', code: 'same-ease', time: null, message: `${top[1]} of ${eases.length} tweens and entrances use the same curve (${name}): everything moves like one machine${classicNote}.`,
+        fix: setup.classic ? "drop data-motion=\"classic\" (natural motion gives moves springs), or vary the eases: 'spring'/'out-back' for arrivals, 'in-*' for exits, 'in-out-sine' for long moves." : "leave ease out for the natural spring default, or vary it: 'spring'/'out-back' for arrivals, 'in-*' for exits, 'in-out-sine' for long moves." });
+    }
+  }
+  return out;
+}
+
+const PAGE_HIDE_TEXT =`(() => { let s = document.getElementById('__gm_hide'); if (!s) { s = document.createElement('style'); s.id='__gm_hide'; document.head.appendChild(s); }
   s.textContent = '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke-color:transparent!important;caret-color:transparent!important;text-decoration-color:transparent!important} text,text *{fill:transparent!important;stroke:transparent!important} .gm-caret{visibility:hidden!important}';
   return true; })()`;
 const PAGE_SHOW_TEXT = `(() => { const s = document.getElementById('__gm_hide'); if (s) s.remove(); return true; })()`;
@@ -516,10 +724,16 @@ export async function check(input, opts = {}) {
     const openFrames = []; // the first half second: is anything on screen?
     const emptyGrid = []; // [t, almost nothing on screen] every half second
     const change = []; // [t, fraction of the picture that changed since the previous grid]
+    // robotic motion: where the moving things are at every sample, and the easing curves in use
+    const watchMotion = opts.at == null && opts.motion !== false;
+    let moSetup = null;
+    const moSamples = [], moNames = {};
+    if (watchMotion) { try { moSetup = await ctx.page.evaluate(PAGE_EASES); } catch (e) { moSetup = null; } }
     for (const t of times) {
       await ctx.page.seek(t);
       const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT}, ${JSON.stringify({ safeZone: opts.safeZone || null })})`);
       prevT = t;
+      if (moSetup) { try { const m = await ctx.page.evaluate(PAGE_MOTION); moSamples.push({ t, els: m.els }); Object.assign(moNames, m.names); } catch (e) {} }
       if (opts.at != null && Math.abs(t - +opts.at) > 0.5 / fps) continue; // warm-up samples only feed motion detection
       perSample.push({ t, issues: a.issues });
       busy = busy || !!a.busy; // an entrance, exit or moving text since the last grid
@@ -552,6 +766,7 @@ export async function check(input, opts = {}) {
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
     const logs = groupLogs(await ctx.page.evaluate('window.gm && gm.__logs ? gm.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
+    if (moSetup) issues.push(...motionIssues(moSamples, moNames, moSetup, info, step));
     if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second shows only the background. The first frame is often the thumbnail, and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
     // Almost nothing on screen for a second or more in the middle (a camera between two far-apart parts, a gap
     // between scenes, a zoom so far out that everything is a speck)

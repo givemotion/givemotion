@@ -1759,7 +1759,14 @@
   function setupBurst(b) {
     const el = typeof b.target === 'string' ? document.querySelector(b.target) : b.target;
     if (!el) { I.report('error', 'burst-no-target', `gm.burst: "${b.target}" matched nothing.`, null); return; }
-    const o = Object.assign({ kind: 'confetti', at: 0, x: '50%', y: '50%', colors: ['#ff5c8a', '#ffd166', '#06d6a0', '#118ab2', '#a78bfa', '#ffffff'], seed: bursts.indexOf(b) + 1 }, BURST_KINDS[b.opts.kind || 'confetti'] || BURST_KINDS.confetti, b.opts);
+    // edge: 'top' | 'bottom' | 'left' | 'right': pieces start spread along that edge of the target (just outside it) and
+    // drift inward over a while (confetti raining from the top), instead of all leaving one point at once
+    const edge = /^(top|bottom|left|right)$/.test(b.opts.edge || '') ? b.opts.edge : null;
+    if (b.opts.edge && !edge) I.report('warning', 'burst-no-target', `gm.burst: edge "${b.opts.edge}" is not top, bottom, left or right.`, null);
+    const EDGE = { top: { x: '50%', y: '0%', angle: 90 }, bottom: { x: '50%', y: '100%', angle: -90 }, left: { x: '0%', y: '50%', angle: 0 }, right: { x: '100%', y: '50%', angle: 180 } };
+    const kindDefs = BURST_KINDS[b.opts.kind || 'confetti'] || BURST_KINDS.confetti;
+    const edgeDefs = edge ? Object.assign({ spread: 50, speed: 260, stagger: Math.min(1.6, (b.opts.duration ?? kindDefs.duration) * 0.5) }, EDGE[edge]) : null;
+    const o = Object.assign({ kind: 'confetti', at: 0, x: '50%', y: '50%', colors: ['#ff5c8a', '#ffd166', '#06d6a0', '#118ab2', '#a78bfa', '#ffffff'], seed: bursts.indexOf(b) + 1 }, kindDefs, edgeDefs, b.opts);
     const find = (v) => (typeof v === 'string' ? el.querySelector(v) || document.querySelector(v) : v);
     const behind = o.behind ? find(o.behind) : null;
     if (o.behind && !behind) I.report('warning', 'burst-no-target', `gm.burst: behind "${o.behind}" matched nothing.`, null);
@@ -1793,15 +1800,25 @@
     const parts = [];
     let x0 = 0, x1 = 0, y0 = 0, y1 = 0, big = 0;
     const k = o.drag || 1e-6;
+    // (edge: the length of that edge, in host px, measured in layout, so it is the same in every worker)
+    const edgeLen = edge ? (edge === 'top' || edge === 'bottom' ? el.clientWidth || I.comp.width : el.clientHeight || I.comp.height) : 0;
+    let end = 0;
     for (let i = 0; i < o.count; i++) {
       const ang = ((o.angle + (rnd() - 0.5) * o.spread) * Math.PI) / 180;
       const sp = o.speed * px * (0.12 + Math.pow(rnd(), 0.8) * 0.95);
       const p = { vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: rnd() * 6.28, spin: (rnd() - 0.5) * 14, flip: rnd() * 6.28, flipS: 4 + rnd() * 8, size: o.size * px * (0.6 + rnd() * 0.8), color: o.colors[Math.floor(rnd() * o.colors.length)], life: o.duration * (0.7 + rnd() * 0.3), delay: rnd() * (o.stagger || 0.06), wob: rnd() * 6.28 };
+      // start offset from the emission point: along the edge (a little past both ends), just outside it
+      p.sx = 0; p.sy = 0;
+      if (edge) {
+        const along = (rnd() * 1.1 - 0.55) * edgeLen, out = -(p.size + 10 * px);
+        if (edge === 'top' || edge === 'bottom') { p.sx = along; p.sy = edge === 'top' ? out : -out; } else { p.sy = along; p.sx = edge === 'left' ? out : -out; }
+      }
       parts.push(p);
+      end = Math.max(end, p.delay + p.life);
       // how far it flies (to size the canvas to the particles, not the whole scene)
       for (let j = 0; j <= 12; j++) {
         const lt = (p.life * j) / 12, e = Math.exp(-k * lt);
-        const x = (p.vx * (1 - e)) / k, y = (p.vy * (1 - e)) / k + ((o.gravity * px) / k) * (lt - (1 - e) / k);
+        const x = p.sx + (p.vx * (1 - e)) / k, y = p.sy + (p.vy * (1 - e)) / k + ((o.gravity * px) / k) * (lt - (1 - e) / k);
         x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
       }
       big = Math.max(big, p.size);
@@ -1813,6 +1830,8 @@
     cv.width = Math.ceil(b.box.w * b.res); cv.height = Math.ceil(b.box.h * b.res);
     cv.style.cssText = `position:absolute;left:0;top:0;width:${r4(b.box.w)}px;height:${r4(b.box.h)}px;pointer-events:none;z-index:${z}`;
     b.host = host;
+    // when the last piece is gone (staggered pieces can outlive `duration`)
+    b.end = edge || b.opts.stagger ? Math.max(o.duration * 1.05 + 0.1, end + 0.05) : o.duration * 1.05 + 0.1;
     b.canvas = cv; b.o = o; b.parts = parts; b.el = el; b.last = null;
   }
   function burstMap(b) {
@@ -1824,7 +1843,7 @@
     for (const b of bursts) {
       if (!b.canvas) continue;
       const t = b.o.global ? T - b.o.at : I.mapT(b.el, T) - I.clipStartOf(b.el) - b.o.at;
-      const key = t < 0 || t > b.o.duration * 1.05 + 0.1 ? 'off' : Math.round(t * 1000);
+      const key = t < 0 || t > b.end ? 'off' : Math.round(t * 1000);
       if (key === b.last) continue;
       const g = b.canvas.getContext('2d');
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, b.canvas.width, b.canvas.height);
@@ -1856,8 +1875,8 @@
         if (lt < 0 || lt > p.life) continue;
         // velocity decays with drag k: x = v(1-e^-kt)/k ; gravity falls at terminal-ish speed
         const e = Math.exp(-drag * lt), k = drag || 1e-6;
-        const x = ox + (p.vx * (1 - e)) / k + Math.sin(lt * 3 + p.wob) * (shape === 'paper' ? 18 * px * Math.min(1, lt) : 0);
-        const y = oy + (p.vy * (1 - e)) / k + (gravity * px / k) * (lt - (1 - e) / k);
+        const x = ox + p.sx + (p.vx * (1 - e)) / k + Math.sin(lt * 3 + p.wob) * (shape === 'paper' ? 18 * px * Math.min(1, lt) : 0);
+        const y = oy + p.sy + (p.vy * (1 - e)) / k + (gravity * px / k) * (lt - (1 - e) / k);
         const fade = Math.min(1, (p.life - lt) / (p.life * 0.25));
         g.globalAlpha = Math.max(0, fade);
         g.fillStyle = g.strokeStyle = p.color;

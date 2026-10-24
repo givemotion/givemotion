@@ -1,0 +1,54 @@
+# Review: looking at your video, and learning from a reference
+
+Purpose: recipes for `snapshot`, `still`, `inspect` and `check` that show you the right frames with few images, how to read a sheet, and `analyze` for reference videos and your own render.
+
+Contents
+- Snapshot recipes
+- Inspect: where things are, frame by frame
+- Check: fast re-checks
+- Reading a sheet: what to look for
+- Learning from a reference video (and reviewing your render)
+
+## Snapshot recipes
+
+- `npx givemotion snapshot video.html` writes `snapshots/sheet.png` next to the HTML file: the key moment of every scene (one per camera shot in long camera scenes, plus frame 0). **Open it and look.** `-o review2` writes to another folder so you can compare before and after.
+- **After a one-scene fix, look only at that scene:** `snapshot --times 12,13.5` (seconds, or frames like `45f`; e.g. `snapshot --times 2,5.5,9`) shows exactly the moments you choose. Use `inspect` to find the scene's start. This costs one small image instead of a whole sheet.
+- `snapshot --transitions`: the start, middle and end of every scene change (ghosted text, empty middle frames).
+- `snapshot --from 3.2 --to 3.8 --every 1f`: a frame-by-frame strip of one move (easing, overshoot, a flicker). `--every 0.5` for one frame every half second, like the judges' sheets.
+- `snapshot --grid`: thirds, the center and the safe zone (`data-safe-zone` / `--safe-zone`) drawn over the pictures, for balance and margins.
+- `--max 12` (automatic moments, default 12), `--cols 2` (fewer columns = bigger pictures, to read small text), `--sheet-only` (only `sheet.png`), `--transparent` (checkerboard behind; auto-detected), `--data f.json` / `--props '{…}'`.
+- `npx givemotion still video.html -t 3.2 -o f.png` renders one exact moment at full size (to read small text or check a detail).
+
+## Inspect: where things are, frame by frame
+
+- `npx givemotion inspect video.html` prints JSON: size, fps, duration, frames, every clip's real start/end (selector, start, end), transitions, media, camera shots with what each shows (`shows`: world area x, y, w, h and zoom), issues.
+- `inspect video.html --at 4.5 --el "#logo"` prints where an element is on screen at that moment (screen box, opacity, transform, visible), and which clips are on screen with their local time (the clock that `data-enter` delays and `at` options count in), plus any `gm.log` output at that time.
+- `inspect --at 2 --to 3 --el "#logo"` (`--every 1f`) prints its position, size and opacity frame by frame: check easing and speed without watching.
+
+## Check: fast re-checks
+
+- `check --at 7.5` re-checks one moment fast after a fix; `--from 6 --to 9` part of the video; `--fast` uses fewer samples (quicker, may miss short problems); `--samples 10`; `--safe-zone shorts`.
+- Problems list every time range they happen in; times also say how far into the scene the problem is. How check decides and what each code means: `references/check-codes.md`.
+
+## Reading a sheet: what to look for
+
+Go through this list on every sheet (these are the things blind judges named most):
+1. Frame 0: is something there, and does it hook?
+2. Any cell where text is cut by the frame edge, or a neighbour's label half in frame?
+3. Any cell that is nearly empty, or where everything sits in one corner or the top half?
+4. Secondary text (subtitles, axis labels, code, labels in wide shots): would it read on a phone?
+5. Two neighbouring cells that look the same (a hold): is something still moving?
+6. Transition cells: ghosted double text, or a muddy half-and-half frame?
+7. The end: does it land with a payoff and stay alive, or sit still for 2 s?
+8. Variety: do several scenes use the same layout?
+9. Is the look consistent (palette, fonts, motion) from start to end?
+Remember the motion strip at the top of `check`: long flat runs (`▁▁▁▁`) are stalls.
+
+## Learning from a reference video (and reviewing your render)
+
+`npx givemotion analyze reference.mp4` turns any video into a report you can read: every shot with its length and camera move, the scene changes and their type (`cut` `fade` `dip` `wipe-*` `push-*` `zoom-in/out` `iris` `clock`, best guesses; a whip reads as `push-*`), a pacing strip, the palette (background, accents), where the detail sits, and how many cuts land on the beat. It ends with a style recipe in givemotion terms, and writes `analysis/<name>/sheet.png` (the whole video at even steps) and `shots.png` (start, middle, end of every shot): **open both**.
+
+- Options: `-o <dir>`, `--every 0.5` (seconds between pictures on sheet.png), `--no-sheets` (only the report, faster), `--no-audio` (skip the music analysis), `--json`.
+- To match a reference, analyze it first, build, render, then `npx givemotion analyze out/video.mp4 --compare reference.mp4`, which lists the differences ("yours: median shot 2.4 s, reference 0.9 s").
+- Transition types are guesses from the pixels; trust the shot times and the sheets more.
+- On your own render, `analyze` is a good last pass: the share of the picture that changes per half second (judges' favourites changed 26-40%, slide-like videos 12-22%) and the median shot length.

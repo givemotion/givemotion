@@ -1,6 +1,6 @@
 # Working on givemotion (for AI agents and contributors)
 
-- Using givemotion to make a video? Read `skills/givemotion/SKILL.md` instead.
+- Using givemotion to make a video? Read `skills/givemotion/SKILL.md` instead (and the `references/` files it points to).
 - Zero runtime dependencies. Node 20+ built-ins only. Keep it that way.
 - Layout:
   - `src/runtime/runtime.js` — injected into every page: virtual clock, clips/sequences, seeking animations, enter/exit, split/count/type, media, `window.gm`.
@@ -12,7 +12,12 @@
   - `src/analyze.js` — `givemotion analyze`: shots, transitions, camera, pacing, palette, sheets of any video file.
   - `src/check.js` — checker + snapshot contact sheets. `src/studio/` — preview UI.
   - `blocks/` — copyable HTML blocks (header comment = docs). `examples/`, `templates/`.
-- Agent test rounds (fresh agents make videos from the docs, blind judges score them): `bench/agents/README.md`. Results: `docs/experiments/`.
+  - `skills/givemotion/` — the agent skill pack (see below). `.claude-plugin/` — Claude Code plugin and marketplace manifests (the repo root is the plugin; its skill is `skills/givemotion`).
+- The skill pack (`skills/givemotion/`):
+  - `SKILL.md` is the core that stays in the agent's context: keep it under ~18 KB, with the loop, the composition format, the timing model and the quality rules in its first ~5k tokens (Claude Code keeps only that much of a skill after compaction). Everything else goes in `references/<topic>.md` (one purpose line, a contents list if over 100 lines) and gets a row in the "What to read" table. `givemotion skill` copies the whole folder, and the project `AGENTS.md` section is generated from that table.
+  - Every API, attribute and flag must be documented somewhere in the pack, and only APIs that exist in `src/` and `blocks/`.
+  - `metadata.version` in SKILL.md and `version` in `.claude-plugin/plugin.json` must equal `package.json` (a unit test checks it); `givemotion doctor` and `check` warn when an installed pack differs from the engine.
+- Agent test rounds (fresh agents make videos from the docs, blind judges score them): `bench/agents/README.md`. Results: `docs/experiments/`. The quality knowledge from those rounds lives in `skills/givemotion/references/motion-design.md` and `references/genres/`: update them when a round teaches something new.
 - Tests: `npm test` (needs Chrome + ffmpeg for the e2e part). Determinism matters: any change to the runtime must keep `1 worker == N workers` byte-identical.
 - Before changing a block or example: `node src/cli.js check <file>` and `node src/cli.js snapshot <file>` and look at the sheet.
 - Do not copy code from other video frameworks. Write it fresh.

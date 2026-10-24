@@ -6,6 +6,7 @@ snapshots/
 *.webm
 *.gif
 !examples/**/assets/*.mp4
+!docs/media/*.gif
 .DS_Store
 benchmarks/**/node_modules/
 benchmarks/vs-hyperframes/mw/

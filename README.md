@@ -63,20 +63,25 @@ blocks, and in React. Blind AI judges ranked **plain HTML first in 6 of 8 cases*
 details in [the experiment](docs/experiments/2026-10-format-test.md)). React still works if you want it.
 
 **2. The agent can check its own work.** An agent cannot watch a video, so the engine does it for them:
-- `check` finds text that is cut off, off screen, covered, overlapping, too small or hard to read, plus
-  broken files and script errors, and says how to fix each one. It knows the difference between text that is
-  *moving* past the edge and text that is *stuck* there.
-- It also flags pacing: long stretches where nothing happens, or an empty first frame.
+- `check` finds text that is cut off, off screen, covered, overlapping, too small or hard to read, lines running
+  through labels, two scenes' text smudged together in a transition, broken files and script errors, and says how
+  to fix each one. It knows the difference between text that is *moving* past the edge and text that is *stuck* there.
+- It also flags pacing: long stretches where nothing happens, a dead end card, an empty opening, or a camera move
+  that only arrives after its scene has started to leave.
 - It prints a "motion strip", a one-line picture of the video's rhythm.
 - `snapshot` makes one image with the key moments of every scene, so the agent can *look* at its video.
 
 **3. It is built from what agents struggled with.** We give fresh agents only the docs and a real brief, read
-their notes on what got in their way, and fix the engine, not just the instructions. Three rounds so far,
-dozens of fixes ([what changed](docs/experiments/)).
+their notes on what got in their way, and fix the engine, not just the instructions. In the latest full round,
+18 agents made 9 kinds of video (promo, explainer, data story, UI demo, whiteboard, code explainer, logo sting,
+year recap, vertical short); blind AI judges gave them 7.1 out of 10 on average, none below 6, and their notes led
+to about 20 engine fixes ([all rounds and what changed](docs/experiments/)).
 
 **4. Motion design, not slides.** The engine has the tools that make video feel like real animation:
 a camera that follows and frames things, motion along paths, shape morphs, shared elements that fly from one
-scene into the next, more than 25 scene transitions, kinetic type, particle bursts, and edits that land on the music's beats.
+scene into the next, more than 25 scene transitions, kinetic type, particle bursts, live data charts the camera can
+ride, hand-drawn sketch shapes and arrows, labels that stay attached to their shapes, and cuts and pulses that land
+on the music's beats.
 
 **5. Same input, same video, every time.** Rendering is exact and repeatable, so an agent can change one
 thing without surprises elsewhere.
@@ -94,7 +99,7 @@ project's own docs and command-line help; tell us if something changed.
 | License and price | MIT. Free for everyone, including companies | Apache 2.0. Free for everyone, including companies |
 | You write | HTML, CSS, JavaScript (React optional) | HTML, CSS, JavaScript |
 | Instructions for AI agents | Yes, one command (`npx motionwright skill`) | Yes, many skills (Claude Code, Codex, Cursor, Gemini CLI and more) |
-| Agent checks its own video | Yes: cut-off, covered, overlapping, tiny and low-contrast text, broken files, script errors with line numbers, pacing (long still parts, empty first frame) | Yes: lint, script errors, layout overflow, motion, WCAG contrast |
+| Agent checks its own video | Yes: cut-off, covered, overlapping, tiny and low-contrast text, lines through labels, smudged transitions, broken files, script errors with line numbers, pacing (long still parts, dead end cards, empty opening, late camera moves) | Yes: lint, script errors, layout overflow, motion, WCAG contrast |
 | Agent sees key frames | Yes: one picture with the key moments of every scene, or a frame-by-frame strip of one move; `analyze` reports the cuts, pacing, camera and colors of any video and compares it with a reference | Yes: key frames, a review set around every cut, side by side with a reference video |
 | Music beats | Tempo, beats, bar starts, big hits | Beats, hits, loudness, silence |
 | Output | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3 | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR |
@@ -188,8 +193,9 @@ at once and skips frames that did not change. See [Performance](#performance).
 No imports and no build step: the runtime is added for you. Everything that moves on a web page is played
 on a virtual clock and captured frame by frame: CSS animations, transitions, the Web Animations API, timers,
 `requestAnimationFrame`, canvas, WebGL, GSAP, Lottie. There is also a built-in GSAP-style timeline
-(`mw.timeline()`), a camera (`mw.camera()`), path travel, shape morphs, particle bursts and music analysis
-(`mw.audio()`, `mw.beat(n)`).
+(`mw.timeline()`), a camera (`mw.camera()`), path travel, shape morphs, `mw.fly()` (move an element in from where
+another one is), live line charts (`mw.chart.line()`), hand-drawn shapes (`data-sketch`), labels pinned to shapes
+(`data-anchor`), particle bursts, and music analysis (`mw.audio()`, `mw.beat(n)`, `data-pulse`, cuts written in beats).
 
 The full reference is one page written for agents (and good for humans too):
 [`skills/motionwright/SKILL.md`](skills/motionwright/SKILL.md).
@@ -210,14 +216,15 @@ The full reference is one page written for agents (and good for humans too):
 | `analyze <video.mp4>` | Report on any video (a reference, or your render): shots and cuts, transitions, camera, pacing, colors, cuts on the beat, contact sheets. `--compare ref.mp4` lists how yours differs |
 | `bundle [file] -o dir` | Standalone page + `<mw-player>` to embed the video in any site |
 | `blocks` / `add <name>` | Ready-made blocks you can copy and edit |
-| `install` / `doctor` / `bench` | Get Chrome, check your setup, measure speed |
+| `install` / `doctor` / `bench` | Get Chrome, check your setup, measure speed (and what makes a page slow to draw) |
 
 Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout),
 `--frames 2s-5s`, `--transparent`, `--motion-blur 8`, `--codec h265|av1`, `--hardware`, `--workers`,
 `--muted`, `--data file.json`, `--props '{…}'`. Every command takes `--json`.
 
 Rendering again after a change only redoes the parts of the video that changed (edit one scene → only its 1-2 s parts
-are rendered), and the result is byte-identical to a full render. `--redo 4s-7s` forces a range, `--no-cache` turns it off.
+are rendered; in one long scene, an edit to something that appears at 40 s keeps the first 40 s), and the result is
+byte-identical to a full render. `--redo 4s-7s` forces a range, `--no-cache` turns it off.
 
 ### Programmatic API
 
@@ -246,7 +253,11 @@ Measured on a small cloud machine (2 CPUs, no GPU), 1080p at 30 fps, 300 frames:
 | motionwright, auto workers | 13.3 s |
 
 The same GSAP animation in motionwright and HyperFrames on that machine: 22.2 s vs 36.8 to 40.0 s
-([method and script](benchmarks/vs-hyperframes)). Pages with many full-screen effects are slower on machines
+([method and script](benchmarks/vs-hyperframes)).
+
+On a 4-CPU cloud machine without a GPU (October 2026), that same test page renders in 14.6 s (22.6 s with one
+worker), and the 18 videos agents made in our latest test round (5 to 31 s long, 1080p) rendered at 18.8 frames per second on
+average. Pages with many full-screen effects are slower on machines
 without a GPU. Run `npx motionwright bench` on your own computer.
 
 Where the speed comes from: Chrome's frame-by-frame capture (`beginFrame`, on Linux and Windows), several

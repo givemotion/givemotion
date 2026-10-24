@@ -56,8 +56,10 @@ experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modu
   the pair to a shared box first. Files: `src/runtime/motion.js` (morphs).
 - **Ride / fly helpers**: one object riding another along a route (package on the robot, then the truck), and a
   same-scene "fly from #a to #b" (`mw.fly(el, { from: '#slot' })`).
-- **Balance check**: judges marked layouts that leave most of the frame empty or crowd the top half (5 notes); a
-  warning when the content's bounding box covers little of the frame for long. Files: `src/check.js`.
+- **Balance check**: judges marked layouts that leave most of the frame empty or crowd the top half (5 notes). Tried:
+  the centre of the picture's edges per half second did not match the judges at all (year-recap-2, "crowds the top
+  left", scored balanced; code-explainer-2, judged polished, scored off-centre 16 times), so nothing was added. A
+  better signal may be the boxes of text and shapes from the DOM, weighted by size. Files: `src/check.js`.
 - Run a shorter round (3-4 briefs, 2 runs) after these to see whether the "errors" score (6.9, the lowest) moves.
 
 ## N3. Partial re-render inside one long scene (first version done; follow-ups)

@@ -13,5 +13,6 @@ Test rounds with fresh AI agents (docs only) and blind AI judges. How to run one
 | 2026-10-t7-speed.md | Where render time goes without a GPU (compositing), what did not help, a determinism fix. |
 | data/ | raw results tables from `round.js results`. |
 
-Overall scores so far (blind Opus judges, 1-10): round 1 7.5 average, round 2 6.6, round-3 examples 7.9.
-These are not strictly comparable (different briefs and judges); compare within one table.
+Overall scores so far (blind Opus judges, 1-10): round 1 7.5 average, round 2 6.6, round-3 examples 7.9, hand-drawn
+with the sketch tools 7.6 (beating the no-tools baseline in the same table, 6.7). These are not strictly comparable
+(different briefs and judges); compare ranks within one table.

@@ -589,15 +589,17 @@ function mergeIssues(list, gap = 0.3, contrastGap = gap) {
   for (const i of list) {
     const k = [i.code, i.selector || i.message].join('|');
     const cur = map.get(k);
-    if (!cur) { map.set(k, { ...i, times: i.time != null ? [i.time] : [] }); continue; }
+    if (!cur) { map.set(k, { ...i, times: i.time != null ? [i.time] : [], own: i.ranges || null }); continue; }
     if (i.time != null) cur.times.push(i.time);
     if (rank[i.severity] < rank[cur.severity]) { cur.severity = i.severity; cur.message = i.message; }
   }
   const out = [...map.values()].map((i) => {
     const ts = [...new Set(i.times)].sort((a, b) => a - b);
     const r = { ...i };
-    delete r.times;
-    if (ts.length) {
+    delete r.times; delete r.own;
+    // an issue that knows its own time span (a still stretch, an empty stretch) keeps it
+    if (i.own && ts.length <= 1) { r.ranges = i.own; r.time = i.own[0][0]; r.until = i.own[i.own.length - 1][1]; }
+    else if (ts.length) {
       const ranges = [];
       const g = i.code === 'low-contrast' ? contrastGap : gap;
       for (const t of ts) { const l = ranges[ranges.length - 1]; if (l && t - l[1] <= g + 1e-6) l[1] = t; else ranges.push([t, t]); }

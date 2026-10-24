@@ -84,6 +84,26 @@ again with the baseline (5 per judge): new tools 6.6 (7.0, 6.7, 6.0; the glitche
   New `empty-frame` check, and camera craft guidance in the docs (stay close, keep parts near each other, the whole
   diagram only at the end).
 
+## Round 3 (r7): 3 more runs with all fixes
+
+Judged with the 2 baseline videos (5 per judge, 3 judges):
+
+| group | runs | brief fit | motion | craft | errors | overall | avg rank (of 5) | #1 picks | agent time | render |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **new tools (r7)** | 3 | 8.6 | 7.6 | 7.6 | 7.3 | **7.6** (8.0, 7.7, 7.0) | **2.2** | **3 / 3** | 7-9 min | 26-29 s |
+| baseline | 2 | 7.5 | 7.3 | 6.7 | 6.8 | 6.7 | 4.2 | 0 | 8-9 min | 31-32 s |
+
+The ranking flipped: the two baseline videos that won every earlier table came 4th and 5th. (Absolute scores move between
+tables, since judges calibrate to what they see; compare ranks within a table.) The makers said the tools "worked almost
+entirely on the first try" and spent their time on content, not on writing a rough-stroke kit.
+
+What r7's makers still hit, now fixed or open:
+- `mw.connect` labels came out in the page's default font: now handwriting for sketched arrows, and a `font` option.
+- Lines running through labels were not caught: new `text-over-line` check (it finds the cases they saw by eye).
+- Predicting what a `fit` shot shows: `inspect` now lists each shot's visible world area and zoom.
+- Open: labels are placed by hand in world px apart from their shapes (a `data-anchor="#server bottom"` idea); the
+  circle mark has no padding option; arrows to a wide group attach to the group's whole box (documented).
+
 ## Next
 
 - One long scene re-renders fully after any edit (parts are fingerprinted per scene); finer fingerprints would help

@@ -75,12 +75,20 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     const rs = textRects(el);
     if (!rs.length) continue;
     const u = union(rs);
-    const box = { cx: (u.left + u.right) / 2, cy: (u.top + u.bottom) / 2, w: u.right - u.left, h: u.bottom - u.top, op };
+    // Measure motion inside the biggest moving layer around the text (a camera world, a scene with
+    // a camera move): text that sits still in a world the camera pans over is not "moving".
+    let cam = null;
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      if (a.offsetWidth * a.offsetHeight >= 0.4 * W * H && getComputedStyle(a).transform !== 'none') cam = a;
+    }
+    let bx = (u.left + u.right) / 2, by = (u.top + u.bottom) / 2, k = 1;
+    if (cam) { const r = cam.getBoundingClientRect(); k = r.width / (cam.offsetWidth || r.width) || 1; bx = (bx - r.left) / k; by = (by - r.top) / k; }
+    const box = { cx: bx, cy: by, k, w: (u.right - u.left) / k, h: (u.bottom - u.top) / k, op, cam };
     next.set(el, box);
     const p = prev.get(el);
     let speedMoving = false;
-    if (p && dt > 0) {
-      const v = Math.hypot(box.cx - p.cx, box.cy - p.cy) / dt;
+    if (p && dt > 0 && p.cam === box.cam) {
+      const v = (Math.hypot(box.cx - p.cx, box.cy - p.cy) * box.k) / dt;
       const sz = Math.abs(box.w - p.w) / Math.max(1, p.w) / dt + Math.abs(box.h - p.h) / Math.max(1, p.h) / dt;
       const fo = Math.abs(box.op - p.op) / dt;
       speedMoving = v > 40 * PX || sz > 0.25 || fo > 0.4;
@@ -113,6 +121,25 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     return { r, by, masked };
   };
   // Is the text covered by something drawn on top of it (another layer, a wipe, an iris)?
+  const paintsSolid = (c) => {
+    // Does this element itself paint an opaque surface at that point? Big see-through layers
+    // (a full-frame chart <svg>, a particle <canvas>, a gradient vignette) do not count.
+    const r = c.getBoundingClientRect();
+    const big = r.width * r.height > 0.5 * W * H;
+    const tag = c.tagName.toLowerCase();
+    if (tag === 'img' || tag === 'video') return !big;
+    if (tag === 'canvas') return !big;
+    if (/^(path|rect|circle|ellipse|polygon)$/.test(tag)) {
+      const cs = getComputedStyle(c);
+      return cs.fill !== 'none' && !/rgba\([^)]*,\s*0(\.[0-5]\d*)?\)/.test(cs.fill) && parseFloat(cs.fillOpacity) > 0.6;
+    }
+    if (c instanceof SVGElement) return false;
+    const cs2 = getComputedStyle(c);
+    const m = /rgba?\(([^)]+)\)/.exec(cs2.backgroundColor);
+    const alpha = m ? (m[1].split(',')[3] != null ? parseFloat(m[1].split(',')[3]) : 1) : 0;
+    if (alpha > 0.6) return true;
+    return cs2.backgroundImage !== 'none' && !big;
+  };
   const covered = (t) => {
     if (getComputedStyle(t.el).pointerEvents === 'none') return false;
     let hits = 0, n = 0;
@@ -120,18 +147,11 @@ const PAGE_ANALYZE = String.raw`((dt) => {
       const x = (q.left + q.right) / 2, y = (q.top + q.bottom) / 2;
       if (x < 0 || y < 0 || x > W || y > H) continue;
       n++;
-      const top = document.elementFromPoint(x, y);
-      if (!top || top === t.el || t.el.contains(top) || top.contains(t.el)) continue;
-      // Only something that paints a solid surface hides the text (an image, a filled shape or box), not other text.
-      let solid = false;
-      for (let c = top; c && !c.contains(t.el); c = c.parentElement) {
-        if (/^(IMG|CANVAS|VIDEO|svg|path|rect|circle|ellipse|polygon)$/i.test(c.tagName)) { solid = true; break; }
-        const cs2 = getComputedStyle(c);
-        const m = /rgba?\(([^)]+)\)/.exec(cs2.backgroundColor);
-        const alpha = m ? (m[1].split(',')[3] != null ? parseFloat(m[1].split(',')[3]) : 1) : 0;
-        if (alpha > 0.6 || cs2.backgroundImage !== 'none') { solid = true; break; }
+      // Walk down the stack of things at that point until we reach the text.
+      for (const c of document.elementsFromPoint(x, y)) {
+        if (c === t.el || c.contains(t.el) || t.el.contains(c)) break;
+        if (paintsSolid(c)) { hits++; break; }
       }
-      if (solid) hits++;
     }
     return n > 0 && hits === n;
   };
@@ -151,6 +171,9 @@ const PAGE_ANALYZE = String.raw`((dt) => {
     // 1. Text partly outside the frame (fully outside = not shown, which is fine)
     const outX = Math.max(0, -tu.left) + Math.max(0, tu.right - W);
     const outY = Math.max(0, -tu.top) + Math.max(0, tu.bottom - H);
+    // In a camera world, text passing by the edge is fine, but a label that is mostly in view and cut is still worth a look.
+    const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
+    if ((outX > 2 || outY > 2) && cropOk && visFrac >= 0.5) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label), unless the crop is on purpose.' });
     if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
     else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
@@ -356,7 +379,16 @@ export async function check(input, opts = {}) {
       push(list.filter((i) => opts.at != null || nb.has(key(i)) || i.code === 'image-broken'), t);
     }
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
-    const merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
+    let merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
+    // Some problems only matter if they last (a label sliding past the frame edge during a pan is fine).
+    if (opts.at == null) merged = merged.filter((i) => {
+      if (!i.minSpan) return true;
+      if (i.ranges) i.ranges = i.ranges.filter(([a, b]) => b - a >= i.minSpan - 1e-6);
+      if (!i.ranges || !i.ranges.length) return false;
+      i.time = i.ranges[0][0]; i.until = i.ranges[i.ranges.length - 1][1];
+      return true;
+    });
+    for (const i of merged) delete i.minSpan;
     const errors = merged.filter((i) => i.severity === 'error').length;
     const warnings = merged.filter((i) => i.severity === 'warning').length;
     return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), logs: ctx.page.logs || [] };

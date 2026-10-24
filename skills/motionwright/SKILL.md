@@ -245,6 +245,6 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `load-timeout` | Something given to `mw.wait()` never finished. |
 | `script-error`, `console-error` | Your JS threw; the message has the stack. |
 
-Inside a `mw.camera` world, text cut by the frame edge is treated as framing, not a mistake (add `data-check="crop-ok"` to your own camera layers for the same). Times in the report also say how far into the scene the problem is.
+Inside a `mw.camera` world (or a layer with `data-check="crop-ok"`), text sliding past the frame edge is fine, but a label that stays mostly in view and cut for 0.3 s or more is a warning: when the camera zooms in, frame the shot so the labels it is showing fit. Times in the report also say how far into the scene the problem is.
 
 How check decides: it compares frames, so anything moving or fading (CSS, timeline, React, onFrame, a camera follow) is skipped while it moves, and a problem must last ~0.25s to count. Text that is fully hidden (outside the frame, behind a mask, waiting to slide in) or covered by something solid is not judged. Mark decorative copies (echoes, ghosts, outlines) with `data-check="ignore"`. Re-check one moment fast with `check --at 7.5`, or part of the video with `--from 6 --to 9`. Problems list every time range they happen in.

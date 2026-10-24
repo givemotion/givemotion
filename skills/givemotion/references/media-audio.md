@@ -19,6 +19,7 @@ Contents
 ```
 - Video is decoded frame-exact by ffmpeg (any codec); style the `<video>` element with CSS as usual. `data-from` = where to start in the source. `muted` drops its audio.
 - Audio is mixed by ffmpeg: `data-start`, `data-duration`, `data-from`, `data-rate`, `data-volume`, `data-fade-in`, `data-fade-out`, `loop`. Volume curve: `data-volume="0:0 1:0.8 9:0.8 10:0"` (seconds in the clip : volume). `data-duck="0.25"` lowers music to 25% while any other sound plays (voice-over, video with sound).
+- Where the fades sit: `data-fade-in` starts when the audio's clip starts, and `data-fade-out` **ends when the audio's clip ends**. An `<audio>` with no `data-start`/`data-duration` of its own (and not inside a timed scene) lasts the whole video, so `data-fade-out="2"` fades the last 2 s of the video, whatever the file's length (a 32 s song in an 18 s video fades over 16-18 s). Inside a scene, or with `data-duration`, it ends at that clip's end. The file's own length is not used: if the file is shorter than its clip, add `loop` or set `data-duration` to the file's length, or the fade happens after the sound has already stopped.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack; `--muted` renders without audio.
 - A voice-over sets the length: make scenes follow its sentences (place clips at the times the words are spoken), and fade the music under it with `data-duck`.
 

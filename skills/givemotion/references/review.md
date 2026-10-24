@@ -13,7 +13,7 @@ Contents
 
 - `npx givemotion snapshot video.html` writes `snapshots/sheet.png` next to the HTML file: the key moment of every scene (one per camera shot in long camera scenes, plus frame 0). **Open it and look.** `-o review2` writes to another folder so you can compare before and after.
 - **After a one-scene fix, look only at that scene:** `snapshot --times 12,13.5` (seconds, or frames like `45f`; e.g. `snapshot --times 2,5.5,9`) shows exactly the moments you choose. Use `inspect` to find the scene's start. This costs one small image instead of a whole sheet.
-- `snapshot --transitions`: the start, middle and end of every scene change (ghosted text, empty middle frames).
+- `snapshot --transitions`: the start, middle and end of every scene change (ghosted text, empty middle frames). It knows only the engine's own transitions (`data-transition`); a scene change you built yourself (overlapping clips, a band or wipe in `gm.onFrame`) is not in the automatic sheet either, so look at it with `snapshot --times 2.05,2.13,2.2` around its cut.
 - `snapshot --from 3.2 --to 3.8 --every 1f`: a frame-by-frame strip of one move (easing, overshoot, a flicker). `--every 0.5` for one frame every half second, like the judges' sheets.
 - `snapshot --grid`: thirds, the center and the safe zone (`data-safe-zone` / `--safe-zone`) drawn over the pictures, for balance and margins.
 - `--max 12` (automatic moments, default 12), `--cols 2` (fewer columns = bigger pictures, to read small text), `--sheet-only` (only `sheet.png`), `--transparent` (checkerboard behind; auto-detected), `--data f.json` / `--props '{…}'`.

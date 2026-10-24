@@ -1830,8 +1830,8 @@
     cv.width = Math.ceil(b.box.w * b.res); cv.height = Math.ceil(b.box.h * b.res);
     cv.style.cssText = `position:absolute;left:0;top:0;width:${r4(b.box.w)}px;height:${r4(b.box.h)}px;pointer-events:none;z-index:${z}`;
     b.host = host;
-    // when the last piece is gone (staggered pieces can outlive `duration`)
-    b.end = edge || b.opts.stagger ? Math.max(o.duration * 1.05 + 0.1, end + 0.05) : o.duration * 1.05 + 0.1;
+    // when the last piece is gone (staggered pieces can outlive `duration`; classic motion keeps the old cut-off)
+    b.end = edge || (b.opts.stagger && I.naturalMotion()) ? Math.max(o.duration * 1.05 + 0.1, end + 0.05) : o.duration * 1.05 + 0.1;
     b.canvas = cv; b.o = o; b.parts = parts; b.el = el; b.last = null;
   }
   function burstMap(b) {

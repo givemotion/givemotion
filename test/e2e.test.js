@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { findChrome } from '../src/browser.js';
-import { ffmpegInfo, probe } from '../src/ffmpeg.js';
+import { ffmpegInfo, ffmpegPath, probe } from '../src/ffmpeg.js';
+import { execFileSync } from 'node:child_process';
 import { render, stills, check, snapshot, inspect } from '../src/api.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -78,7 +79,13 @@ test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF c
 test('video frames are exact and <video> keeps its CSS', { skip }, async () => {
   const d = tmp();
   mkdirSync(join(d, 'media'));
-  copyFileSync(join(HERE, 'fixtures', 'media', 'clip.mp4'), join(d, 'media', 'clip.mp4'));
+  // *.mp4 is not committed: make the test clip (moving picture + a tone) when it is missing
+  const clip = join(HERE, 'fixtures', 'media', 'clip.mp4');
+  if (!existsSync(clip)) {
+    mkdirSync(dirname(clip), { recursive: true });
+    execFileSync(ffmpegPath(), ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=5', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=5', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', clip]);
+  }
+  copyFileSync(clip, join(d, 'media', 'clip.mp4'));
   const f = comp(d, 'v.html', `<video src="media/clip.mp4" data-start="0.5" data-from="2" style="position:absolute;left:0;top:0;width:640px;height:360px;object-fit:fill"></video>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"');
   const r = await stills(f, [0.5, 1.5]);
   assert.equal(r.buffers.length, 2);

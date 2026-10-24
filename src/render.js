@@ -69,12 +69,20 @@ export async function openComposition(input, opts = {}) {
   const url = server.url(rel);
   // First page discovers size; reopen at the right size if needed.
   const page = new FramePage({ chrome, width: opts.width || 1920, height: opts.height || 1080, scale: opts.scale || 1, capture: opts.capture, gl: opts.gl, transparent: opts.transparent, timeoutMs: opts.timeoutMs, verbose: opts.verbose, onConsole: opts.onConsole });
-  await page.start();
-  let info = await page.open(url, config);
-  if (info.width !== page.opts.width || info.height !== page.opts.height) {
-    page.opts.width = info.width; page.opts.height = info.height;
-    await page.setViewport(info.width, info.height);
-    info = await page.evaluate('mw.inspect()');
+  let info;
+  try {
+    await page.start();
+    info = await page.open(url, config);
+    if (info.width !== page.opts.width || info.height !== page.opts.height) {
+      page.opts.width = info.width; page.opts.height = info.height;
+      await page.setViewport(info.width, info.height);
+      info = await page.evaluate('mw.inspect()');
+    }
+  } catch (e) {
+    // do not leave Chrome and the server running (the process would never exit)
+    await page.close().catch(() => {});
+    await server.close().catch(() => {});
+    throw e;
   }
   return { page, info, server, chrome, url, config, file, root, rel };
 }

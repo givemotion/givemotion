@@ -11,7 +11,7 @@ let esbuildP = null;
 export async function compileJsx(file) {
   if (!esbuildP) esbuildP = import('esbuild').catch(() => null);
   const esbuild = await esbuildP;
-  if (!esbuild) throw new Error('JSX compositions need esbuild, react and react-dom: npm i esbuild react react-dom');
+  if (!esbuild) return { error: 'JSX compositions need esbuild, react and react-dom. Install them next to your project: npm i esbuild react react-dom' };
   const entry = `import * as M from ${JSON.stringify(file)}; import { mount } from ${JSON.stringify(join(HERE, 'react', 'mount.jsx'))}; mount(M);`;
   const res = await esbuild.build({
     stdin: { contents: entry, resolveDir: dirname(file), loader: 'jsx' },

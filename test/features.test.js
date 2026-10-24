@@ -10,6 +10,7 @@ import { ffmpegInfo, ffmpegPath } from '../src/ffmpeg.js';
 import { render, check, inspect, openComposition } from '../src/api.js';
 
 const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
+const hasEsbuild = await import('esbuild').then(() => true, () => false);
 const tmp = () => mkdtempSync(join(tmpdir(), 'mw-feat-'));
 const quiet = { quiet: true, log: () => {} };
 const page = (body, attrs = 'data-width="640" data-height="360" data-fps="30"') => `<!doctype html><html ${attrs}><head><style>body{background:#111;color:#fff;font-family:sans-serif}</style></head><body>${body}</body></html>`;
@@ -26,7 +27,7 @@ test('timeline: from/to/stagger values at exact times', { skip }, async () => {
   assert.deepEqual(v, [[50, 0.5], [0, 0]]);
 });
 
-test('react: .jsx renders and 1 worker equals 2 workers', { skip }, async () => {
+test('react: .jsx renders and 1 worker equals 2 workers', { skip: skip || (!hasEsbuild && 'needs the optional esbuild, react and react-dom (npm install)') }, async () => {
   const d = tmp(), f = join(d, 'v.jsx');
   writeFileSync(f, `import { Scene, Sequence, useTime, interpolate } from 'motionwright/react';
 export const config = { width: 320, height: 180, fps: 30 };

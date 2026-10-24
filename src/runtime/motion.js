@@ -1197,7 +1197,7 @@
   const bursts = [];
   const BURST_KINDS = {
     confetti: { count: 160, speed: 1000, spread: 360, angle: -90, gravity: 1100, drag: 1.8, duration: 2.8, size: 17, shape: 'paper' },
-    sparks: { count: 70, speed: 1300, spread: 360, angle: -90, gravity: 500, drag: 3.2, duration: 0.9, size: 4, shape: 'streak' },
+    sparks: { count: 80, speed: 1600, spread: 360, angle: -90, gravity: 500, drag: 3.2, duration: 1, size: 6, shape: 'streak' },
     dust: { count: 60, speed: 260, spread: 360, angle: -90, gravity: -40, drag: 1.2, duration: 2.2, size: 6, shape: 'dot' },
     bubbles: { count: 40, speed: 380, spread: 120, angle: -90, gravity: -120, drag: 0.8, duration: 2.4, size: 16, shape: 'ring' },
   };
@@ -1211,42 +1211,64 @@
     const el = typeof b.target === 'string' ? document.querySelector(b.target) : b.target;
     if (!el) { I.report('error', 'burst-no-target', `mw.burst: "${b.target}" matched nothing.`, null); return; }
     const o = Object.assign({ kind: 'confetti', at: 0, x: '50%', y: '50%', colors: ['#ff5c8a', '#ffd166', '#06d6a0', '#118ab2', '#a78bfa', '#ffffff'], seed: bursts.indexOf(b) + 1 }, BURST_KINDS[b.opts.kind || 'confetti'] || BURST_KINDS.confetti, b.opts);
-    const W = el.clientWidth || I.comp.width, H = el.clientHeight || I.comp.height;
+    const find = (v) => (typeof v === 'string' ? el.querySelector(v) || document.querySelector(v) : v);
+    const behind = o.behind ? find(o.behind) : null;
+    if (o.behind && !behind) I.report('warning', 'burst-no-target', `mw.burst: behind "${o.behind}" matched nothing.`, null);
+    b.fromEl = o.from ? find(o.from) : null;
+    if (o.from && !b.fromEl) I.report('warning', 'burst-no-target', `mw.burst: from "${o.from}" matched nothing.`, null);
+    // Where the canvas lives: next to `behind` (just before it, so it paints under it in the same layer), else in the
+    // camera world of the `from` element (so the particles pan and zoom with the camera), else in the target.
+    const worldOf = (n) => { const c = n && cameras.find((cm) => cm.world && cm.world !== n && cm.world.contains(n)); return c ? c.world : null; };
+    const under = behind && behind instanceof SVGElement ? behind.closest('svg').ownerSVGElement || behind.closest('svg') : behind; // (a canvas cannot live inside an SVG)
+    const host = under ? under.parentElement : worldOf(b.fromEl) || el;
+    if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     const cv = document.createElement('canvas');
     cv.setAttribute('data-mw-internal', '');
-    cv.width = Math.ceil(W); cv.height = Math.ceil(H);
-    // Layering: on top by default; `behind: '#logo'` puts the particles under that element.
-    let z = o.zIndex ?? o.z ?? 30;
-    const behind = o.behind ? (typeof o.behind === 'string' ? el.querySelector(o.behind) || document.querySelector(o.behind) : o.behind) : null;
-    if (o.behind && !behind) I.report('warning', 'burst-no-target', `mw.burst: behind "${o.behind}" matched nothing.`, null);
+    let z = o.zIndex ?? o.z ?? (host === el ? 30 : 'auto');
     if (behind) {
-      const bcs = getComputedStyle(behind);
-      if (bcs.position === 'static') behind.style.position = 'relative';
-      let bz = parseInt(bcs.zIndex, 10);
-      if (!isFinite(bz)) { bz = 1; behind.style.zIndex = '1'; }
-      z = bz - 1;
-    }
-    cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:' + z;
-    if (getComputedStyle(el).position === 'static') el.style.position = 'relative';
-    el.appendChild(cv);
+      const bcs = getComputedStyle(under);
+      if (bcs.position === 'static') under.style.position = 'relative';
+      z = isFinite(parseInt(bcs.zIndex, 10)) ? parseInt(bcs.zIndex, 10) : 'auto';
+      host.insertBefore(cv, under);
+    } else host.appendChild(cv);
+    // two markers map screen points to the host's own (untransformed) coordinates
+    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; host.appendChild(d); return d; };
+    b.marks = [mk(0), mk(1000)];
     // When does it fire (video time)? Warn if that is outside the time its element is on screen.
     const c = I.nearestClip(el);
     const T0 = o.global ? o.at : (c ? c.start : 0) + o.at;
     b.t0 = T0;
     if (c && (T0 < c.start - 1e-6 || T0 >= c.end)) I.report('warning', 'burst-outside-clip', `mw.burst on ${I.selectorOf ? I.selectorOf(el) : b.target} fires at ${T0.toFixed(2)}s of the video, but that element is only on screen from ${c.start.toFixed(2)}s to ${c.end.toFixed(2)}s.`, null, '`at` counts from the start of the element\'s scene. For a video time (a beat, a voice word) pass { at: 4.2, global: true }.');
     const px = PX();
-    const pos = (v, size) => (typeof v === 'string' && v.endsWith('%') ? (parseFloat(v) / 100) * size : (+v || 0) * px);
     const rnd = I.makeRandom(1 + o.seed * 7919);
     const parts = [];
+    let x0 = 0, x1 = 0, y0 = 0, y1 = 0, big = 0;
+    const k = o.drag || 1e-6;
     for (let i = 0; i < o.count; i++) {
       const ang = ((o.angle + (rnd() - 0.5) * o.spread) * Math.PI) / 180;
       const sp = o.speed * px * (0.12 + Math.pow(rnd(), 0.8) * 0.95);
-      parts.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: rnd() * 6.28, spin: (rnd() - 0.5) * 14, flip: rnd() * 6.28, flipS: 4 + rnd() * 8, size: o.size * px * (0.6 + rnd() * 0.8), color: o.colors[Math.floor(rnd() * o.colors.length)], life: o.duration * (0.7 + rnd() * 0.3), delay: rnd() * (o.stagger || 0.06), wob: rnd() * 6.28 });
+      const p = { vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, rot: rnd() * 6.28, spin: (rnd() - 0.5) * 14, flip: rnd() * 6.28, flipS: 4 + rnd() * 8, size: o.size * px * (0.6 + rnd() * 0.8), color: o.colors[Math.floor(rnd() * o.colors.length)], life: o.duration * (0.7 + rnd() * 0.3), delay: rnd() * (o.stagger || 0.06), wob: rnd() * 6.28 };
+      parts.push(p);
+      // how far it flies (to size the canvas to the particles, not the whole scene)
+      for (let j = 0; j <= 12; j++) {
+        const lt = (p.life * j) / 12, e = Math.exp(-k * lt);
+        const x = (p.vx * (1 - e)) / k, y = (p.vy * (1 - e)) / k + ((o.gravity * px) / k) * (lt - (1 - e) / k);
+        x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+      }
+      big = Math.max(big, p.size);
     }
-    b.canvas = cv; b.o = o; b.parts = parts; b.x0 = pos(o.x, W); b.y0 = pos(o.y, H); b.el = el; b.last = null;
-    // from: '#icon' → thrown from the center of that element (measured each frame, so it follows it)
-    b.fromEl = o.from ? (typeof o.from === 'string' ? document.querySelector(o.from) : o.from) : null;
-    if (o.from && !b.fromEl) I.report('warning', 'burst-no-target', `mw.burst: from "${o.from}" matched nothing.`, null);
+    const pad = big + 80 * px;
+    b.box = { x0: x0 - pad, y0: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
+    // sharper in a camera world, which may zoom in (a fixed number: the same in every render worker)
+    b.res = worldOf(host) || cameras.some((cm) => cm.world === host) ? 2 : 1;
+    cv.width = Math.ceil(b.box.w * b.res); cv.height = Math.ceil(b.box.h * b.res);
+    cv.style.cssText = `position:absolute;left:0;top:0;width:${r4(b.box.w)}px;height:${r4(b.box.h)}px;pointer-events:none;z-index:${z}`;
+    b.host = host;
+    b.canvas = cv; b.o = o; b.parts = parts; b.el = el; b.last = null;
+  }
+  function burstMap(b) {
+    const a = b.marks[0].getBoundingClientRect(), c = b.marks[1].getBoundingClientRect();
+    return { ox: a.left, oy: a.top, k: (c.left - a.left) / 1000 || 1 };
   }
   function drawBursts(T) {
     let changed = false;
@@ -1255,24 +1277,38 @@
       const t = b.o.global ? T - b.o.at : I.mapT(b.el, T) - I.clipStartOf(b.el) - b.o.at;
       const key = t < 0 || t > b.o.duration * 1.05 + 0.1 ? 'off' : Math.round(t * 1000);
       if (key === b.last) continue;
-      b.last = key; changed = true;
       const g = b.canvas.getContext('2d');
-      g.clearRect(0, 0, b.canvas.width, b.canvas.height);
-      if (key === 'off') continue;
-      if (b.fromEl) {
-        const r = b.fromEl.getBoundingClientRect(), cr = b.canvas.getBoundingClientRect();
-        const kx = b.canvas.width / (cr.width || 1), ky = b.canvas.height / (cr.height || 1);
-        b.x0 = (r.left + r.width / 2 - cr.left) * kx; b.y0 = (r.top + r.height / 2 - cr.top) * ky;
-      }
-      const { gravity, drag, shape } = b.o;
+      g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, b.canvas.width, b.canvas.height);
+      b.last = key; changed = true;
       const px = PX();
+      if (key === 'off') { b.canvas.style.visibility = 'hidden'; continue; }
+      b.canvas.style.visibility = '';
+      if (b.px0 == null && !b.fromEl) {
+        // the emission point x/y of the target's box, in host coordinates. Measured in layout (no transforms: not the
+        // camera, not a transition), once the scene is shown, so every render worker gets the same point.
+        const lay = (n) => { let x = 0, y = 0; for (let e = n; e; e = e.offsetParent) { x += e.offsetLeft + (e.offsetParent ? e.offsetParent.clientLeft : 0); y += e.offsetTop + (e.offsetParent ? e.offsetParent.clientTop : 0); } return [x, y]; };
+        const W = b.el.clientWidth || I.comp.width, H = b.el.clientHeight || I.comp.height;
+        const pos = (v, size) => (typeof v === 'string' && v.trim().endsWith('%') ? (parseFloat(v) / 100) * size : (parseFloat(v) || 0) * px); // '50%' of the target, or px at 1080p (12 or '12px')
+        const [ex0, ey0] = lay(b.el), [hx, hy] = b.host === b.el ? [ex0, ey0] : lay(b.host);
+        b.px0 = ex0 + b.el.clientLeft - hx - b.host.clientLeft + pos(b.o.x, W); b.py0 = ey0 + b.el.clientTop - hy - b.host.clientTop + pos(b.o.y, H);
+      }
+      let ex = b.px0, ey = b.py0;
+      if (b.fromEl) {
+        const r = b.fromEl.getBoundingClientRect(), M = burstMap(b);
+        ex = (r.left + r.width / 2 - M.ox) / M.k; ey = (r.top + r.height / 2 - M.oy) / M.k;
+      }
+      const left = ex + b.box.x0, top = ey + b.box.y0;
+      b.canvas.style.left = r4(left) + 'px'; b.canvas.style.top = r4(top) + 'px';
+      g.setTransform(b.res, 0, 0, b.res, 0, 0);
+      const { gravity, drag, shape } = b.o;
+      const ox = -b.box.x0, oy = -b.box.y0;
       for (const p of b.parts) {
         const lt = t - p.delay;
         if (lt < 0 || lt > p.life) continue;
         // velocity decays with drag k: x = v(1-e^-kt)/k ; gravity falls at terminal-ish speed
         const e = Math.exp(-drag * lt), k = drag || 1e-6;
-        const x = b.x0 + (p.vx * (1 - e)) / k + Math.sin(lt * 3 + p.wob) * (shape === 'paper' ? 18 * px * Math.min(1, lt) : 0);
-        const y = b.y0 + (p.vy * (1 - e)) / k + (gravity * px / k) * (lt - (1 - e) / k);
+        const x = ox + (p.vx * (1 - e)) / k + Math.sin(lt * 3 + p.wob) * (shape === 'paper' ? 18 * px * Math.min(1, lt) : 0);
+        const y = oy + (p.vy * (1 - e)) / k + (gravity * px / k) * (lt - (1 - e) / k);
         const fade = Math.min(1, (p.life - lt) / (p.life * 0.25));
         g.globalAlpha = Math.max(0, fade);
         g.fillStyle = g.strokeStyle = p.color;
@@ -1281,7 +1317,7 @@
           g.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6); g.restore();
         } else if (shape === 'streak') {
           const vx = p.vx * e, vy = p.vy * e + gravity * px * (1 - e) / k;
-          const L = Math.min(40 * px, Math.hypot(vx, vy) * 0.03);
+          const L = Math.min(70 * px, Math.hypot(vx, vy) * 0.045);
           const a = Math.atan2(vy, vx);
           g.lineWidth = p.size * 0.6; g.lineCap = 'round';
           g.beginPath(); g.moveTo(x, y); g.lineTo(x - Math.cos(a) * L, y - Math.sin(a) * L); g.stroke();

@@ -175,8 +175,12 @@ mw.spring(t, { from: 0, to: 1, stiffness: 170, damping: 26, delay: 0.2 });
 mw.noise(t) /* smooth, 0..1 */, mw.lerp(a, b, p), mw.clamp(v), mw.ease.outExpo(p)
 mw.burst('#scene3', { at: 2.1, kind: 'confetti', x: '50%', y: '60%' })  // also 'sparks', 'dust', 'bubbles'
 //   at: seconds into #scene3 (add global: true for a video time, e.g. a beat or a voice word)
-//   from: '#icon' throws from that element's center instead of x/y; behind: '#icon' draws under it
-//   count, colors, size (px), speed (px/s), gravity (px/s²), duration (s), spread (deg), angle (deg, -90 = up)
+//   x, y: '50%' of #scene3's box, or px at 1080p (960 or '960px'); default the center
+//   from: '#icon' throws from that element's center instead of x/y (and follows it; inside a camera world the particles
+//   pan and zoom with the camera); behind: '#icon' draws under that element (in its layer, so it works in camera worlds)
+//   count, colors, size (px), speed (px/s), gravity (px/s²), duration (s), spread (deg), angle (deg, -90 = up), seed
+//   defaults: confetti 160 / speed 1000 / size 17 / 2.8 s; sparks 80 / 1600 / 6 / 1 s; dust 60 / 260 / 6 / 2.2 s; bubbles 40 / 380 / 16 / 2.4 s
+//   For a big hit, layer it: a burst of sparks + a ring (tl.fromTo scale/opacity) + camera.shake at the same time.
 mw.data            // JSON passed with --data / --props, or <script type="application/json" id="mw-data">
 mw.beat(8), mw.bar(2)  // video time of beat 8 / bar 2 from <html data-bpm data-beat-offset data-bar-offset> (printed by `motionwright audio`); ready at once, so you can build timelines on the beat: tl.to(..., mw.beat(8)) in a { global: true } timeline
 mw.width, mw.height, mw.fps, mw.duration

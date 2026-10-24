@@ -683,7 +683,9 @@
     'diagonal': () => [{ clipPath: 'polygon(0% 0%, 0% 0%, -40% 100%, -40% 100%)' }, { clipPath: 'polygon(0% 0%, 140% 0%, 100% 100%, -40% 100%)' }],
     'clock': () => [{ '--mw-clock': '0%' }, { '--mw-clock': '100%' }],
     'iris': () => [{ clipPath: 'circle(0% at 50% 50%)' }, { clipPath: 'circle(75% at 50% 50%)' }],
-    'zoom-near': () => [{ opacity: 0, scale: '0.55' }, { opacity: 1, scale: '1' }],
+    // (zoom-through: the new scene grows in behind the old one, which flies past the camera on top)
+    // (it stays full size: a smaller scene would show a dark frame around it through the fading old one)
+    'zoom-near': () => [{ opacity: 1 }, { opacity: 1 }],
     'flip-in': () => [{ transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0 }, { transform: 'perspective(2400px) rotateY(90deg)', opacity: 0, offset: 0.5 }, { opacity: 1, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 1 }],
     'dip-in': () => [{ opacity: 0, filter: 'brightness(0)', offset: 0 }, { opacity: 0, filter: 'brightness(0)', offset: 0.5 }, { opacity: 1, filter: 'brightness(0)', offset: 0.5001 }, { opacity: 1, filter: 'brightness(1)', offset: 1 }],
     // (dash 1, gap 2, starting just inside the gap: nothing is painted before the draw, not even a round-cap dot)
@@ -741,7 +743,7 @@
     'wipe-down': () => [{ clipPath: 'inset(0% 0 0 0)' }, { clipPath: 'inset(100% 0 0 0)' }],
     'wipe-up': () => [{ clipPath: 'inset(0 0 0% 0)' }, { clipPath: 'inset(0 0 100% 0)' }],
     'iris': () => [{ clipPath: 'circle(75% at 50% 50%)' }, { clipPath: 'circle(0% at 50% 50%)' }],
-    'zoom-past': () => [{ opacity: 1, scale: '1', filter: B(0) }, { opacity: 0, scale: '2.4', filter: B(14) }],
+    'zoom-past': () => [{ opacity: 1, scale: '1', filter: B(0), zIndex: 2, offset: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0, scale: '2.4', filter: B(14), zIndex: 2, offset: 1 }],
     'flip-out': () => [{ transform: 'perspective(2400px) rotateY(0deg)', opacity: 1, offset: 0 }, { transform: 'perspective(2400px) rotateY(-90deg)', opacity: 1, offset: 0.5 }, { opacity: 0, offset: 0.5001 }, { transform: 'perspective(2400px) rotateY(-90deg)', opacity: 0, offset: 1 }],
     'dip-out': () => [{ filter: 'brightness(1)', offset: 0 }, { filter: 'brightness(0)', offset: 0.5 }, { filter: 'brightness(0)', offset: 1 }],
     'draw': () => [{ strokeDasharray: '1 2', strokeDashoffset: 0 }, { strokeDasharray: '1 2', strokeDashoffset: -1.002 }],

@@ -392,7 +392,9 @@
             // the last child runs to the end of the video when <html data-duration> is set
             const own = parseTime(k.getAttribute('data-duration'), k, 'data-duration');
             const total = parseTime(rootAttr('duration'), root, 'data-duration');
-            d = own ?? (total != null && !container.closest('[data-start],[data-duration]') && i === kids.length - 1 && total > start ? total - start : 3);
+            let nested = container.hasAttribute('data-start') || container.hasAttribute('data-duration');
+            for (let an = container.parentElement; an && an !== document.body && an !== root; an = an.parentElement) if (an.hasAttribute('data-start') || an.hasAttribute('data-duration')) nested = true;
+            d = own ?? (total != null && !nested && total > start ? total - start : 3);
           }
           if (cuts[i] == null && i < kids.length) report('warning', 'cuts-short', `data-cuts has ${cuts.length} times for ${kids.length} children; the rest follow one after another.`, container);
           map.set(k, { start, dur: d, index: i, count: kids.length });

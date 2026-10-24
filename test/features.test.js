@@ -898,3 +898,31 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
 });
+
+test('determinism: a layer that moved keeps no paint state into later ranges (1 worker == 2 workers, png and mp4, motion blur off)', { skip }, async () => {
+  // Chrome keeps the raster offset of a layer that was animated (here a timeline tween on x): a worker that rendered the
+  // tween drew the resting title a pixel level differently from one that started after it. Every range now starts with
+  // that paint state dropped.
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, `<!doctype html><html data-width="640" data-height="360" data-fps="30" data-duration="2"><head><style>
+body{background:#0d1020;color:#fff;font-family:sans-serif;margin:0}
+h1{position:absolute;left:150px;top:140px;margin:0;font:800 56px/1 sans-serif}
+</style></head><body><h1 id="h">Moves only</h1>
+<script>gm.timeline().fromTo('#h', { x: -200, opacity: 0 }, { x: 0, opacity: 1, duration: 0.8, ease: 'expo.out' }, 0.1);</script></body></html>`);
+  const opts = { motionBlur: 'off', cache: false, ...quiet };
+  const a = join(d, 'a'), b = join(d, 'b'), c = join(d, 'c');
+  await render(f, { output: a, workers: 1, ...opts });
+  await render(f, { output: b, workers: 2, ...opts });
+  const fa = readdirSync(a).sort();
+  assert.equal(fa.length, 60);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+  // a range that starts on the 1 s grid gives the same frames as the whole video
+  await render(f, { output: c, workers: 1, frames: '30-60', ...opts });
+  const fc = readdirSync(c).sort();
+  assert.equal(fc.length, 30);
+  assert.deepEqual(fc.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(c, x)))), []);
+  const m1 = join(d, '1.mp4'), m2 = join(d, '2.mp4');
+  await render(f, { output: m1, workers: 1, ...opts });
+  await render(f, { output: m2, workers: 2, ...opts });
+  assert.ok(readFileSync(m1).equals(readFileSync(m2)));
+});

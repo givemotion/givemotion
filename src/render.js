@@ -235,8 +235,8 @@ export async function render(input, opts = {}) {
     const useParts = format !== 'png' && !opts.frames;
     const keepParts = useParts && opts.cache !== false;
     let ranges, parts = null;
+    const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
     if (useParts) {
-      const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
       const dir = keepParts ? join(dirname(out), '.gm-parts', basename(out)) : join(tmp, 'parts');
       const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, blur: blur.mode === 'auto' ? AUTO_BLUR : null, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
@@ -265,20 +265,22 @@ export async function render(input, opts = {}) {
       ranges = list.filter((p) => !p.keep).map((p) => ({ a: p.a, b: p.b, file: p.file }));
       mkdirSync(dir, { recursive: true });
     } else {
-      ranges = [{ a: f0, b: f1, file: format === 'png' ? null : join(tmp, `seg.${plan.segExt}`) }];
+      // A single range (png, --frames) is cut into pieces on the same 1-2 s grid as the parts: every piece starts the
+      // same way whichever worker renders it, so the frames do not depend on the number of workers.
+      ranges = [];
+      for (let a = f0, i = 0; a < f1; i++) {
+        const b = Math.min(f1, (Math.floor(a / segF) + 1) * segF);
+        ranges.push({ a, b, file: format === 'png' ? null : join(tmp, `seg${String(i).padStart(4, '0')}.${plan.segExt}`) });
+        a = b;
+      }
     }
     const todoFrames = ranges.reduce((s, r) => s + r.b - r.a, 0);
     const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames), Math.max(1, todoFrames)));
     const auto = blur.mode === 'auto';
-    // Auto blur: frames are not equally expensive, so ranges are handed out by cost (below) instead of in fixed runs;
-    // a single range (--frames, png) is cut into 1 s pieces for that. Every range starts with its own warm-up.
-    if (auto && !useParts && todoFrames) {
-      const { a: f0r, b: f1r, file } = ranges[0];
-      ranges = [];
-      for (let a = f0r, i = 0; a < f1r; a += fps, i++) ranges.push({ a, b: Math.min(f1r, a + fps), file: file ? join(tmp, `seg${String(i).padStart(4, '0')}.${plan.segExt}`) : null });
-    }
-    // Otherwise give each worker a run of neighbouring frames (fewer warm-ups, same balance as before).
-    const groups = auto ? Array.from({ length: Math.min(workers, ranges.length) }, () => []) : splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
+    // Auto blur: frames are not equally expensive, so ranges are handed out by cost (below) instead of in fixed runs.
+    // Every range starts with its own warm-up.
+    // Otherwise give each worker a run of neighbouring ranges.
+    const groups = auto ? Array.from({ length: Math.min(workers, ranges.length) }, () => []) : splitRanges(ranges, workers);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
       log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : blur.mode === 'auto' ? ', motion blur auto' : blur.why ? ', no motion blur: ' + (blur.why === 'transparent' ? 'transparent output' : 'the page uses requestAnimationFrame') : ''}${hardware ? ', GPU encoder' : ''}]`);
@@ -456,8 +458,11 @@ export async function render(input, opts = {}) {
             await captureAuto(a, b, writer);
             prevFrame = b - 1;
           } else {
-            // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
-            if (a !== prevFrame + 1) { last = null; if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); } }
+            // Every range starts the same way, whichever worker renders it and whatever it rendered before: on its first
+            // frame, with Chrome's paint state from earlier frames dropped (page.resetPaint).
+            last = null;
+            await page.seek(a / fps);
+            await page.resetPaint();
             for (let f = a; f < b; f++) {
               for (let s = 0; s < blurSamples; s++) {
                 const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
@@ -639,21 +644,12 @@ function engineHash() {
 }
 
 /**
- * Split the work between workers. Whole parts (useParts) are grouped into runs of neighbours with about the same number
- * of frames; a single range (--frames, png) is cut into one chunk per worker, as before.
+ * Split the work between workers: the ranges (parts, or the pieces of a single range) are grouped into runs of
+ * neighbours with about the same number of frames.
  */
-function splitRanges(ranges, workers, useParts, tmp, plan) {
+function splitRanges(ranges, workers) {
   const total = ranges.reduce((s, r) => s + r.b - r.a, 0);
   if (!total) return [];
-  if (!useParts) {
-    const { a: f0, b: f1, file } = ranges[0];
-    const per = Math.ceil(total / workers), out = [];
-    for (let i = 0; i < workers; i++) {
-      const a = f0 + i * per, b = Math.min(f1, a + per);
-      if (a < b) out.push([{ a, b, file: file ? join(tmp, `seg${String(i).padStart(3, '0')}.${plan.segExt}`) : null }]);
-    }
-    return out;
-  }
   const groups = [];
   let cur = [], n = 0, left = total, wLeft = workers;
   for (const r of ranges) {

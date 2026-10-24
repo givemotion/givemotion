@@ -291,6 +291,24 @@ export class FramePage {
     const r = await this.s('Page.captureScreenshot', { format, ...(format === 'jpeg' ? { quality } : {}), optimizeForSpeed: true, fromSurface: true, captureBeyondViewport: false });
     return Buffer.from(r.data, 'base64');
   }
+  /**
+   * Forget the paint state of earlier frames. Chrome keeps raster state per composited layer from frame to frame: a
+   * layer that moves, scales or has will-change keeps the raster scale and sub-pixel offset it was first drawn at (or
+   * the largest scale it reached), so a frame could depend on which frames this page drew before it (1 worker !=
+   * N workers by a pixel level on grid lines and text). Hiding the page's content for one drawn frame drops every such
+   * layer; the next frame makes new ones, rastered for that frame's state only. Call it after a seek, before capturing.
+   */
+  async resetPaint() {
+    if (process.env.GM_NORESET) return;
+    const had = await this.evaluate(`(() => { const b = document.body; if (!b) return false; window.__gmResetStyle = b.getAttribute('style'); b.style.setProperty('content-visibility', 'hidden', 'important'); return true; })()`);
+    if (!had) return;
+    try {
+      if (this.mode === 'beginframe') await this._beginFrame(true, 'jpeg', 1);
+      else await this.s('Page.captureScreenshot', { format: 'jpeg', quality: 1, optimizeForSpeed: true, fromSurface: true, clip: { x: 0, y: 0, width: 8, height: 8, scale: 1 } });
+    } finally {
+      await this.evaluate(`(() => { const b = document.body, s = window.__gmResetStyle; delete window.__gmResetStyle; if (s == null) b.removeAttribute('style'); else b.setAttribute('style', s); })()`);
+    }
+  }
   async close() {
     if (this.browser) { const b = this.browser; this.browser = null; await b.close(); }
   }

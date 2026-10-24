@@ -420,8 +420,12 @@ const PAGE_MOTION = String.raw`(() => {
     const pw = p && (p.offsetWidth || (p.getBBox && p.ownerSVGElement && p.getBBox().width) || 0), pk = pw ? pr.width / pw || 1 : 1;
     const ow = el.offsetWidth || r.width, cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
     const world = el.hasAttribute('data-gm-camera-world');
+    // blurred already (a whip transition, a blur filter on the move)
+    let blurred = 0;
+    for (let a = el; a && a !== document.body && !blurred; a = a.parentElement) { const m = /blur\(([\d.]+)px\)/.exec(getComputedStyle(a).filter); if (m && parseFloat(m[1]) >= 2) blurred = 8; }
     if (!el.__gmMoId) { el.__gmMoId = ++id; names[id] = gm.__selector(el); }
-    out.push([el.__gmMoId, cx, cy, (cx - pr.left) / pk, (cy - pr.top) / pk, pk, r.width, r.height, r.width / (ow || 1), (world ? 1 : 0) | (!world && el.closest('[data-gm-camera-world]') ? 2 : 0) | (cs.offsetPath && cs.offsetPath !== 'none' ? 4 : 0)]);
+    // (and, for a camera world, the middle of the view in its parent's own px)
+    out.push([el.__gmMoId, cx, cy, (cx - pr.left) / pk, (cy - pr.top) / pk, pk, r.width, r.height, r.width / (ow || 1), (world ? 1 : 0) | (!world && el.closest('[data-gm-camera-world]') ? 2 : 0) | (cs.offsetPath && cs.offsetPath !== 'none' ? 4 : 0) | blurred, (W / 2 - pr.left) / pk, (H / 2 - pr.top) / pk]);
   }
   window.__gmMoId = id;
   return { els: out, names };
@@ -502,7 +506,7 @@ export function motionIssues(samples, names, setup, info, step) {
   const W = info.width, H = info.height, PX = Math.min(W, H) / 1080, fps = info.fps, halfDiag = Math.hypot(W, H) / 2;
   const r2 = (x) => Math.round(x * 100) / 100;
   const tracks = new Map();
-  for (const { t, els } of samples) for (const e of els) { if (!tracks.has(e[0])) tracks.set(e[0], []); tracks.get(e[0]).push({ t, sx: e[1], sy: e[2], lx: e[3], ly: e[4], pk: e[5], w: e[6], h: e[7], s: e[8], flags: e[9] }); }
+  for (const { t, els } of samples) for (const e of els) { if (!tracks.has(e[0])) tracks.set(e[0], []); tracks.get(e[0]).push({ t, sx: e[1], sy: e[2], lx: e[3], ly: e[4], pk: e[5], w: e[6], h: e[7], s: e[8], flags: e[9], vx: e[10], vy: e[11] }); }
   const runsOf = (ts, gap) => { const rs = []; for (const x of ts) { const l = rs[rs.length - 1]; if (l && x - l[1] <= gap) l[1] = x; else rs.push([x, x]); } return rs.map(([a, b]) => [r2(a), r2(b)]); };
   const camStops = [], fast = [], straight = [];
   for (const [id, pts] of tracks) {
@@ -515,14 +519,16 @@ export function motionIssues(samples, names, setup, info, step) {
       if (dt <= 0 || dt > 0.2) { sp.push(null); continue; }
       let v;
       if (big) {
-        // a camera (or a big layer moved like one): how fast the picture under the center of the frame slides, and zooms
-        const wa = [(W / 2 - (a.sx - a.w / 2)) / a.s, (H / 2 - (a.sy - a.h / 2)) / a.s], wb = [(W / 2 - (b.sx - b.w / 2)) / b.s, (H / 2 - (b.sy - b.h / 2)) / b.s];
-        v = (Math.hypot(wb[0] - wa[0], wb[1] - wa[1]) * b.s + Math.abs(Math.log(b.s / a.s)) * halfDiag) / dt;
+        // a camera (or a big layer moved like one): how fast the picture under the middle of the view slides, and
+        // zooms, in its parent's px (a scene transition that moves the parent is not the camera)
+        const k0 = a.s / a.pk, k1 = b.s / b.pk;
+        const wa = [(a.vx - (a.lx - a.w / a.pk / 2)) / k0, (a.vy - (a.ly - a.h / a.pk / 2)) / k0], wb = [(b.vx - (b.lx - b.w / b.pk / 2)) / k1, (b.vy - (b.ly - b.h / b.pk / 2)) / k1];
+        v = ((Math.hypot(wb[0] - wa[0], wb[1] - wa[1]) * k1 + Math.abs(Math.log(k1 / k0)) * halfDiag) * b.pk) / dt;
       } else v = (Math.hypot(b.lx - a.lx, b.ly - a.ly) * b.pk) / dt;
-      sp.push({ t: (a.t + b.t) / 2, v, i });
+      sp.push({ t: (a.t + b.t) / 2, v, i, blurred: (a.flags & 8) && (b.flags & 8) });
     }
     // 1. a camera that stops dead between two moves: the speed drops to almost nothing and comes back within ~0.45 s
-    if (big && step <= 0.15) {
+    if (pts[0].flags & 1 && step <= 0.15) {
       for (let k = 1; k < sp.length - 1; k++) {
         const c = sp[k];
         if (!c) continue;
@@ -535,13 +541,13 @@ export function motionIssues(samples, names, setup, info, step) {
         let a = k, b = k;
         while (a > 0 && sp[a - 1] && sp[a - 1].v <= 0.12 * minPeak) a--;
         while (b < sp.length - 1 && sp[b + 1] && sp[b + 1].v <= 0.12 * minPeak) b++;
-        if (okB && okA && sp[b].t - sp[a].t <= 0.45) camStops.push({ id, t: r2(c.t) });
+        if (okB && okA && sp[b].t - sp[a].t <= 0.45) camStops.push({ id, t: r2((sp[a].t + sp[b].t) / 2) });
         k = b + 1;
       }
     }
     // 2. fast moves with no motion blur (per-frame displacement)
     if (setup.blurOff && (big || pts[0].w * pts[0].h >= 0.005 * W * H)) {
-      for (let k = 0; k < sp.length; k++) { const c = sp[k]; if (c && c.v / fps >= 40 * PX) fast.push({ id, t: c.t, d: c.v / fps }); }
+      for (let k = 0; k < sp.length; k++) { const c = sp[k]; if (c && !c.blurred && c.v / fps >= 40 * PX) fast.push({ id, t: c.t, d: c.v / fps }); }
     }
     // 3. long straight diagonal moves of an element (not the camera, not along a path)
     if (!big && !(pts[0].flags & 4)) {

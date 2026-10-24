@@ -788,6 +788,12 @@ export async function analyzeVideo(input, opts = {}) {
     report.files.sheet = await videoSheet(file, { output: join(outDir, 'sheet.png'), every, meta, chrome: opts.chrome, title: `${basename(file)} · every ${every} s` });
     report.files.shots = await shotSheet(file, report, join(outDir, 'shots.png'), opts);
   }
+  // 12. Motion smoothness (--motion), and frame strips of the busiest moments (--strips)
+  if (opts.motion || opts.strips) {
+    const m = await analyzeMotion(file, { meta, keepEnergy: true });
+    report.motion = m;
+    if (opts.strips) report.strips = await motionStrips(file, { output: outDir, energy: m.energy, fps: m.fps, meta, chrome: opts.chrome, count: opts.strips === true ? 4 : Math.max(1, Math.min(8, parseInt(opts.strips, 10) || 4)) });
+  }
   report.seconds = r2((Date.now() - t0) / 1000);
   writeFileSync(join(outDir, 'report.json'), JSON.stringify(report, null, 2));
   writeFileSync(join(outDir, 'report.md'), formatAnalysis(report));
@@ -847,7 +853,13 @@ export function formatAnalysis(r) {
   L.push('## Colors');
   L.push(`${r.colors.theme}, background ${r.colors.background}. Palette: ${r.colors.palette.map((p) => `${p.hex} (${Math.round(p.share * 100)}%)`).join(', ')}`);
   if (r.music) { L.push(''); L.push('## Music'); L.push(r.music.bpm ? `${r.music.bpm} BPM, beat ${r.music.beatSeconds} s. Scene changes on a beat: ${r.music.cutsOnBeat}/${r.music.cuts} (on a bar: ${r.music.cutsOnBar}).` : (r.music.note || r.music.error || 'no music analysis')); }
-  if (r.files && (r.files.sheet || r.files.shots)) { L.push(''); L.push('## Pictures'); if (r.files.sheet) L.push(`- ${r.files.sheet}: the whole video at even steps`); if (r.files.shots) L.push(`- ${r.files.shots}: start, middle and end of every shot`); }
+  if (r.motion) { L.push(''); L.push(formatMotion(r.motion)); }
+  if (r.files && (r.files.sheet || r.files.shots || r.strips)) {
+    L.push(''); L.push('## Pictures');
+    if (r.files.sheet) L.push(`- ${r.files.sheet}: the whole video at even steps`);
+    if (r.files.shots) L.push(`- ${r.files.shots}: start, middle and end of every shot`);
+    for (const st of r.strips || []) L.push(`- ${st.file}: ${st.start}-${st.end} s at 10 frames per second (a busy moment)`);
+  }
   return L.join('\n') + '\n';
 }
 
@@ -1262,7 +1274,7 @@ export async function analyzeMotion(input, opts = {}) {
   const ends = linkable.filter((t) => t.toRest).map((t) => t.pts[t.pts.length - 1]);
   for (const tr of linkable) {
     const a = tr.pts[0];
-    if (ends.some((e) => a.f > e.f && a.f - e.f <= short && Math.hypot(a.cx - e.cx, a.cy - e.cy) <= 36)) objStopTimes.push(r2(a.f / fps));
+    if (tr.fromRest && ends.some((e) => a.f > e.f && a.f - e.f <= short && Math.hypot(a.cx - e.cx, a.cy - e.cy) <= 20)) objStopTimes.push(r2(a.f / fps));
   }
   objStopTimes.sort((x, y) => x - y);
   objSteps.sort((x, y) => x - y);
@@ -1358,7 +1370,7 @@ export async function motionStrips(input, { output, count = 4, window: win = 1, 
       const png = await layoutSheet(page, { title: `${basename(file)} · ${fmtT(w.start)} – ${fmtT(w.end)} · ${rate} frames per second · motion ${Math.round((w.motion / top) * 100)}%`, rows, cols, cellW, cellH });
       const f = join(outDir, `strip-${i + 1}.png`);
       writeFileSync(f, png);
-      out.push({ file: f, start: r3(w.start), end: r3(w.end), motion: r3(w.motion * (meta.width / (meta.width >= meta.height ? MW : (MW * meta.width) / meta.height))) });
+      out.push({ file: f, start: r2(w.start), end: r2(w.end), motion: r3(w.motion * (meta.width / (meta.width >= meta.height ? MW : (MW * meta.width) / meta.height))) });
     }
     return out;
   });

@@ -75,3 +75,39 @@ test('hardware encoder: auto on macOS for H.264/HEVC MP4 only; reproducibility c
   assert.equal(Object.values(JSON.parse(readFileSync(cacheFile, 'utf8')))[0], true, 'answer kept');
   assert.equal(encoderIsReproducible({ ...plan, vargs: ['-c:v', 'no_such_encoder'] }, real, { cacheFile }), false);
 });
+
+test('motionIssues: a camera that stops between shots, fast moves without blur, straight diagonals, one easing for everything', async () => {
+  const { motionIssues } = await import('../src/check.js');
+  const info = { width: 1920, height: 1080, fps: 30 };
+  const io = (u) => (u < 0.5 ? 4 * u ** 3 : 1 - (-2 * u + 2) ** 3 / 2);
+  // camera x: three in-out-cubic moves of 1 s back to back (stops at 1 s and 2 s); a card: a 900 px straight diagonal
+  const camX = (t) => (t < 0 ? 0 : t >= 3 ? -3000 : -1000 * (Math.floor(t) + io(t - Math.floor(t))));
+  const samples = [];
+  for (let t = 0; t <= 3.5 + 1e-9; t += 0.1) {
+    const x = camX(t), cx = x + 2500, u = Math.min(1, Math.max(0, (t - 0.5) / 0.8));
+    const card = [200 + 720 * u, 200 + 540 * u];
+    samples.push({ t, els: [[1, cx, 1000, cx, 1000, 1, 5000, 2000, 1, 1, 960, 540], [2, ...card, ...card, 1, 300, 200, 1, 0, 0, 0]] });
+  }
+  const names = { 1: '#world', 2: '#card' };
+  const classic = { classic: true, blurOff: true, blurExplicitOff: false, eases: [...Array(10).fill({ ease: 'cubic-bezier(0.33,1,0.68,1)', name: 'power2.out' }), { ease: 'linear(0, 1)', name: 'spring' }] };
+  const by = (list) => Object.fromEntries(list.map((i) => [i.code, i]));
+  const a = by(motionIssues(samples, names, classic, info, 0.1));
+  assert.ok(a['camera-stop'], 'camera stop found');
+  assert.deepEqual(a['camera-stop'].ranges.map(([t]) => Math.round(t)), [1, 2]);
+  assert.equal(a['camera-stop'].selector, '#world');
+  assert.match(a['camera-stop'].fix, /classic/);
+  assert.ok(a['fast-no-blur'], 'fast move without blur');
+  assert.ok(a['straight-move'] && a['straight-move'].selector === '#card');
+  assert.ok(a['same-ease'] && /power2\.out/.test(a['same-ease'].message));
+  // natural motion: blur on, the natural default eases, a camera that keeps moving, a card on an arc: nothing
+  const smooth = [];
+  for (let t = 0; t <= 3.5 + 1e-9; t += 0.1) {
+    const p = Math.min(1, t / 3.5), x = -3000 * (0.5 - Math.cos(Math.PI * p) / 2), cx = x + 2500, u = Math.min(1, Math.max(0, (t - 0.5) / 0.8));
+    const card = [200 + 720 * u, 200 + 540 * u - 160 * Math.sin(Math.PI * u)];
+    smooth.push({ t, els: [[1, cx, 1000, cx, 1000, 1, 5000, 2000, 1, 1, 960, 540], [2, ...card, ...card, 1, 300, 200, 1, 0, 0, 0]] });
+  }
+  const natural = { classic: false, blurOff: false, blurExplicitOff: false, eases: [...Array(9).fill({ ease: 'natural', name: 'default' }), { ease: 'cubic-bezier(0.33,1,0.68,1)', name: 'power2.out' }] };
+  assert.deepEqual(motionIssues(smooth, names, natural, info, 0.1).map((i) => i.code), []);
+  // a step too coarse to see a stop: no camera-stop
+  assert.equal(motionIssues(samples, names, classic, info, 0.25).filter((i) => i.code === 'camera-stop').length, 0);
+});

@@ -29,7 +29,8 @@ Look (for AI review)
   audio <file>                  Tempo, beats, bar starts and big hits of a sound file
   captions <file.json|.srt>     How the captions block will page the words (--words 3)
   analyze <video.mp4>           Report on any video: cuts, shot lengths, transitions,
-                                camera, pacing, colors, beat sync, contact sheets
+                                camera, pacing, colors, beat sync, contact sheets;
+                                --motion: smoothness (natural vs robotic), --strips
 
 Share
   bundle [file] -o dir          Standalone page that plays in any browser, plus
@@ -102,7 +103,7 @@ const CMD_HELP = {
   Mark decorative copies with data-check="ignore" (or aria-hidden="true"), and text meant to be cut by the frame with data-check="crop-ok".
   Exit code 1 when there are errors. Warnings do not fail.`,
   bundle: 'givemotion bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), gm-player.js and player.html.\n  Embed: <script src="gm-player.js"></script> <gm-player src="index.html" controls autoplay loop muted></gm-player>',
-  analyze: `givemotion analyze video.mp4 [-o dir] [--compare reference.mp4] [--json]
+  analyze: `givemotion analyze video.mp4 [-o dir] [--compare reference.mp4] [--motion] [--strips] [--json]
   Turns any video (a reference to learn from, or your own render) into a report:
   shots and their lengths, scene changes (cut, fade, dip, wipe-*, push-*, zoom, iris), camera per shot,
   a pacing strip, colors (background, accents), where the detail sits, scene changes on the beat,
@@ -111,7 +112,11 @@ const CMD_HELP = {
   --compare ref.mp4 Also analyze a reference and list the differences (yours vs reference)
   --every 0.5       Seconds between pictures on sheet.png (default: fits ~48 pictures)
   --no-sheets       Only the report (faster)
-  --no-audio        Skip the music analysis`,
+  --no-audio        Skip the music analysis
+  --motion          Add a smoothness report: camera stops between moves, stop-and-go, sudden velocity changes,
+                    jerk, motion blur on fast frames (strobing), and a 0-10 naturalness score
+  --strips [n]      Also write strip-1.png … strip-n.png (default 4): the busiest 1 s moments at 10 frames
+                    per second, to judge smoothness from pictures (implies --motion; --out <dir> = -o)`,
   captions: 'givemotion captions captions.json|captions.srt [--words 5] [--json]\n  Prints the caption pages the captions block will show (times and words), so you can pick --words before rendering.',
   audio: 'givemotion audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
   inspect: 'givemotion inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment (screen box, opacity, transform, visible), and which clips are on screen with their local time.\n  --at 2 --to 3 --el "#logo" [--every 1f]   One element over time, frame by frame (position, size, opacity).\n  --data f.json / --props \'{…}\'   Data for {{data.…}}',
@@ -122,12 +127,12 @@ const CMD_HELP = {
   bench: 'givemotion bench [file.html] [--workers n] [--json]',
 };
 
-const BOOLS = ['json', 'sheets', 'audio', 'cache', 'grid', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
+const BOOLS = ['json', 'sheets', 'audio', 'motion', 'cache', 'grid', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0] && !argv[0].startsWith('-') ? argv[0] : (argv.includes('--version') || argv.includes('-v') ? 'version' : 'help');
-  const args = parseArgs(cmd === argv[0] ? argv.slice(1) : argv, { boolean: BOOLS, alias: { o: 'output', t: 'time', w: 'workers', q: 'quality', h: 'help', f: 'format' } });
+  const args = parseArgs(cmd === argv[0] ? argv.slice(1) : argv, { boolean: BOOLS, alias: { o: 'output', out: 'output', t: 'time', w: 'workers', q: 'quality', h: 'help', f: 'format' } });
   if (args.help && cmd !== 'help') return console.log(CMD_HELP[cmd] || HELP);
   switch (cmd) {
     case 'help': return console.log(HELP);
@@ -320,9 +325,11 @@ async function cmdCaptions(args) {
 async function cmdAnalyze(args) {
   const { analyzeVideo, formatAnalysis, compareAnalyses } = await import('./analyze.js');
   try {
+    // (--strips takes an optional count: "--strips video.mp4" means the video, not a count)
+    if (typeof args.strips === 'string' && !/^\d+$/.test(args.strips)) { args._.unshift(args.strips); args.strips = true; }
     const f = args._[0];
-    if (!f) throw new Error('Usage: givemotion analyze video.mp4 [--compare reference.mp4] [-o dir] [--json]');
-    const o = { output: args.output, every: args.every, sheets: args.sheets, audio: args.audio, chrome: args.chrome };
+    if (!f) throw new Error('Usage: givemotion analyze video.mp4 [--compare reference.mp4] [-o dir] [--motion] [--strips] [--json]');
+    const o = { output: args.output, every: args.every, sheets: args.sheets, audio: args.audio, chrome: args.chrome, motion: args.motion, strips: args.strips };
     const r = await analyzeVideo(f, o);
     let cmp = null;
     if (args.compare) {
@@ -332,7 +339,7 @@ async function cmdAnalyze(args) {
     if (args.json) return console.log(JSON.stringify(cmp ? { ...r, compare: cmp } : r, null, 2));
     console.log(formatAnalysis(r).replace(/\n$/, ''));
     if (cmp) console.log(['', `## Yours vs ${basename(args.compare)}`, ...cmp.differences.map((d) => '- ' + d), `(reference report: ${shortPath(cmp.reference.files.md)})`].join('\n'));
-    console.log(`\nreport: ${shortPath(r.files.md)}${r.files.sheet ? `\nlook at: ${shortPath(r.files.sheet)} and ${shortPath(r.files.shots)}` : ''}`);
+    console.log(`\nreport: ${shortPath(r.files.md)}${r.files.sheet ? `\nlook at: ${shortPath(r.files.sheet)} and ${shortPath(r.files.shots)}` : ''}${r.strips && r.strips.length ? `\nstrips: ${r.strips.map((x) => shortPath(x.file)).join(', ')}` : ''}`);
   } catch (e) { fail(e, args); }
 }
 

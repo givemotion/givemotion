@@ -983,3 +983,79 @@ test('camera (r10): bounds keep the view inside the world (auto for an opaque wo
   assert.equal(fa.length, 120);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
 });
+
+// transitions, counters (r10)
+function rgbRow(video, n, w, y) {
+  const b = execFileSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-i', video, '-vf', `select=eq(n\\,${n}),crop=${w}:2:0:${y},format=rgb24`, '-frames:v', '1', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 24 });
+  return (x) => [b[x * 3], b[x * 3 + 1], b[x * 3 + 2]];
+}
+const bandPage = (scenes) => page(`<style>.scene{background:#00f}</style><main data-sequence data-cuts="0 1.5" data-cut-align="middle">${scenes}</main>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"');
+
+test('band transition: on the cut the band covers the frame centre, the new scene is behind it and the old one ahead; 1 worker == 3 workers', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, bandPage(`<section class="scene" id="a"></section><section class="scene" id="b" style="background:#0f0" data-transition="band-right 0.6 #ff0000"></section>`));
+  const a = join(d, 'a.mp4'), b = join(d, 'b.mp4');
+  await render(f, { output: a, workers: 1, cache: false, ...quiet });
+  await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
+  const red = (p) => p[0] > 200 && p[1] < 60 && p[2] < 60, green = (p) => p[1] > 200 && p[0] < 60, blue = (p) => p[2] > 200 && p[0] < 60 && p[1] < 60;
+  const before = rgbRow(a, 30, 640, 180), mid = rgbRow(a, 45, 640, 180), after = rgbRow(a, 60, 640, 180);
+  assert.ok(blue(before(320)) && blue(before(20)), 'before: old scene');
+  // the band is 35% of 640 = 224 px wide, centred on the frame at the cut (t = 1.5 = frame 45)
+  assert.ok(red(mid(320)) && red(mid(215)) && red(mid(425)), 'band in the middle: ' + mid(320));
+  assert.ok(green(mid(20)), 'new scene behind the band: ' + mid(20));
+  assert.ok(blue(mid(620)), 'old scene ahead of the band: ' + mid(620));
+  assert.ok(green(after(320)) && green(after(620)), 'after: new scene');
+});
+
+test('band transition: color from --transition-color, 100% covers everything at the middle, nothing left after; data-enter band on an element', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, bandPage(`<section class="scene" id="a"></section><section class="scene" id="b" style="--transition-color:#123456" data-transition="band-down 0.6 100% 15deg"><div id="card" style="position:absolute;left:100px;top:100px;width:200px;height:100px;background:#fff" data-enter="band-left 0.5 1 #ffffff"></div></section>`));
+  const ctx = await openComposition(f, { mode: 'render' });
+  try {
+    await ctx.page.seek(1.5);
+    const m = await ctx.page.evaluate(`(() => { const b = document.querySelector('#b'); return { clip: getComputedStyle(b).getPropertyValue('--gm-band-clip'), color: getComputedStyle(b, '::after').backgroundColor }; })()`);
+    assert.equal(m.color, 'rgb(18, 52, 86)');
+    // band-down: points are "x% y%" (trailing edge left, front edge left, front edge right, trailing edge right);
+    // at the middle the band runs from above the top to below the bottom on both sides
+    const ys = [...m.clip.matchAll(/(-?[\d.]+)% (-?[\d.]+)%/g)].map((x) => +x[2]);
+    assert.ok(ys[0] <= 0 && ys[3] <= 0 && ys[1] >= 100 && ys[2] >= 100, 'full cover: ' + m.clip);
+    await ctx.page.seek(2.6);
+    const e = await ctx.page.evaluate(`(() => { const b = document.querySelector('#b'), c = document.querySelector('#card'); return { b: getComputedStyle(b).getPropertyValue('--gm-band-clip'), bc: getComputedStyle(b).clipPath, card: getComputedStyle(c).getPropertyValue('--gm-band-clip'), cardBand: c.getAttribute('data-gm-band') }; })()`);
+    assert.equal(e.b, '');
+    assert.equal(e.bc, 'none');
+    // the card's entrance starts 1 s into its scene (the scene starts at 1.2): 2.2-2.7, so at 2.6 it is sweeping
+    assert.ok(/polygon/.test(e.card) && e.cardBand === 'after', JSON.stringify(e));
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+});
+
+test('counters: tabular digits in natural motion only; data-count-fixed keeps one width while counting and shows the number', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), fc = join(d, 'c.html');
+  const body = `<div data-duration="3" style="font:800 60px Inter"><span id="n" data-count="0 3480" data-count-duration="2">0</span><br><span id="x" data-count="0 3480" data-count-duration="2" data-count-fixed data-count-suffix=" km">0</span></div>`;
+  writeFileSync(f, page(body));
+  writeFileSync(fc, page(body, 'data-width="640" data-height="360" data-fps="30" data-motion="classic"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  const read = `(() => { const x = document.querySelector('#x'); const vis = [...x.querySelectorAll('.gm-num > :not(.gm-ghost)')].map((e) => e.textContent).join(''); return { tn: getComputedStyle(document.querySelector('#n')).fontVariantNumeric, w: x.getBoundingClientRect().width, vis, text: x.textContent }; })()`;
+  try {
+    const ws = [];
+    for (const t of [0, 0.05, 0.2, 2.5]) {
+      await ctx.page.seek(t);
+      const r = await ctx.page.evaluate(read);
+      ws.push(r.w);
+      if (t === 0) { assert.equal(r.tn, 'tabular-nums'); assert.equal(r.vis, '0'); }
+      if (t === 2.5) { assert.equal(r.vis, '3,480'); assert.equal(r.text, '3,480 km'); }
+    }
+    assert.ok(ws.every((w) => Math.abs(w - ws[0]) < 0.01), 'width ' + ws.join(', '));
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+  assert.equal(await evalAt(fc, 0, `getComputedStyle(document.querySelector('#n')).fontVariantNumeric`), 'normal');
+});
+
+test('burst edge: pieces start along the top edge, and staggered pieces stay until they are done', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div id="s" data-duration="4" style="position:absolute;inset:0"></div><script>window.b1 = gm.burst('#s', { edge: 'top', count: 60, duration: 2 }); window.b2 = gm.burst('#s', { count: 60, duration: 2 });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"'));
+  const r = await evalAt(f, 2.4, `({ xs: b1.parts.map((p) => p.sx), ys: b1.parts.map((p) => p.sy), v1: b1.canvas.style.visibility, v2: b2.canvas.style.visibility, end: b1.end })`);
+  assert.ok(Math.min(...r.xs) < -250 && Math.max(...r.xs) > 250, 'spread along the width');
+  assert.ok(r.ys.every((y) => y < 0), 'just above the top edge');
+  assert.ok(r.end > 2.4 && r.v1 === '', 'edge pieces still falling at 2.4 s (end ' + r.end + ')');
+  assert.equal(r.v2, 'hidden');
+});

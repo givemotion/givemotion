@@ -37,8 +37,20 @@ gm.burst('#scene3', { at: 2.1, kind: 'confetti', x: '50%', y: '60%' })  // also 
 - `at`: seconds into `#scene3` (add `global: true` for a video time, e.g. a beat or a voice word).
 - `x`, `y`: `'50%'` of `#scene3`'s box, or px at 1080p (`960` or `'960px'`); default the center.
 - `from: '#icon'` throws from that element's center instead of x/y (and follows it; inside a camera world the particles pan and zoom with the camera); `behind: '#icon'` draws under that element (in its layer, so it works in camera worlds).
-- `count`, `colors`, `size` (px), `speed` (px/s), `gravity` (px/s²), `duration` (s), `spread` (deg), `angle` (deg, -90 = up), `seed`.
-- Defaults: confetti 160 / speed 1000 / size 17 / 2.8 s; sparks 80 / 1600 / 6 / 1 s; dust 60 / 260 / 6 / 2.2 s; bubbles 40 / 380 / 16 / 2.4 s.
+- `count`, `colors`, `size` (px), `speed` (px/s), `gravity` (px/s², positive = down), `drag` (how fast pieces slow down), `duration` (s), `spread` (deg), `angle` (deg: -90 up, 90 down, 0 right, 180 left), `stagger` (s over which pieces leave, default 0.06), `seed`. Sizes and speeds are at 1080p.
+- Defaults (count / speed / gravity / drag / size / duration / spread): confetti 160 / 1000 / 1100 / 1.8 / 17 / 2.8 s / 360°; sparks 80 / 1600 / 500 / 3.2 / 6 / 1 s / 360°; dust 60 / 260 / -40 / 1.2 / 6 / 2.2 s / 360°; bubbles 40 / 380 / -120 / 0.8 / 16 / 2.4 s / 120°. All start pointing up (`angle: -90`).
+- The physics: each piece leaves at a random share (12-107%) of `speed` and slows down with `drag`, so it flies at most about `speed / drag` px (confetti: ~550 px) before it only falls; then it falls at about `gravity / drag` px/s (confetti: ~600 px/s). For a wider cloud raise `speed`; for confetti that hangs in the air lower `gravity` (300-500) and raise `duration`.
+- The end: each piece lives 70-100% of `duration` (after its stagger delay) and fades out over the last quarter of its life; then it is gone. Nothing is left on screen after `duration` (+ stagger). For confetti still in the air at the last frame, make `duration` reach past the end of the video.
+- `edge: 'top'` (or `'bottom'`, `'left'`, `'right'`): the pieces start spread along that edge of the target (just outside it) and drift in over the first half of `duration` (up to 1.6 s): confetti raining from above. Its defaults: `angle` pointing inward, `spread: 50`, `speed: 260`; `x`/`y` are ignored.
+- `behind:` works by layer order, so a title that is still fading in (opacity below 1) shows the pieces through it. Fire the burst once the title is opaque, or bring the title in without opacity (a mask, a scale).
+
+Recipes:
+```js
+gm.burst('#end', { at: 0.3, kind: 'confetti', edge: 'top', count: 220, duration: 4 })                  // confetti falling from above
+gm.burst('#end', { at: 0.2, kind: 'confetti', x: '0%', y: '100%', angle: -60, spread: 25, speed: 2200, count: 90 })   // cannon from the bottom-left corner
+gm.burst('#end', { at: 0.2, kind: 'confetti', x: '100%', y: '100%', angle: -120, spread: 25, speed: 2200, count: 90 }) // and its mirror
+gm.burst('#end', { at: 0.2, kind: 'confetti', speed: 1600, gravity: 450, duration: 3.5, behind: '#title' })            // a round burst behind the title
+```
 - For a big hit, layer it: a burst of sparks + a ring (`tl.fromTo` scale/opacity) + `camera.shake` (or `data-camera="shake 14 2.1-2.5"`) at the same time. Keep particles off key text (judges marked down confetti and rays crossing numbers and headlines).
 
 ## Rules for seekable JS

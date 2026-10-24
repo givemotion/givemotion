@@ -7,8 +7,8 @@ Contents
 2. Timing and pacing numbers
 3. Easing and movement principles (with recipes)
 4. Camera grammar
-5. Scene-to-scene continuity
-6. Layout, type and hierarchy
+5. Scene-to-scene continuity (and what every transition looks like)
+6. Layout, type and hierarchy (a line that builds word by word, step captions)
 7. Anti-patterns checklist
 
 ## 1. What judges punished and rewarded
@@ -104,6 +104,19 @@ To see how natural a render is: `npx givemotion analyze out/video.mp4 --motion` 
 - **Prefer one world.** Many of the best-scored videos were one big world (map, whiteboard, dashboard, chart) with one camera route instead of separate scenes.
 - **Exit text before a crossfade**, or use a transition that moves the old scene out (push, whip, cover, wipe, iris). Plain `fade` between two text scenes ghosts.
 - **Mid-transition frames count.** Look at `snapshot --transitions`: the middle frame must not be nearly empty or a muddy mix.
+
+What each `data-transition` looks like (direction = where the motion goes; `wipe-right` reveals from left to right):
+- `fade` (= `crossfade`): the new scene fades in over the old. Ghosts text; exit the old text first.
+- `push-left/right/up/down`: the new scene pushes the old one out, both moving together (`slide-*` is the same with a softer curve).
+- `cover-left/right/up/down`: the new scene slides in over the old one, which stays put.
+- `whip-left/right/up/down`: a fast push with motion blur (0.3–0.5 s), for energy and beat cuts.
+- `wipe-left/right/up/down`: a hard straight edge crosses the frame and reveals the new scene behind it. No color.
+- `diagonal`: like `wipe-right`, but the edge is slanted (its top runs ahead of its bottom). No color, no band.
+- `band-right/left/up/down` (`band` = `band-right`): a solid color band sweeps across and the new scene is revealed behind it. `data-transition="band-right 0.4 #ff5a36 30% 20deg"`: duration, color, band width (share of the frame side it travels along, default 35%; `100%` covers the whole frame at the middle, a full color wipe), edge slant in degrees (default 0). Without a color it uses `--transition-color` on the incoming scene (so each scene can bring its own color), else `--accent`, else pink. The band's center crosses the frame's center exactly halfway, so with `data-cut-align="middle"` that moment sits on the cut (keep its default symmetric easing). It also works as an entrance on any HTML element: `data-enter="band-right 0.6 #fff"`.
+- `clock`: a radial sweep like a clock hand. `iris`: a circle grows from the center.
+- `zoom`: the new scene settles from 125% while fading in. `zoom-through`: the old scene flies past the camera (grows, blurs, fades) and reveals the new one.
+- `flip`: a 3D card flip around the vertical axis. `dip`: down to black and back up. `blur`: the new scene comes in from a blur. `fade-up`: both scenes drift up while crossfading.
+- `morph`: elements with the same `data-morph` fly from the old scene to the new; the rest crossfades.
 - **Keep one look.** Same palette, fonts, corner radius, stroke width and motion personality across scenes (`references/styles.md`); change layout and camera, not the style.
 
 ## 6. Layout, type and hierarchy
@@ -114,6 +127,29 @@ To see how natural a render is: `npx givemotion analyze out/video.mp4 --motion` 
 - **One hero per moment.** Dim the rest (opacity 0.3–0.4 or blur) when zooming into a detail; judges liked code with the other lines dimmed.
 - **Contrast.** 4.5:1 for normal text, 3:1 for large; colored type on a colored background is the usual failure; add a backing, a shadow or change the color.
 - **Shapes, lines and icons** drawn in SVG make it look designed; drop shadows, glows and grain give depth; avoid a page of rounded cards.
+
+**A centred line that builds word by word.** With `data-split="words"` + `data-enter` + `data-stagger` the whole line is laid out from the start and each word appears where it will end up, so the first word sits left of center until the rest arrive. That is right for most kinetic type. If the words shown so far must stay centred as the line grows, let each word grow from zero width (the line re-centres smoothly as it widens; the space goes inside the word):
+```html
+<style>
+  .build { text-align: center; white-space: nowrap; }
+  .build .w { display: inline-grid; grid-template-columns: 0fr; animation: word-grow .5s var(--ease-out-expo) both; animation-delay: calc(.3s + var(--i) * .4s); }
+  .build .w > span { min-width: 0; overflow-x: clip; overflow-clip-margin: .2em; animation: fade-up .5s var(--ease-out-expo) both; animation-delay: inherit; }
+  @keyframes word-grow { to { grid-template-columns: 1fr; } }
+</style>
+<h1 class="build"><span class="w" style="--i:0"><span>Ship</span></span><span class="w" style="--i:1"><span>&nbsp;it</span></span><span class="w" style="--i:2"><span>&nbsp;faster.</span></span></h1>
+```
+(CSS animations are seekable; their delays count from the start of the element's clip.)
+
+**Step captions** (one short caption at a time, e.g. the steps of a demo; for word-timed subtitles of a voice use the `captions` block): put them in a `data-sequence` with `data-cuts` at the moments each step starts, an entrance and a short exit on each, and **no** `data-transition`. Each caption leaves (0.15 s) before the next comes in, so two captions are never on screen together:
+```html
+<div class="captions" data-sequence data-cuts="0.4 1.8 3.2 4.6" style="position:absolute;left:0;right:0;bottom:120px;text-align:center">
+  <p data-enter="mask-up 0.35" data-exit="fade-up 0.15">Connect your repo</p>
+  <p data-enter="mask-up 0.35" data-exit="fade-up 0.15">Pick a template</p>
+  <p data-enter="mask-up 0.35" data-exit="fade-up 0.15">Press deploy</p>
+  <p data-enter="mask-up 0.35">Live in 30 seconds</p>
+</div>
+```
+A crossfade between captions (`data-transition="fade"`) shows both half-visible on top of each other (ghosting) and, since sequence children sit in normal flow, stacks them for a moment. If you want them to overlap, keep it to 0.1 s and make the captions `position: absolute` in the same spot.
 
 ## 7. Anti-patterns checklist
 

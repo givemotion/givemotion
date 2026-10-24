@@ -25,6 +25,18 @@ second. Do not reformat files you are not changing.
 
 ---
 
+## N0. Remove every another framework mention, also from git history (Leo's request; do it later, as one coordinated step)
+So the project carries no implications later. Today the name appears in 16 files and 4 commit messages:
+CLAUDE.md, README.md, llms.txt, package.json (keywords), bench/agents/README.md, bench/agents/round.js
+(`--maker other`), bench/agents/prompts/maker-other.md, bench/agents/other-scaffold/,
+docs/NEXT.md, docs/experiments/2026-10-format-test-backlog.md, 2026-10-t3-hand-drawn.md, experiments/README.md and
+experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modules`).
+- Rewrite the files (keep the findings, drop the name: "another framework", or remove the comparison runs and the
+  scaffold), then rewrite history (`git filter-repo` with `--replace-text` and `--replace-message`, or delete the paths
+  from history) and force-push every branch.
+- **Coordinate first:** a history rewrite changes every commit id. Do it when no other session has open branches, tell
+  Leo before the force-push, and have every session re-clone afterwards. Check forks and open PRs on GitHub too.
+
 ## N1. A full agent round over all briefs (measure the engine as a whole)
 Round 2 and 3 only covered some briefs, one run each. Run `round.js setup r8 --briefs all --runs 2` (18 makers; ~2.5M
 tokens), judge with 2-3 judges per brief, and compare with round 2 (`docs/experiments/2026-10-round2.md`). The friction

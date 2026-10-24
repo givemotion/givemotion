@@ -1,10 +1,11 @@
 <!-- block:
 description: Word-by-word captions (TikTok/Reels style) from a word-timed JSON file or an .srt file. The spoken word is highlighted.
 params: file (captions.json or .srt), words (max words per line, default 5), accent (color), position (bottom|center|top), offset (distance from the top/bottom edge in px at 1080p; default 120, or 420 on vertical video to stay above the app buttons), size (px at 1080p; scales with the short side, default 64), weight (font weight, default 800), upper (true = UPPERCASE)
+hold: seconds the last line stays after its last word (default 0.8; 0 = gone with the word, so it does not run into the next scene).
 Paging: lines break at sentence ends, pauses and commas, and are balanced, so a line never holds one lonely word.
 usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>   JSON: [{"word":"Hello","start":0.2,"end":0.5}, …] (times in seconds, relative to the block's start)
 -->
-<div class="mwb-cap mwb-cap--{{position|bottom}}" style="--accent:{{accent|#ffd23f}};--size:{{size|64}};--weight:{{weight|800}}" data-file="{{file}}" data-words="{{words|5}}" data-offset="{{offset}}" data-upper="{{upper}}"><div class="mwb-cap__line"></div></div>
+<div class="mwb-cap mwb-cap--{{position|bottom}}" style="--accent:{{accent|#ffd23f}};--size:{{size|64}};--weight:{{weight|800}}" data-file="{{file}}" data-words="{{words|5}}" data-offset="{{offset}}" data-upper="{{upper}}" data-hold="{{hold|0.8}}"><div class="mwb-cap__line"></div></div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
@@ -74,7 +75,8 @@ usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>
   }));
   let shown = -1;
   mw.onFrame(root, (t) => {
-    let pi = pages.findIndex((p, i) => t >= p.start - 0.05 && t < (pages[i + 1] ? Math.min(pages[i + 1].start - 0.05, p.end + 0.8) : p.end + 0.8));
+    const hold = parseFloat(root.dataset.hold); const H = isFinite(hold) ? hold : 0.8;
+    let pi = pages.findIndex((p, i) => t >= p.start - 0.05 && t < (pages[i + 1] ? Math.min(pages[i + 1].start - 0.05, p.end + H) : p.end + H));
     if (pi !== shown) {
       shown = pi;
       line.innerHTML = pi < 0 ? '' : pages[pi].words.map((w) => `<span class="mwb-cap__w">${w.word.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`).join(' ');
@@ -84,7 +86,7 @@ usage: <mw-include src="blocks/captions.html" file="captions.json"></mw-include>
     const spans = line.children;
     p.words.forEach((w, i) => {
       const s = spans[i];
-      const on = t >= w.start && t < (p.words[i + 1] ? p.words[i + 1].start : w.end + 0.8);
+      const on = t >= w.start && t < (p.words[i + 1] ? p.words[i + 1].start : w.end + H);
       const pop = mw.interpolate(t - w.start, [0, 0.12], [0.92, 1], { easing: 'out-back' });
       s.classList.toggle('is-on', on);
       s.classList.toggle('is-past', t >= w.end && !on);

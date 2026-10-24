@@ -28,12 +28,12 @@ function gridSize(w, h) {
   return [Math.max(8, Math.round((GW * w) / h / 2) * 2), GW];
 }
 
-/** Decode every frame (at most `maxFps`) as a tiny RGB picture. Calls onFrame(index, rgb). */
-function decodeSmall(file, { w, h, fps }, onFrame) {
+/** Decode every frame (at most `maxFps`) as a tiny RGB (or grey, with `gray`) picture. Calls onFrame(index, pixels). */
+function decodeSmall(file, { w, h, fps, gray = false }, onFrame) {
   return new Promise((res, rej) => {
-    const args = ['-v', 'error', '-i', file, '-an', '-vf', `fps=${fps},scale=${w}:${h}:flags=area,format=rgb24`, '-f', 'rawvideo', '-'];
+    const args = ['-v', 'error', '-i', file, '-an', '-vf', `fps=${fps},scale=${w}:${h}:flags=area,format=${gray ? 'gray' : 'rgb24'}`, '-f', 'rawvideo', '-'];
     const p = spawn(ffmpegPath(), args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    const size = w * h * 3;
+    const size = w * h * (gray ? 1 : 3);
     let buf = Buffer.alloc(0), n = 0, err = '';
     p.stdout.on('data', (d) => {
       buf = buf.length ? Buffer.concat([buf, d]) : d;
@@ -865,6 +865,503 @@ export function compareAnalyses(mine, ref) {
   out.push(`Colors: yours ${mine.colors.theme} on ${mine.colors.background} (accents ${mine.colors.accents.join(' ') || 'none'}), reference ${ref.colors.theme} on ${ref.colors.background} (accents ${ref.colors.accents.join(' ') || 'none'}).`);
   if (mine.music && ref.music && mine.music.cuts && ref.music.cuts) out.push(`On the beat: yours ${mine.music.cutsOnBeat}/${mine.music.cuts}, reference ${ref.music.cutsOnBeat}/${ref.music.cuts}.`);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Motion smoothness (`analyze --motion`): does the motion look natural or robotic? Works on any video file.
+// Every frame is decoded small and grey; blocks of it are matched against the previous frame (coarse to fine), which
+// gives a motion vector per block. From those: the camera (the move most of the picture shares, with zoom), moving
+// regions (blocks that move on their own, followed from frame to frame), stops between moves, how abruptly things
+// start and stop, jerk (the change of acceleration), and whether fast frames are motion blurred or strobe.
+// ---------------------------------------------------------------------------
+const MW = 384, MB = 16; // motion grid (long side) and block spacing on it (the matching windows, 24 px, overlap)
+
+function down2(L, w, h) {
+  const W = w >> 1, H = h >> 1, o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const q = 2 * y * w + 2 * x; o[y * W + x] = (L[q] + L[q + 1] + L[q + w] + L[q + w + 1] + 2) >> 2; }
+  return { L: o, w: W, h: H };
+}
+function pyramid(L, w, h) { const p = [{ L, w, h }]; for (let i = 1; i < 4; i++) p.push(down2(p[i - 1].L, p[i - 1].w, p[i - 1].h)); return p; }
+/** Mean |cur(p) - prev(p - d)| over the window of `cur` around (cx, cy) with radius r (clipped to the frame). */
+function winCost(A, B, w, h, cx, cy, r, dx, dy) {
+  const x0 = Math.max(0, cx - r), x1 = Math.min(w, cx + r), y0 = Math.max(0, cy - r), y1 = Math.min(h, cy + r);
+  const xa = Math.max(x0, dx), xb = Math.min(x1, w + dx);
+  if (xb <= xa) return 1e9;
+  let s = 0, n = 0;
+  for (let y = y0; y < y1; y++) {
+    const ay = y - dy;
+    if (ay < 0 || ay >= h) continue;
+    const bo = y * w, ao = ay * w - dx;
+    for (let x = xa; x < xb; x++) s += Math.abs(B[bo + x] - A[ao + x]);
+    n += xb - xa;
+  }
+  return n > 0 && n >= (x1 - x0) * (y1 - y0) * 0.5 ? s / n : 1e9;
+}
+const RAD = [12, 6, 5, 4]; // window radius per pyramid level
+/**
+ * The move of the whole picture from prev to cur (level-0 px, whole px), searched near `pred` (the last frame's move:
+ * motion goes on, and a repeating pattern such as a grid has many equally good shifts far from it).
+ */
+function frameMove(P, C, pred) {
+  const cost = (l, dx, dy) => { const { L: A, w, h } = P[l]; return winCost(A, C[l].L, w, h, w >> 1, h >> 1, Math.ceil(Math.max(w, h) * 0.42), dx, dy); };
+  const px = Math.round(pred[0] / 8), py = Math.round(pred[1] / 8);
+  let bx = 0, by = 0, best = Infinity;
+  for (let dy = py - 4; dy <= py + 4; dy++) for (let dx = px - 4; dx <= px + 4; dx++) { const c = cost(3, dx, dy) + 0.3 * Math.hypot(dx - pred[0] / 8, dy - pred[1] / 8); if (c < best) { best = c; bx = dx; by = dy; } }
+  for (let l = 2; l >= 1; l--) {
+    const sx = bx * 2, sy = by * 2;
+    best = Infinity;
+    for (let dy = sy - 1; dy <= sy + 1; dy++) for (let dx = sx - 1; dx <= sx + 1; dx++) { const c = cost(l, dx, dy); if (c < best) { best = c; bx = dx; by = dy; } }
+  }
+  return [bx * 2, by * 2];
+}
+/**
+ * Motion of one block from prev to cur (in level-0 px, sub-pixel). First near each guess (no move, the whole picture's
+ * move, this block's last move), at half size; only when none fits, a full search from 1/8 size up.
+ */
+function blockMove(P, C, cx, cy, guesses, zeroCost) {
+  const frame = guesses[1];
+  let bx = 0, by = 0, best = Infinity;
+  { const { L: A, w, h } = P[1], B = C[1].L, x = cx >> 1, y = cy >> 1;
+    const tried = new Set();
+    for (const [gx, gy] of guesses) {
+      const sx = Math.round(gx / 2), sy = Math.round(gy / 2);
+      for (let dy = sy - 2; dy <= sy + 2; dy++) for (let dx = sx - 2; dx <= sx + 2; dx++) {
+        const key = dx * 1000 + dy;
+        if (tried.has(key)) continue;
+        tried.add(key);
+        // (ties go to the move nearest the whole picture's: a grid or stripes also fit one period further on)
+        const c = winCost(A, B, w, h, x, y, RAD[1], dx, dy) + 0.05 * (Math.abs(dx - gx / 2) + Math.abs(dy - gy / 2)) + 0.04 * (Math.abs(dx - frame[0] / 2) + Math.abs(dy - frame[1] / 2));
+        if (c < best) { best = c; bx = dx; by = dy; }
+      }
+    }
+  }
+  if (!(best < 0.6 * zeroCost && best < 8)) {
+    // nothing near the guesses fits: search wide (a move that just started, or changed a lot)
+    const pen = (dx, dy, l = 3) => 0.02 * (Math.abs(dx - frame[0] / (1 << l)) + Math.abs(dy - frame[1] / (1 << l))); // ties go to the whole picture's move
+    let cx3 = 0, cy3 = 0, b3 = Infinity;
+    { const { L: A, w, h } = P[3], B = C[3].L, x = cx >> 3, y = cy >> 3, cs = new Float64Array(169);
+      for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) { const c = winCost(A, B, w, h, x, y, RAD[3], dx, dy) + pen(dx, dy); cs[(dy + 6) * 13 + dx + 6] = c; if (c < b3) { b3 = c; cx3 = dx; cy3 = dy; } }
+      // a repeating pattern (a grid, stripes) fits equally well at other shifts: that block's move cannot be known
+      let second = Infinity;
+      for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) if (Math.max(Math.abs(dx - cx3), Math.abs(dy - cy3)) >= 2) second = Math.min(second, cs[(dy + 6) * 13 + dx + 6]);
+      if (second <= b3 * 1.15 + 0.5) b3 = Infinity; }
+    for (let l = 2; l >= 1 && b3 < Infinity; l--) {
+      const { L: A, w, h } = P[l], B = C[l].L, x = cx >> l, y = cy >> l, sx = cx3 * 2, sy = cy3 * 2;
+      b3 = Infinity;
+      for (let dy = sy - 1; dy <= sy + 1; dy++) for (let dx = sx - 1; dx <= sx + 1; dx++) { const c = winCost(A, B, w, h, x, y, RAD[l], dx, dy) + pen(dx, dy, l); if (c < b3) { b3 = c; cx3 = dx; cy3 = dy; } }
+    }
+    if (b3 < best) { best = b3; bx = cx3; by = cy3; }
+  }
+  { const { L: A, w, h } = P[0], B = C[0].L, sx = bx * 2, sy = by * 2;
+    best = Infinity;
+    for (let dy = sy - 1; dy <= sy + 1; dy++) for (let dx = sx - 1; dx <= sx + 1; dx++) { const c = winCost(A, B, w, h, cx, cy, RAD[0], dx, dy); if (c < best) { best = c; bx = dx; by = dy; } } }
+  const { L: A, w, h } = P[0], B = C[0].L, cost = (dx, dy) => winCost(A, B, w, h, cx, cy, RAD[0], dx, dy);
+  const c0 = cost(bx, by);
+  const sub = (cm, cp) => { const d = cm - 2 * c0 + cp; return d > 1e-9 && cm < 1e8 && cp < 1e8 ? Math.max(-0.5, Math.min(0.5, (cm - cp) / (2 * d))) : 0; };
+  const xm = cost(bx - 1, by), xp = cost(bx + 1, by), ym = cost(bx, by - 1), yp = cost(bx, by + 1);
+  // how sharply the fit gets worse off the best move, along x, y and both diagonals: a block that only holds one
+  // straight edge fits as well anywhere along that edge (its move along the edge cannot be known)
+  const dm = cost(bx - 1, by - 1), dp = cost(bx + 1, by + 1), em = cost(bx - 1, by + 1), ep = cost(bx + 1, by - 1);
+  const curv = [xm + xp, ym + yp, dm + dp, em + ep].map((v) => v - 2 * c0);
+  return { vx: bx + sub(xm, xp), vy: by + sub(ym, yp), cost: c0, cond: Math.min(...curv) / Math.max(1e-9, ...curv) };
+}
+/** Texture of a window: mean |dx| + |dy| of the luma. */
+function texture(L, w, h, cx, cy, r) {
+  let s = 0, n = 0;
+  for (let y = Math.max(0, cy - r); y < Math.min(h - 1, cy + r); y++) for (let x = Math.max(0, cx - r), q = y * w + x; x < Math.min(w - 1, cx + r); x++, q++) { s += Math.abs(L[q + 1] - L[q]) + Math.abs(L[q + w] - L[q]); n++; }
+  return n ? s / n : 0;
+}
+/**
+ * How wide the edges of a window are along the direction (ux, uy), in px (contrast-weighted; null: too few edges).
+ * A sharp edge is ~2 px wide here; motion blur over b px along the move makes it ~2 + b.
+ */
+function edgeWidth(L, w, h, cx, cy, ux, uy) {
+  const N = 40, prof = new Float32Array(N), d = new Float32Array(N);
+  const bil = (x, y) => { const xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi, q = yi * w + xi; return (L[q] * (1 - fx) + L[q + 1] * fx) * (1 - fy) + (L[q + w] * (1 - fx) + L[q + w + 1] * fx) * fy; };
+  let ws = 0, cs = 0;
+  for (let o = -10; o <= 10; o += 2) {
+    const sx = cx - uy * o - ux * (N / 2), sy = cy + ux * o - uy * (N / 2);
+    const ex = sx + ux * (N - 1), ey = sy + uy * (N - 1);
+    if (Math.min(sx, ex) < 0 || Math.min(sy, ey) < 0 || Math.max(sx, ex) > w - 2 || Math.max(sy, ey) > h - 2) continue;
+    for (let i = 0; i < N; i++) prof[i] = bil(sx + ux * i, sy + uy * i);
+    for (let i = 1; i < N - 1; i++) d[i] = (prof[i + 1] - prof[i - 1]) / 2;
+    for (let i = 10; i < N - 10; i++) {
+      const a = Math.abs(d[i]);
+      if (a < 5 || a < Math.abs(d[i - 1]) || a <= Math.abs(d[i + 1])) continue;
+      const sg = Math.sign(d[i]);
+      let s = 0;
+      for (let j = i; j >= 1 && Math.sign(d[j]) === sg && Math.abs(d[j]) >= 0.12 * a; j--) s += Math.abs(d[j]);
+      for (let j = i + 1; j < N - 1 && Math.sign(d[j]) === sg && Math.abs(d[j]) >= 0.12 * a; j++) s += Math.abs(d[j]);
+      ws += (s / a) * s; cs += s;
+    }
+  }
+  return cs >= 40 ? ws / cs : null;
+}
+function pct(arr, p) { if (!arr.length) return 0; const s = Float64Array.from(arr).sort(); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; }
+
+/**
+ * Smoothness report of a video file: { fps, camera, objects, blur, naturalness (0-10), notes, ... }.
+ * opts.keepEnergy: also return `energy` (motion per frame, for picking strips).
+ */
+export async function analyzeMotion(input, opts = {}) {
+  const file = resolve(input);
+  if (!existsSync(file)) throw new Error(`Video not found: ${file}`);
+  const t0 = Date.now();
+  const meta = opts.meta || probeVideo(file);
+  const W0 = meta.width >= meta.height ? MW : Math.max(MB * 4, Math.round((MW * meta.width) / meta.height / 8) * 8);
+  const H0 = meta.width >= meta.height ? Math.max(MB * 4, Math.round((MW * meta.height) / meta.width / 8) * 8) : MW;
+  const fps = Math.min(meta.fps || 30, meta.duration > 300 ? 30 : 60);
+  const nbx = Math.floor(W0 / MB), nby = Math.floor(H0 / MB), ox = Math.floor((W0 - nbx * MB) / 2), oy = Math.floor((H0 - nby * MB) / 2), NB = nbx * nby;
+  const bc = (b) => [ox + (b % nbx) * MB + MB / 2, oy + ((b / nbx) | 0) * MB + MB / 2];
+  const cxF = (W0 - 1) / 2, cyF = (H0 - 1) / 2, halfDiag = Math.hypot(W0, H0) / 2;
+  const toSrc = meta.width / W0, to1920 = 1920 / Math.max(W0, H0); // level-0 px → video px, → px of a 1920 frame
+  const FAST = 0.02 * Math.max(W0, H0); // a "fast" frame moves 2% of the frame per frame (38 px at 1920)
+  const SIG = 0.004 * Math.max(W0, H0);  // a move that counts peaks at 0.4% of the frame per frame (7.7 px at 1920)
+  const short = Math.max(2, Math.round(fps * 0.4)); // "stops and goes again within 0.4 s"
+
+  const cam = [];        // per frame: { tx, ty, k, sp } or null (a cut, or no shared move to judge)
+  const energy = [];     // per frame: mean block motion (level-0 px)
+  const fastInfo = [];   // per fast frame: { f, blurred, n, width, disp }
+  const tracks = [], active = [];
+  let prev = null, f = -1;
+  const tex = new Float32Array(NB), state = new Int8Array(NB), vx = new Float32Array(NB), vy = new Float32Array(NB), pvx = new Float32Array(NB), pvy = new Float32Array(NB);
+  let lastG = [0, 0];
+  const dbgFrames = {};
+  let prevState = new Int8Array(NB).fill(-1);
+  const hist = [0, 1, 2, 3].map(() => new Int8Array(NB).fill(-1)); // block states of the last frames
+  const pendingRest = [];
+  const endTrack = (tr) => { tracks.push(tr); pendingRest.push(tr); };
+  const onFrame = (i, gray) => {
+    f = i;
+    const cur = pyramid(gray, W0, H0);
+    if (!prev) { prev = cur; cam.push(null); energy.push(0); return; }
+    // 1. a vector per block. state: 0 flat (no texture), 1 still, 2 moved (matched), 3 changed without a move (fade, new
+    //    content), 4 moved along one straight edge (direction unknown)
+    let textured = 0, valid = 0;
+    const gf = frameMove(prev, cur, lastG);
+    pvx.set(vx); pvy.set(vy);
+    for (let b = 0; b < NB; b++) {
+      const [x, y] = bc(b);
+      tex[b] = Math.max(texture(cur[0].L, W0, H0, x, y, RAD[0]), texture(prev[0].L, W0, H0, x, y, RAD[0]));
+      vx[b] = vy[b] = 0;
+      if (tex[b] < 1.5) { state[b] = 0; continue; }
+      textured++;
+      const c0 = winCost(prev[0].L, cur[0].L, W0, H0, x, y, RAD[0], 0, 0);
+      if (c0 < 1.2) { state[b] = 1; valid++; continue; }
+      const m = blockMove(prev, cur, x, y, [[0, 0], gf, [pvx[b], pvy[b]]], c0);
+      if (m.cost < 0.6 * c0 && m.cost < 12 && m.cond < 0.12) { state[b] = 4; textured--; } // one straight edge: its move is not known
+      else if (m.cost < 0.6 * c0 && m.cost < 12 && Math.hypot(m.vx, m.vy) >= 0.25) { state[b] = 2; vx[b] = m.vx; vy[b] = m.vy; valid++; }
+      else if ((m.cost < 0.6 * c0 && m.cost < 12) || (Math.abs(m.vx) < 1 && Math.abs(m.vy) < 1 && c0 < 8)) { state[b] = 1; valid++; } // (still, or creeping by less than a pixel)
+      else state[b] = 3;
+    }
+    // 2. the camera: one move (shift + zoom about the center) that most valid blocks share
+    let g = null;
+    if (valid >= 6 && valid >= textured * 0.5) {
+      const idx = []; for (let b = 0; b < NB; b++) if (state[b] === 1 || state[b] === 2) idx.push(b);
+      let tx = median(idx.map((b) => vx[b])), ty = median(idx.map((b) => vy[b])), k = 0, inl = idx;
+      for (let it = 0; it < 4; it++) {
+        inl = idx.filter((b) => { const [x, y] = bc(b), mx = tx + k * (x - cxF), my = ty + k * (y - cyF); return Math.hypot(vx[b] - mx, vy[b] - my) <= 0.8 + 0.1 * Math.hypot(mx, my); });
+        if (inl.length < 6) break;
+        let n = 0, sX = 0, sY = 0, sXX = 0, sVx = 0, sVy = 0, sXV = 0;
+        for (const b of inl) { const [x, y] = bc(b), X = x - cxF, Y = y - cyF; n++; sX += X; sY += Y; sXX += X * X + Y * Y; sVx += vx[b]; sVy += vy[b]; sXV += X * vx[b] + Y * vy[b]; }
+        // solve [n 0 sX; 0 n sY; sX sY sXX] [tx ty k] = [sVx sVy sXV]
+        const den = sXX - (sX * sX + sY * sY) / n;
+        k = den > 1e-6 ? (sXV - (sX * sVx + sY * sVy) / n) / den : 0;
+        if (Math.abs(k) < 0.002) k = 0; // a zoom below 0.2% per frame is noise at this size
+        tx = (sVx - k * sX) / n; ty = (sVy - k * sY) / n;
+      }
+      if (inl.length >= Math.max(6, valid * 0.5)) g = { tx, ty, k, sp: Math.hypot(tx, ty) + Math.abs(k) * halfDiag, inl: inl.length };
+    }
+    if (opts.debugFrames && opts.debugFrames.includes(i)) dbgFrames[i] = { state: Int8Array.from(state), vx: Float32Array.from(vx), vy: Float32Array.from(vy), nbx, g };
+    cam.push(g);
+    lastG = g ? [g.tx, g.ty] : [0, 0];
+    // 3. motion energy, and fast blocks: are their edges blurred along the move?
+    let e = 0;
+    const fastW = [];
+    for (let b = 0; b < NB; b++) {
+      if (state[b] !== 2) continue;
+      const s = Math.hypot(vx[b], vy[b]);
+      e += s;
+      if (s >= FAST) { const [x, y] = bc(b), ew = edgeWidth(cur[0].L, W0, H0, x, y, vx[b] / s, vy[b] / s); if (ew != null) fastW.push([ew, s]); }
+    }
+    energy.push(e / NB);
+    if (fastW.length >= 2 || (fastW.length && g && g.sp >= FAST)) {
+      // blurred: the edges along the move are clearly wider than sharp ones (2 px), by a fair share of the move
+      const blurredN = fastW.filter(([ew, s]) => ew >= Math.max(3, 1.5 + 0.2 * s)).length;
+      fastInfo.push({ f: i, blurred: blurredN >= fastW.length * 0.5, n: fastW.length, width: median(fastW.map((x) => x[0])), disp: median(fastW.map((x) => x[1])) });
+    }
+    // 4. moving regions: blocks that move apart from the camera, joined with neighbours that move alike
+    const model = (b) => { if (!g) return [0, 0]; const [x, y] = bc(b); return [g.tx + g.k * (x - cxF), g.ty + g.k * (y - cyF)]; };
+    const rx = new Float32Array(NB), ry = new Float32Array(NB), mv = new Uint8Array(NB);
+    // (not the blocks on the border: content half in frame matches badly while the camera moves)
+    if (g) for (let b = 0; b < NB; b++) { if (state[b] !== 2 || b % nbx === 0 || b % nbx === nbx - 1 || b < nbx || b >= NB - nbx) continue; const [mx, my] = model(b); rx[b] = vx[b] - mx; ry[b] = vy[b] - my; if (Math.hypot(rx[b], ry[b]) > Math.max(0.75, 0.15 * Math.hypot(mx, my))) mv[b] = 1; }
+    const comps = [], seen = new Uint8Array(NB);
+    for (let b = 0; b < NB; b++) {
+      if (!mv[b] || seen[b]) continue;
+      const q = [b]; seen[b] = 1;
+      let n = 0, sx = 0, sy = 0, svx = 0, svy = 0, edge = false;
+      while (q.length) {
+        const a = q.pop(), ax = a % nbx, ay = (a / nbx) | 0, [x, y] = bc(a);
+        n++; sx += x; sy += y; svx += rx[a]; svy += ry[a];
+        if (ax === 0 || ay === 0 || ax === nbx - 1 || ay === nby - 1) edge = true;
+        for (let ddy = -1; ddy <= 1; ddy++) for (let ddx = -1; ddx <= 1; ddx++) {
+          const qx = ax + ddx, qy = ay + ddy, nb = qy * nbx + qx;
+          if ((!ddx && !ddy) || qx < 0 || qy < 0 || qx >= nbx || qy >= nby || seen[nb] || !mv[nb]) continue;
+          if (Math.hypot(rx[nb] - rx[a], ry[nb] - ry[a]) > Math.max(0.75, 0.2 * Math.max(Math.hypot(rx[a], ry[a]), Math.hypot(rx[nb], ry[nb])))) continue;
+          seen[nb] = 1; q.push(nb);
+        }
+      }
+      comps.push({ n, cx: sx / n, cy: sy / n, vx: svx / n, vy: svy / n, edge });
+    }
+    // follow them: each region continues the track whose predicted place is nearest
+    const cut = !g;
+    if (cut) { for (const tr of active.splice(0)) { tr.cutEnd = true; endTrack(tr); } }
+    else {
+      const pairs = [];
+      active.forEach((tr, ti) => { const l = tr.pts[tr.pts.length - 1], px = l.cx + l.vx * (f - l.f), py = l.cy + l.vy * (f - l.f); comps.forEach((c, ci) => { const dd = Math.hypot(c.cx - px, c.cy - py); if (dd <= 36 + 0.5 * Math.hypot(c.vx, c.vy)) pairs.push([dd, ti, ci]); }); });
+      pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+      const tUsed = new Set(), cUsed = new Set();
+      for (const [, ti, ci] of pairs) { if (tUsed.has(ti) || cUsed.has(ci)) continue; tUsed.add(ti); cUsed.add(ci); active[ti].pts.push({ f, ...comps[ci] }); }
+      for (let ti = active.length - 1; ti >= 0; ti--) if (!tUsed.has(ti) && f - active[ti].pts[active[ti].pts.length - 1].f > 1) { endTrack(active[ti]); active.splice(ti, 1); }
+      comps.forEach((c, ci) => {
+        if (cUsed.has(ci)) return;
+        // where did this content come from: was it there, still, a frame ago? (a start from rest, not an entrance)
+        const sx = Math.round((c.cx - c.vx - ox - MB / 2) / MB), sy = Math.round((c.cy - c.vy - oy - MB / 2) / MB);
+        const sb = sx >= 0 && sy >= 0 && sx < nbx && sy < nby ? sy * nbx + sx : -1;
+        active.push({ pts: [{ f, ...c }], fromRest: sb >= 0 && prevState[sb] === 1, startAfterCut: !cam[f - 1] });
+      });
+    }
+    // a track that just ended: did its content stay where it stopped (stopped dead) or go away (an exit)?
+    for (let ti = pendingRest.length - 1; ti >= 0; ti--) {
+      const tr = pendingRest[ti], l = tr.pts[tr.pts.length - 1];
+      if (f < l.f + 2) continue;
+      pendingRest.splice(ti, 1);
+      const sx = Math.round((l.cx - ox - MB / 2) / MB), sy = Math.round((l.cy - oy - MB / 2) / MB);
+      const after = hist[(l.f + 1) % 4];
+      tr.toRest = !tr.cutEnd && l.n >= 3 && sx >= 0 && sy >= 0 && sx < nbx && sy < nby && (after[sy * nbx + sx] === 1 || after[sy * nbx + sx] === 4);
+    }
+    prevState = Int8Array.from(state, (v, b) => (v === 2 && Math.hypot(vx[b], vy[b]) < 1 ? 1 : v)); // (creeping counts as resting)
+    hist[f % 4] = prevState;
+    prev = cur;
+  };
+  await decodeSmall(file, { w: W0, h: H0, fps, gray: true }, onFrame);
+  for (const tr of active.splice(0)) endTrack(tr);
+  const n = f + 1;
+  if (n < 3) throw new Error(`${basename(file)} has fewer than 3 frames.`);
+
+  const sp = (p) => Math.hypot(p.vx, p.vy);
+  // ---- the camera: its moves, dead stops between moves
+  const camSp = cam.map((g) => (g ? g.sp : NaN));
+  // a frame or two that could not be judged in the middle of a move belongs to it
+  for (let i = 1; i < n - 1; i++) if (isNaN(camSp[i]) && camSp[i - 1] >= 0.25) { let j = i; while (j < n && isNaN(camSp[j]) && j - i < 2) j++; if (camSp[j] >= 0.25) for (let k = i; k < j; k++) camSp[k] = (camSp[i - 1] + camSp[j]) / 2; }
+  const camMoves = [];
+  for (let i = 1; i < n; i++) {
+    if (!(camSp[i] >= 0.25)) continue;
+    let j = i; while (j + 1 < n && camSp[j + 1] >= 0.25) j++;
+    let peak = 0; for (let k = i; k <= j; k++) peak = Math.max(peak, camSp[k]);
+    if (peak >= SIG && j - i >= 2) camMoves.push({ a: i, b: j, peak });
+    i = j;
+  }
+  const camStops = [];
+  for (let m = 1; m < camMoves.length; m++) {
+    const A = camMoves[m - 1], B = camMoves[m];
+    if (B.a - A.b - 1 > short) continue;
+    let broken = false; for (let k = A.b + 1; k < B.a; k++) if (!cam[k]) broken = true;
+    if (!broken) camStops.push(r2(B.a / fps));
+  }
+  // also a dip inside one move: it brakes to almost nothing and goes on (two eased moves back to back)
+  for (const M of camMoves) {
+    for (let k = M.a + 1; k < M.b; k++) {
+      const lo = Math.max(M.a, k - Math.round(fps * 0.6)), hi = Math.min(M.b, k + Math.round(fps * 0.6));
+      let pb = 0, pa = 0; for (let q = lo; q < k; q++) pb = Math.max(pb, camSp[q]); for (let q = k + 1; q <= hi; q++) pa = Math.max(pa, camSp[q]);
+      if (camSp[k] <= camSp[k - 1] && camSp[k] < camSp[k + 1] && camSp[k] <= 0.12 * Math.min(pb, pa) && Math.min(pb, pa) >= SIG) { camStops.push(r2(k / fps)); k += short; }
+    }
+  }
+  camStops.sort((a, b) => a - b);
+
+  // Velocity steps: the velocity changes by half the move's speed or more from one frame to the next (a start or a
+  // stop at full speed, a sharp turn between two linear moves). Smooth motion changes a little each frame.
+  // Jerk: the third difference of the position (px per frame³ in a 1920 px frame).
+  const stepsOf = (vs, times, out) => {
+    for (let i = 1; i < vs.length; i++) {
+      const lo = Math.max(0, i - 6), hi = Math.min(vs.length, i + 6);
+      let peak = 0; for (let k = lo; k < hi; k++) peak = Math.max(peak, Math.hypot(vs[k][0], vs[k][1]));
+      const dv = Math.hypot(vs[i][0] - vs[i - 1][0], vs[i][1] - vs[i - 1][1]);
+      if (peak >= SIG && dv >= Math.max(0.5 * peak, 2 * SIG)) { out.push(times[i]); i += 2; }
+    }
+  };
+  const jerkOf = (vs, out) => { for (let i = 3; i < vs.length; i++) { const j = [0, 1].map((c) => vs[i][c] - 3 * vs[i - 1][c] + 3 * vs[i - 2][c] - vs[i - 3][c]); out.push(Math.hypot(j[0], j[1]) * to1920); } };
+  const camSteps = [], camJerk = [];
+  for (const M of camMoves) {
+    // (from rest and back to rest: the frames around a move are still)
+    const vs = [], ts = [];
+    // (a frame inside the move that could not be judged takes the move of the frame before)
+    for (let k = M.a - 1; k <= M.b + 1; k++) {
+      const g = cam[k];
+      if (!g && (k < M.a || k > M.b)) continue; // (a cut before or after: not from rest)
+      vs.push(g ? [g.tx + g.k * halfDiag * 0.7, g.ty] : vs.length ? vs[vs.length - 1] : [0, 0]); ts.push(r2(k / fps));
+    }
+    stepsOf(vs, ts, camSteps);
+    jerkOf(vs, camJerk);
+  }
+
+  // ---- moving regions
+  // a track that broke off for a frame or two and goes on where it was heading, at about the same velocity, is one track
+  tracks.sort((a, b) => a.pts[0].f - b.pts[0].f || a.pts[0].cx - b.pts[0].cx || a.pts[0].cy - b.pts[0].cy);
+  for (let i = 0; i < tracks.length; i++) {
+    const A = tracks[i];
+    for (;;) {
+      const z = A.pts[A.pts.length - 1], vz = sp(z);
+      let best = -1, bd = Infinity;
+      for (let j = 0; j < tracks.length; j++) {
+        const B = tracks[j];
+        if (B === A || B.merged) continue;
+        const a = B.pts[0], gap = a.f - z.f;
+        if (gap < 1 || gap > 3) continue;
+        const d = Math.hypot(a.cx - (z.cx + z.vx * gap), a.cy - (z.cy + z.vy * gap));
+        if (d <= 36 && Math.min(a.n, z.n) >= 0.3 * Math.max(a.n, z.n) && Math.hypot(a.vx - z.vx, a.vy - z.vy) <= Math.max(1.5, 0.5 * Math.max(vz, sp(a))) && d < bd) { bd = d; best = j; }
+      }
+      if (best < 0) break;
+      const B = tracks[best];
+      B.merged = true;
+      A.pts = A.pts.concat(B.pts); A.toRest = B.toRest; A.cutEnd = B.cutEnd;
+    }
+  }
+  for (let i = tracks.length - 1; i >= 0; i--) if (tracks[i].merged) tracks.splice(i, 1);
+  // clean each track: a missed frame takes the mean of its neighbours, and a one-frame spike (a block that matched a
+  // wrong place) is dropped the same way
+  for (const tr of tracks) {
+    const out = [];
+    for (const p of tr.pts) { const l = out[out.length - 1]; if (l && p.f - l.f === 2) out.push({ ...l, f: l.f + 1, vx: (l.vx + p.vx) / 2, vy: (l.vy + p.vy) / 2, cx: (l.cx + p.cx) / 2, cy: (l.cy + p.cy) / 2 }); out.push({ ...p }); }
+    for (let k = 1; k < out.length - 1; k++) { const a = sp(out[k - 1]), c = sp(out[k + 1]); if (sp(out[k]) > 2.5 * Math.max(a, c) + 1) { out[k].vx = (out[k - 1].vx + out[k + 1].vx) / 2; out[k].vy = (out[k - 1].vy + out[k + 1].vy) / 2; } }
+    while (out.length >= 2 && sp(out[out.length - 1]) > 2.5 * sp(out[out.length - 2]) + 1) out.pop();
+    while (out.length >= 2 && sp(out[0]) > 2.5 * sp(out[1]) + 1) out.shift();
+    tr.pts = out;
+  }
+  // (a region of one block is too often a block that matched badly: follow regions of two blocks or more, on average)
+  const sigTracks = tracks.filter((tr) => tr.pts.length >= 5 && Math.max(...tr.pts.map(sp)) >= SIG && median(tr.pts.map(sp)) >= 1 && tr.pts.reduce((a, p) => a + p.n, 0) >= 4 * tr.pts.length);
+  const objStopTimes = [], objSteps = [], objJerk = [];
+  for (const tr of sigTracks) {
+    const pts = tr.pts;
+    // a dip to (almost) nothing inside the track
+    for (let k = 1; k < pts.length - 1; k++) {
+      const s = sp(pts[k]);
+      const pb = Math.max(...pts.slice(Math.max(0, k - 18), k).map(sp)), pa = Math.max(...pts.slice(k + 1, k + 19).map(sp));
+      if (s <= 0.12 * Math.min(pb, pa) && Math.min(pb, pa) >= SIG) { objStopTimes.push(r2(pts[k].f / fps)); k += short; }
+    }
+    // velocity, with the step from rest when it started or stopped in view (not at the frame edge, not at a cut)
+    const vs = [], ts = [];
+    if (tr.fromRest && !pts[0].edge && !tr.startAfterCut) { vs.push([0, 0]); ts.push(r2((pts[0].f - 1) / fps)); }
+    for (const p of pts) { vs.push([p.vx, p.vy]); ts.push(r2(p.f / fps)); }
+    if (tr.toRest && !pts[pts.length - 1].edge) { vs.push([0, 0]); ts.push(r2((pts[pts.length - 1].f + 1) / fps)); }
+    stepsOf(vs, ts, objSteps);
+    jerkOf(vs, objJerk);
+  }
+  // a region comes to rest and something starts moving from the same place within 0.4 s (two moves that do not flow)
+  const linkable = tracks.filter((tr) => tr.pts.length >= 3 && Math.max(...tr.pts.map(sp)) >= SIG && tr.pts.reduce((a, p) => a + p.n, 0) >= 4 * tr.pts.length);
+  const ends = linkable.filter((t) => t.toRest).map((t) => t.pts[t.pts.length - 1]);
+  for (const tr of linkable) {
+    const a = tr.pts[0];
+    if (ends.some((e) => a.f > e.f && a.f - e.f <= short && Math.hypot(a.cx - e.cx, a.cy - e.cy) <= 36)) objStopTimes.push(r2(a.f / fps));
+  }
+  objStopTimes.sort((x, y) => x - y);
+  objSteps.sort((x, y) => x - y);
+
+  // ---- blur on fast frames
+  const fastN = fastInfo.length, blurredN = fastInfo.filter((x) => x.blurred).length, strobeFrames = fastInfo.filter((x) => !x.blurred);
+  const movingFrames = energy.filter((e) => e > 0.02).length;
+  const movingSeconds = movingFrames / fps;
+
+  // ---- one number: 10 = smooth, flowing motion; 0 = robotic (calibrated on deliberately robotic and smooth renders)
+  const perMin = (k) => (k / Math.max(movingSeconds, 10)) * 60;
+  const stopsPm = perMin(camStops.length * 1.5 + objStopTimes.length), stepsPm = perMin(camSteps.length * 1.5 + objSteps.length);
+  const jerkAll = [...camJerk, ...objJerk];
+  const strobeShare = fastN ? strobeFrames.length / fastN : 0, fastShare = n ? fastN / n : 0;
+  const pen = {
+    stops: Math.min(4.5, stopsPm / 3),                           // a stop-and-go every 20 s of motion costs 1 point
+    steps: Math.min(2.5, stepsPm / 4),                           // a full-speed start, stop or sharp turn every 15 s: 1 point
+    strobe: Math.min(3, strobeShare * Math.min(1, fastShare * 8) * 3), // sharp fast frames, as they get common
+  };
+  const tooLittle = movingFrames < Math.max(10, n * 0.05);
+  const score = tooLittle ? null : Math.round(Math.max(0, 10 - pen.stops - pen.steps - pen.strobe) * 10) / 10;
+  const notes = [];
+  const at = (ts) => ts.slice(0, 6).map((t) => t.toFixed(1) + ' s').join(', ') + (ts.length > 6 ? ', …' : '');
+  if (tooLittle) notes.push('Too little motion to judge.');
+  if (camStops.length) notes.push(`The camera stops dead between moves ${camStops.length} time${camStops.length > 1 ? 's' : ''} (at ${at(camStops)}).`);
+  if (objStopTimes.length) notes.push(`Moving things stop and start again ${objStopTimes.length} time${objStopTimes.length > 1 ? 's' : ''} (at ${at(objStopTimes)}).`);
+  const allSteps = [...camSteps, ...objSteps].sort((a, b) => a - b);
+  if (allSteps.length) notes.push(`${allSteps.length} sudden velocity change${allSteps.length > 1 ? 's' : ''} (a start or stop at full speed, or a sharp turn) at ${at(allSteps)}.`);
+  if (fastN >= 3 && strobeShare >= 0.5) notes.push(`${strobeFrames.length} fast frame${strobeFrames.length > 1 ? 's' : ''} without motion blur (they strobe); ${Math.round((blurredN / fastN) * 100)}% of fast frames are blurred.`);
+  const runs = (frames) => { const out = []; for (const x of frames) { const l = out[out.length - 1]; if (l && x.f - l[1] <= 2) l[1] = x.f; else out.push([x.f, x.f]); } return out.map(([a, b]) => [r2(a / fps), r2((b + 1) / fps)]); };
+  const jp = (a) => ({ p50: r2(pct(a, 0.5)), p90: r2(pct(a, 0.9)), p99: r2(pct(a, 0.99)) });
+  const report = {
+    fps, frames: n, grid: [W0, H0],
+    naturalness: score,
+    penalties: Object.fromEntries(Object.entries(pen).map(([k, v]) => [k, r2(v)])),
+    camera: { moves: camMoves.length, stops: camStops.length, stopTimes: camStops, steps: camSteps.length, moving: r2(cam.filter((g) => g && g.sp >= 0.25).length / n), jerk: jp(camJerk) },
+    objects: { tracks: sigTracks.length, stops: objStopTimes.length, stopTimes: objStopTimes, steps: objSteps.length, stepTimes: objSteps.slice(0, 20), jerk: jp(objJerk) },
+    jerk: { ...jp(jerkAll), unit: 'px/frame³ in a 1920 px frame' },
+    stopsPerMinute: r2(stopsPm), stepsPerMinute: r2(stepsPm),
+    blur: { fastFrames: fastN, fastShare: r3(fastShare), blurredShare: fastN ? r2(blurredN / fastN) : null, strobeFrames: strobeFrames.length, strobeRanges: runs(strobeFrames).slice(0, 12),
+      fastMove: fastN ? Math.round(median(fastInfo.map((x) => x.disp)) * toSrc) : 0, edgeWidth: fastN ? r2(median(fastInfo.map((x) => x.width))) : null },
+    movingShare: r2(movingFrames / n),
+    notes,
+    seconds: r2((Date.now() - t0) / 1000),
+  };
+  if (opts.keepEnergy) Object.defineProperty(report, 'energy', { value: energy, enumerable: false });
+  if (opts.debug) Object.defineProperty(report, '_debug', { value: { cam, tracks, fastInfo, frames: dbgFrames }, enumerable: false });
+  return report;
+}
+
+export function formatMotion(m) {
+  const L = [];
+  L.push(`## Motion smoothness: ${m.naturalness == null ? 'n/a' : m.naturalness + ' / 10'} (10 = flowing, natural; 0 = robotic)`);
+  L.push(`- camera: ${m.camera.moves} moves, ${m.camera.stops} dead stops between moves, ${m.camera.steps} sudden velocity changes`);
+  L.push(`- moving things: ${m.objects.tracks} followed, ${m.objects.stops} stop-and-go, ${m.objects.steps} sudden velocity changes`);
+  L.push(`- jerk (change of acceleration, ${m.jerk.unit}): p50 ${m.jerk.p50}, p90 ${m.jerk.p90}, p99 ${m.jerk.p99}`);
+  L.push(`- fast frames (2%+ of the frame per frame): ${m.blur.fastFrames} (${Math.round(m.blur.fastShare * 100)}%), ${m.blur.blurredShare == null ? 'none' : Math.round(m.blur.blurredShare * 100) + '% motion blurred'}, ${m.blur.strobeFrames} strobing${m.blur.strobeRanges.length ? ' at ' + m.blur.strobeRanges.slice(0, 4).map(([a, b]) => `${a}-${b} s`).join(', ') : ''}`);
+  for (const x of m.notes) L.push(`- ${x}`);
+  return L.join('\n');
+}
+
+/**
+ * Frame strips of the busiest moments: the `count` 1 s windows with the most motion (no overlap), each as one sheet of
+ * frames at 10 fps with their times. For judging smoothness from pictures. Returns [{ file, start, end, motion }].
+ */
+export async function motionStrips(input, { output, count = 4, window: win = 1, rate = 10, energy, meta, chrome, fps: efps } = {}) {
+  const file = resolve(input);
+  meta = meta || probeVideo(file);
+  if (!energy) { const m = await analyzeMotion(file, { meta, keepEnergy: true }); energy = m.energy; efps = m.fps; }
+  const n = energy.length, len = Math.max(2, Math.round(win * efps)), step = Math.max(1, Math.round(efps / 4));
+  const cands = [];
+  for (let a = 0; a + len <= n; a += step) { let s = 0; for (let k = a; k < a + len; k++) s += energy[k]; cands.push({ a, s: s / len }); }
+  if (!cands.length) cands.push({ a: 0, s: 0 });
+  cands.sort((x, y) => y.s - x.s || x.a - y.a);
+  const pick = [];
+  for (const c of cands) { if (pick.length >= count) break; if (pick.some((p) => c.a < p.a + len && p.a < c.a + len)) continue; if (pick.length >= 3 && c.s < 0.05 * pick[0].s) break; pick.push(c); }
+  pick.sort((x, y) => x.a - y.a);
+  const outDir = resolve(output || join(dirname(file), 'analysis', basename(file).replace(/\.[^.]+$/, '')));
+  mkdirSync(outDir, { recursive: true });
+  const k = Math.max(1, Math.round(win * rate));
+  const wins = pick.map((p) => { const start = p.a / efps; return { start, end: Math.min(meta.duration, start + win), motion: p.s, times: Array.from({ length: k }, (_, i) => Math.round((start + i / rate) * 1000) / 1000).filter((t) => t < meta.duration - 0.5 / meta.fps) }; });
+  const frames = await grabFrames(file, wins.flatMap((w) => w.times), { fps: meta.fps, width: 640 });
+  const vertical = meta.height > meta.width;
+  const cols = vertical ? 10 : 5, cellW = vertical ? 180 : 360, cellH = Math.round((cellW * meta.height) / meta.width);
+  const top = Math.max(1e-9, ...wins.map((w) => w.motion));
+  return withSheetPage({ chrome }, async (page) => {
+    const out = [];
+    for (let i = 0; i < wins.length; i++) {
+      const w = wins[i];
+      const cells = w.times.map((t) => ({ data: frames.get(Math.round(t * meta.fps)), caption: fmtT(t), sub: `+${Math.round((t - w.start) * 1000)} ms` })).filter((c) => c.data);
+      const rows = [];
+      for (let j = 0; j < cells.length; j += cols) rows.push({ cells: cells.slice(j, j + cols) });
+      const png = await layoutSheet(page, { title: `${basename(file)} · ${fmtT(w.start)} – ${fmtT(w.end)} · ${rate} frames per second · motion ${Math.round((w.motion / top) * 100)}%`, rows, cols, cellW, cellH });
+      const f = join(outDir, `strip-${i + 1}.png`);
+      writeFileSync(f, png);
+      out.push({ file: f, start: r3(w.start), end: r3(w.end), motion: r3(w.motion * (meta.width / (meta.width >= meta.height ? MW : (MW * meta.width) / meta.height))) });
+    }
+    return out;
+  });
 }
 
 // ---------------------------------------------------------------------------

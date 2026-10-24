@@ -249,7 +249,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const lineH = t.rs.reduce((m, r) => Math.max(m, r.height), 0);
     const scaleY = el.offsetHeight > 0 ? el.getBoundingClientRect().height / el.offsetHeight : 1;
     const visualFs = fs * (isFinite(scaleY) && scaleY > 0 ? scaleY : 1);
-    if (visualFs < 18 * PX && lineH > 0 && !overview && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'tiny-text', selector: sel(el), text: snippet(el), message: 'Text is ' + Math.round(visualFs) + 'px tall in a ' + W + 'x' + H + ' frame, which is hard to read in a video.', fix: 'Use at least ' + Math.round(24 * PX) + 'px (' + Math.round(28 * PX) + 'px+ for body text).' });
+    if (visualFs < 22 * PX && lineH > 0 && !overview && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'tiny-text', selector: sel(el), text: snippet(el), message: 'Text is ' + Math.round(visualFs) + 'px tall in a ' + W + 'x' + H + ' frame, which is hard to read in a video.', fix: 'Use at least ' + Math.round(24 * PX) + 'px (' + Math.round(28 * PX) + 'px+ for body text).' });
     t.fontPx = visualFs;
     t.bold = parseInt(cs.fontWeight, 10) >= 600;
     // (SVG text is painted with its fill, not its CSS color; a gradient fill is judged like clip-filled text: not at all)

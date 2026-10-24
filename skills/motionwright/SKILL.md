@@ -237,7 +237,7 @@ The most common failure is a video that looks like a slideshow or a website: a c
 
 ## Making it look good
 
-- Layout for 1920×1080: keep text ≥ 96px from the edges. Titles 96–160px, body ≥ 36px, captions ≥ 56px. Max ~10 words on screen at once.
+- Layout for 1920×1080: keep text ≥ 96px from the edges. Titles 96–160px, body ≥ 36px, captions ≥ 56px, and secondary text (taglines, card subtitles, axis labels, code in an editor, labels in a wide shot) ≥ 32px **as seen on screen** after camera zoom: in round 8 every judge named small secondary text, and `check` warns below 22px. Max ~10 words on screen at once.
 - Vertical 1080×1920 (Shorts/Reels/TikTok): the same pixel sizes work (the short side is 1080). Keep the top 220px and bottom 380px free of key text (app buttons and titles cover them) and 60px at the sides. Put `data-safe-zone="shorts"` (or `reels`, `tiktok`) on `<html>` and `check` warns about text in those edges (`unsafe-zone`), and `snapshot --grid` draws the zone. Preview how captions will page: `npx motionwright captions captions.json --words 3`. Titles 90–140px, captions 56–72px, max ~6 words per line.
 - One idea per scene, 2.5–5s each. Let things hold ≥ 1s after they land before the next change.
 - Enter with ease-out (`out-expo`, `out-back`, `spring`), exit with ease-in, and keep exits shorter than entrances. Stagger 40–90ms between items.
@@ -280,7 +280,7 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `text-over-line` | A visible stroke (an arrow, a line, the edge of a box) runs through the letters. Move the label or the line, or give the label a backing. |
 | `empty-frame` | Almost nothing on screen for a second or more in the middle of the video (a camera crossing empty space between parts, a gap between scenes, a zoom so far out that everything is a speck). |
 | `still` | Little changes on screen for 2.5 s or more (1.9 s at the very end: a dead end card): nothing enters, leaves or moves, and a slow float or a faint glow does not count. Viewers read it as the video stalling. Cut the hold, start the next beat sooner, or end earlier. |
-| `tiny-text` | Hard to read in a video. Use ≥ 24px at 1080p. |
+| `tiny-text` | Under 22px on screen (at 1080p, after camera zoom): hard to read in a video. Use ≥ 24px, ≥ 32px for secondary text. |
 | `text-covered` | Part of a settled label is hidden behind something drawn on top of it. Move one, or raise the label (z-index / later in the HTML). |
 | `camera-late` | A camera shot arrives (its time + duration) after its scene starts its exit transition, so it is never seen at rest. Start it earlier or shorten it. |
 | `low-contrast` | Text blends into what is behind it. Targets: 4.5:1 normal text, 3:1 large text (≥ 32px, or bold ≥ 24px), 1.6:1 for text with a `text-shadow` or outline. ✖ below two thirds of the target. Fix the color, or add a backing or shadow. |

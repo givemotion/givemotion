@@ -1609,6 +1609,7 @@
     __nearestClip: nearestClip,
     __real: real,
     __stateful: () => stateful || usedRAF,
+    __usesRAF: () => usedRAF, // render: no auto motion blur for pages animated by requestAnimationFrame (history-dependent)
     __sourceEls: () => sourceEls,
     __syncMedia: syncMedia,
     __setVideoDurations(map) { for (const v of videos) if (map[v.src] != null) v.duration = map[v.src]; },

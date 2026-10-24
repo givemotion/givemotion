@@ -215,7 +215,11 @@ export async function render(input, opts = {}) {
     const fps = comp.fps;
     // motion blur: off, a fixed number of samples for every frame, or auto (the default in natural motion)
     const motion = await ctx.page.evaluate('gm.motion').catch(() => 'natural');
-    const blur = resolveMotionBlur(opts.motionBlur, { motion, transparent });
+    let blur = resolveMotionBlur(opts.motionBlur, { motion, transparent });
+    // requestAnimationFrame code keeps its own state from call to call: extra sub-frame calls would change what it
+    // draws next (and differ between workers), so such pages get no auto blur
+    const usesRAF = () => ctx.page.evaluate('gm.__usesRAF ? gm.__usesRAF() : gm.__stateful()');
+    if (blur.mode === 'auto' && (await usesRAF())) blur = { mode: 'off', samples: 1, why: 'requestAnimationFrame' };
     const blurSamples = blur.mode === 'fixed' ? blur.samples : 1;
     const blurStats = { blurred: 0, samples: 0, probeMs: 0, ref: Math.min(comp.width, comp.height) / 1080 };
     const totalFrames = Math.max(1, Math.round(comp.duration * fps));
@@ -277,7 +281,7 @@ export async function render(input, opts = {}) {
     const groups = auto ? Array.from({ length: Math.min(workers, ranges.length) }, () => []) : splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : blur.mode === 'auto' ? ', motion blur auto' : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : blur.mode === 'auto' ? ', motion blur auto' : blur.why ? ', no motion blur: ' + (blur.why === 'transparent' ? 'transparent output' : 'the page uses requestAnimationFrame') : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
@@ -294,10 +298,13 @@ export async function render(input, opts = {}) {
     // Auto blur: how far things move at every frame to render (seeks and box reads, no captures; about 0.3 ms a frame
     // for a DOM page), measured in pieces spread over all pages
     const steps = new Map(); // f -> px moved on screen from frame f-1 to f
+    let rafLate = false;
     if (auto && todoFrames) {
       const q0 = Date.now();
+      // every frame of the video when it is cut into parts, so a re-rendered part sees the same as a full render
       const need = new Set();
-      for (const r of ranges) for (let f = r.a - 1; f <= r.b; f++) need.add(f);
+      if (useParts) for (let f = -1; f <= totalFrames; f++) need.add(f);
+      else for (const r of ranges) for (let f = r.a - 1; f <= r.b; f++) need.add(f);
       const frames = [...need].sort((x, y) => x - y);
       const per = Math.max(30, Math.ceil(frames.length / pages.length));
       const pieces = [];
@@ -314,9 +321,11 @@ export async function render(input, opts = {}) {
           const d = await page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(run.map((f) => Math.max(0, f / fps)))}, ${shutter})`, { timeoutMs: Math.max(60000, run.length * 1000) });
           run.slice(1).forEach((f, n) => steps.set(f, d[n]));
         }
-        // pages driven by requestAnimationFrame or timers cannot seek back: start them again
+        if (await page.evaluate('gm.__usesRAF ? gm.__usesRAF() : false')) rafLate = true;
+        // pages driven by timers cannot seek back: start them again
         if (await page.evaluate('gm.__stateful()')) await reopen(page);
       }));
+      if (rafLate) { steps.clear(); if (!opts.quiet) log('  no motion blur: the page uses requestAnimationFrame'); } // (see above)
       blurStats.probeMs = Date.now() - q0;
     }
     const framePlan = (f) => autoBlurPlan(Math.max(steps.get(f) || 0, steps.get(f + 1) || 0) / blurStats.ref, shutter);
@@ -373,7 +382,12 @@ export async function render(input, opts = {}) {
         let q0 = Date.now();
         if (prevFrame >= a && (await page.evaluate('gm.__stateful()'))) await reopen(page);
         last = null;
-        if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); }
+        // warm up on the frame before (on frame 1 for the start): the paint caches then do not depend on what this
+        // page rendered before
+        await page.seek((a > 0 ? a - 1 : 1) / fps);
+        // (a page that went stateful on frame 1 cannot step back to 0: fresh page, warm up on 0)
+        if (a === 0 && (await page.evaluate('gm.__stateful()'))) { await reopen(page); await page.seek(0); }
+        await page.capture(captureFormat, jpegQ);
         const blenders = new Map();
         let chain = Promise.resolve();
         const put = (f, img) => {

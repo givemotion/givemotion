@@ -103,3 +103,20 @@ test('timeline: counting keeps the number format; travel moves SVG shapes', { sk
   assert.deepEqual(v.slice(0, 3), ['042', '$4.50', '−12']);
   assert.ok(Math.abs(v[3] - 300) <= 3, 'circle at ' + v[3]);
 });
+
+test('render keeps parts: editing one scene redoes only its parts, and the result equals a full render byte for byte', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  const scenes = (word) => `<main data-sequence data-transition="fade 0.3">${['#225', '#522', '#252', '#552'].map((c, i) => `<section class="scene" data-duration="1.5" style="background:${c};display:grid;place-items:center"><h1 data-enter="rise" style="font-size:60px">${i === 2 ? word : 'Scene ' + i}</h1></section>`).join('')}</main>`;
+  writeFileSync(f, page(scenes('Hello')));
+  const out = join(d, 'out', 'v.mp4');
+  const r1 = await render(f, { output: out, ...quiet });
+  assert.equal(r1.parts.reused, 0);
+  writeFileSync(f, page(scenes('Changed')));
+  const r2 = await render(f, { output: out, ...quiet });
+  assert.ok(r2.parts.reused >= 2 && r2.parts.rendered >= 1, JSON.stringify(r2.parts));
+  const full = join(d, 'full.mp4');
+  await render(f, { output: full, cache: false, workers: 1, ...quiet });
+  assert.ok(readFileSync(out).equals(readFileSync(full)), 'patched video differs from a full render');
+  const r3 = await render(f, { output: out, redo: '0s-1s', ...quiet });
+  assert.equal(r3.parts.rendered, 1);
+});

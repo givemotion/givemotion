@@ -54,7 +54,9 @@ Render options
   --hardware             Use the GPU video encoder when available (VideoToolbox/NVENC)
   --scale <n>            Render at n× resolution (2 → 4K from a 1080p layout)
   --fps <n>  --width <n>  --height <n>   Override the composition settings
-  --frames <range>       Part of the video: "0-90" (frames) or "2s-5s"
+  --frames <range>       Part of the video: "0-90" (frames) or "2s-5s" (a new file)
+  --redo <range>         Re-render this part ("4s-7s") even if it looks unchanged, keep the rest
+  --no-cache             Do not keep or reuse parts (by default only changed parts are re-rendered)
   --workers <n>          Parallel browsers (default: based on CPU and memory)
   --transparent          Keep transparency (use --format mov or webm)
   --muted                No audio track
@@ -114,7 +116,7 @@ const CMD_HELP = {
   bench: 'motionwright bench [file.html] [--workers n] [--json]',
 };
 
-const BOOLS = ['json', 'sheets', 'audio', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
+const BOOLS = ['json', 'sheets', 'audio', 'cache', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -172,7 +174,7 @@ async function cmdRender(args) {
       ...commonOpts(args), output: out, format: args.format, quality: args.quality, crf: args.crf != null ? +args.crf : undefined, codec: args.codec,
       hardware: args.hardware, workers: args.workers ? +args.workers : undefined, frames: args.frames, transparent: args.transparent, muted: args.muted,
       motionBlur: args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json,
-      noReuse: args.reuse === false, lossless: args.lossless,
+      noReuse: args.reuse === false, lossless: args.lossless, redo: args.redo, cache: args.cache,
     });
     if (args.json) console.log(JSON.stringify(summary, null, 2));
     else {

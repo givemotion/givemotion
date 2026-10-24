@@ -1,5 +1,7 @@
 // Render orchestration: open the composition, split frames across workers, encode, mux audio.
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, readFileSync, renameSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { join, resolve, dirname, basename, extname, relative, isAbsolute } from 'node:path';
 import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage } from './browser.js';
@@ -177,76 +179,114 @@ export async function render(input, opts = {}) {
     const nFrames = f1 - f0;
     const media = format === 'png' ? { durations: {}, audio: [] } : await prepareMedia(ctx, ctx.page);
     if (opts.muted) media.audio = [];
-    const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(nFrames), nFrames));
-    if (!opts.quiet) log(`motionwright: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${workers} worker${workers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}]`);
+
+    // Work list. Whole videos are cut into fixed parts (1-2 s) that are kept next to the output with a fingerprint
+    // of what they depend on; the next render redoes only the parts that changed and joins all parts again.
+    // A part is the same bytes whichever worker renders it, so a patched video equals a full render.
+    // (--no-cache: same parts, in a temporary folder, so the bytes never depend on the worker count either)
+    const useParts = format !== 'png' && !opts.frames;
+    const keepParts = useParts && opts.cache !== false;
+    let ranges, parts = null;
+    if (useParts) {
+      const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
+      const dir = keepParts ? join(dirname(out), '.mw-parts', basename(out)) : join(tmp, 'parts');
+      const settings = hashOf(JSON.stringify({ v: 1, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
+      const deps = await dependencyPrints(ctx);
+      const old = keepParts ? readJson(join(dir, 'parts.json')) : null;
+      const redo = opts.redo ? parseRange(opts.redo, fps, totalFrames) : null;
+      const list = [];
+      for (let a = 0, i = 0; a < totalFrames; a += segF, i++) {
+        const b = Math.min(totalFrames, a + segF);
+        const t0s = (a - 1) / fps, t1s = b / fps; // one frame of margin for motion blur
+        const used = deps.clips.filter((c) => c.end > t0s && c.start < t1s).map((c) => [c.fp, c.start, c.end]);
+        const fp = hashOf(JSON.stringify([settings, deps.shared, a, b, used]));
+        const file = join(dir, `part-${String(i).padStart(5, '0')}.${plan.segExt}`);
+        const prev = old && old.settings === settings && old.parts[i];
+        const keep = prev && prev.a === a && prev.b === b && prev.fp === fp && existsSync(file) && !(redo && a < redo[1] && b > redo[0]);
+        list.push({ i, a, b, fp, file, keep });
+      }
+      const why = !old ? 'first render' : old.settings !== settings ? 'settings, data or engine changed' : old.shared !== deps.shared ? 'shared code, styles or files changed' : null;
+      const changedClips = old && old.settings === settings && old.shared === deps.shared ? deps.clips.filter((c) => !(old.clips || []).some((o) => o.fp === c.fp && o.start === c.start && o.end === c.end)).map((c) => c.name) : [];
+      parts = { dir, settings, deps, list, why, changedClips, redo };
+      ranges = list.filter((p) => !p.keep).map((p) => ({ a: p.a, b: p.b, file: p.file }));
+      mkdirSync(dir, { recursive: true });
+    } else {
+      ranges = [{ a: f0, b: f1, file: format === 'png' ? null : join(tmp, `seg.${plan.segExt}`) }];
+    }
+    const todoFrames = ranges.reduce((s, r) => s + r.b - r.a, 0);
+    const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames), Math.max(1, todoFrames)));
+    // Give each worker a run of neighbouring frames (fewer warm-ups, same balance as before).
+    const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
+    const nWorkers = Math.max(1, groups.length);
+    if (!opts.quiet) {
+      log(`motionwright: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : ''}]`);
+      if (parts && parts.list.some((p) => p.keep)) {
+        const kept = parts.list.filter((p) => p.keep).length;
+        log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
+      } else if (keepParts && parts.why && parts.why !== 'first render') log(`  redoing every part: ${parts.why}`);
+    }
 
     if (process.env.MOTIONWRIGHT_PROFILE) log(`  setup ${Date.now() - t0}ms`);
     // Start other workers in parallel
-    const extra = await Promise.all(Array.from({ length: workers - 1 }, () => newWorker(ctx, opts)));
+    const extra = todoFrames ? await Promise.all(Array.from({ length: nWorkers - 1 }, () => newWorker(ctx, opts))) : [];
     pages.push(...extra);
     if (Object.keys(media.durations).length) {
       await Promise.all(pages.map((p) => p.evaluate(`(() => { const d = ${JSON.stringify(media.durations)}; mw.__setVideoDurations && mw.__setVideoDurations(d); })()`)));
     }
 
-    // Split frames into contiguous chunks
-    const chunks = [];
-    const per = Math.ceil(nFrames / workers);
-    for (let i = 0; i < workers; i++) {
-      const a = f0 + i * per, b = Math.min(f1, a + per);
-      if (a < b) chunks.push([a, b]);
-    }
     let done = 0, reused = 0;
     let lastLog = 0;
     const progress = () => {
       const now = Date.now();
-      if (now - lastLog < 1000 && done < nFrames) return;
+      if (now - lastLog < 1000 && done < todoFrames) return;
       lastLog = now;
       const el = (now - t0) / 1000;
       const rate = done / Math.max(0.001, el);
-      const eta = rate > 0 ? (nFrames - done) / rate : 0;
-      if (opts.onProgress) opts.onProgress({ done, total: nFrames, fps: rate, eta });
-      else if (!opts.quiet) log(`  ${String(Math.round((done / nFrames) * 100)).padStart(3)}%  ${done}/${nFrames} frames  ${rate.toFixed(1)} fps  eta ${eta.toFixed(0)}s`);
+      const eta = rate > 0 ? (todoFrames - done) / rate : 0;
+      if (opts.onProgress) opts.onProgress({ done, total: todoFrames, fps: rate, eta });
+      else if (!opts.quiet) log(`  ${String(Math.round((done / Math.max(1, todoFrames)) * 100)).padStart(3)}%  ${done}/${todoFrames} frames  ${rate.toFixed(1)} fps  eta ${eta.toFixed(0)}s`);
     };
 
     if (format === 'png') mkdirSync(out.includes('%') ? dirname(out) : out, { recursive: true });
-    const segments = [];
     const jpegQ = q.jpeg;
-    await Promise.all(chunks.map(async ([a, b], wi) => {
+    await Promise.all(groups.map(async (group, wi) => {
       const page = pages[wi];
-      const seg = format === 'png' ? null : join(tmp, `seg${String(wi).padStart(3, '0')}.${plan.segExt}`);
-      if (seg) segments[wi] = seg;
-      const writer = seg ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: seg, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
-      let last = null;
+      let last = null, prevFrame = -2;
       const prof = { seek: 0, cap: 0, write: 0, end: 0 };
-      try {
-        // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
-        if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); }
-        for (let f = a; f < b; f++) {
-          for (let s = 0; s < blurSamples; s++) {
-            const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
-            let q0 = Date.now();
-            const r = await page.seek(Math.max(0, t));
-            prof.seek += Date.now() - q0; q0 = Date.now();
-            if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
-            let buf;
-            if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
-            else { buf = last; if (s === 0) reused++; }
-            last = buf;
-            prof.cap += Date.now() - q0; q0 = Date.now();
-            if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
-            else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
+      for (const { a, b, file } of group) {
+        const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
+        const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
+        try {
+          // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
+          if (a !== prevFrame + 1) { last = null; if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); } }
+          for (let f = a; f < b; f++) {
+            for (let s = 0; s < blurSamples; s++) {
+              const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
+              let q0 = Date.now();
+              const r = await page.seek(Math.max(0, t));
+              prof.seek += Date.now() - q0; q0 = Date.now();
+              if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
+              let buf;
+              if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
+              else { buf = last; if (s === 0) reused++; }
+              last = buf;
+              prof.cap += Date.now() - q0; q0 = Date.now();
+              if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
+              else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
+            }
+            prevFrame = f;
+            done++;
+            progress();
           }
-          done++;
-          progress();
+          const q1 = Date.now();
+          if (writer) { await writer.end(); renameSync(tmpFile, file); }
+          prof.end += Date.now() - q1;
+        } catch (e) {
+          if (writer) writer.kill();
+          throw e;
         }
-        const q1 = Date.now();
-        if (writer) await writer.end();
-        prof.end = Date.now() - q1;
-        if (process.env.MOTIONWRIGHT_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${b - a} frames`);
-      } catch (e) {
-        if (writer) writer.kill();
-        throw e;
       }
+      if (process.env.MOTIONWRIGHT_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${group.reduce((s, g) => s + g.b - g.a, 0)} frames`);
     }));
     const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);
@@ -254,13 +294,20 @@ export async function render(input, opts = {}) {
     pages.length = 0;
     if (format !== 'png') {
       mkdirSync(dirname(out), { recursive: true });
+      const segments = parts ? parts.list.map((p) => p.file) : groups.flat().map((r) => r.file);
       await finalize({ segments, listFile: join(tmp, 'list.txt'), out, format, duration: nFrames / fps, audio: media.audio.map((a) => ({ ...a, start: a.start - f0 / fps, end: a.end - f0 / fps })).filter((a) => a.end > 0).map((a) => (a.start < 0 ? { ...a, from: a.from + -a.start * a.rate, start: 0 } : a)), fps, plan, transparent });
+      if (parts && keepParts) {
+        writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));
+        // parts of an older, longer video
+        for (const f of readdirSync(parts.dir)) if (/^part-\d+\./.test(f) && !parts.list.some((p) => basename(p.file) === f)) rmSync(join(parts.dir, f), { force: true });
+      }
     }
     if (process.env.MOTIONWRIGHT_PROFILE) log(`  finalize ${Date.now() - tLoop}ms, total ${Date.now() - t0}ms`);
     const elapsed = (Date.now() - t0) / 1000;
     const summary = {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
-      seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: chunks.length, capture: ctx.page.mode,
+      seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode,
+      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir } : null,
       bytes: format === 'png' ? null : statSync(out).size,
       warnings: comp.issues.filter((i) => i.severity !== 'error'),
       pageErrors: dedupe(pageErrors),
@@ -272,6 +319,98 @@ export async function render(input, opts = {}) {
     await ctx.server.close();
     for (const c of cleanup) { try { c(); } catch {} }
   }
+}
+
+const hashOf = (s) => createHash('sha1').update(s).digest('hex').slice(0, 20);
+function readJson(f) { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return null; } }
+let engineFp = null;
+/** Fingerprint of the engine's own code: a new version redoes every part. */
+function engineHash() {
+  if (engineFp) return engineFp;
+  const h = createHash('sha1');
+  const walk = (d) => { for (const e of readdirSync(d).sort()) { const p = join(d, e); if (statSync(p).isDirectory()) walk(p); else if (/\.(js|jsx|css)$/.test(e)) h.update(e).update(readFileSync(p)); } };
+  walk(dirname(fileURLToPath(import.meta.url)));
+  return (engineFp = h.digest('hex').slice(0, 20));
+}
+
+/**
+ * Split the work between workers. Whole parts (useParts) are grouped into runs of neighbours with about the same number
+ * of frames; a single range (--frames, png) is cut into one chunk per worker, as before.
+ */
+function splitRanges(ranges, workers, useParts, tmp, plan) {
+  const total = ranges.reduce((s, r) => s + r.b - r.a, 0);
+  if (!total) return [];
+  if (!useParts) {
+    const { a: f0, b: f1, file } = ranges[0];
+    const per = Math.ceil(total / workers), out = [];
+    for (let i = 0; i < workers; i++) {
+      const a = f0 + i * per, b = Math.min(f1, a + per);
+      if (a < b) out.push([{ a, b, file: file ? join(tmp, `seg${String(i).padStart(3, '0')}.${plan.segExt}`) : null }]);
+    }
+    return out;
+  }
+  const groups = [];
+  let cur = [], n = 0, left = total, wLeft = workers;
+  for (const r of ranges) {
+    cur.push(r); n += r.b - r.a;
+    if (wLeft > 1 && n >= left / wLeft - 1e-9) { groups.push(cur); left -= n; wLeft--; cur = []; n = 0; }
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
+
+/**
+ * What each part of the video depends on. The page's own HTML is split into its top-level clips (scenes and other timed
+ * elements: each one only shows during its time) and everything else (shared: the page around the scenes, every
+ * script and style, and every file the page loaded). A part's fingerprint uses the shared print plus the clips on screen
+ * during that part, with their times, so editing one scene only redoes the parts where that scene is visible.
+ */
+async function dependencyPrints(ctx) {
+  const r = await ctx.page.evaluate(`(async () => {
+    const out = { clips: [], shared: '', resources: [] };
+    out.resources = performance.getEntriesByType('resource').map((e) => e.name);
+    let src = null;
+    try { const res = await fetch(location.pathname + '?raw=1'); if (res.ok && /html/.test(res.headers.get('content-type') || '')) src = await res.text(); } catch (e) {}
+    if (!src) { out.shared = document.documentElement.outerHTML; return out; }
+    const doc = new DOMParser().parseFromString(src, 'text/html');
+    const timed = (e) => e.hasAttribute('data-start') || e.hasAttribute('data-duration') || e.hasAttribute('data-end') || (e.parentElement && e.parentElement.hasAttribute('data-sequence'));
+    const code = [];
+    for (const e of doc.querySelectorAll('script, style')) code.push(e.outerHTML);
+    const tops = [];
+    const walk = (el, path) => { [...el.children].forEach((c, i) => { if (c.tagName === 'SCRIPT' || c.tagName === 'STYLE') return; if (timed(c)) tops.push({ el: c, path: path.concat(i) }); else walk(c, path.concat(i)); }); };
+    walk(doc.body, []);
+    for (const t of tops) {
+      // the same element in the live page (same place, same tag and id); if it moved, the whole page counts as shared
+      let live = document.body;
+      for (const i of t.path) live = live && live.children[i];
+      if (!live || live.tagName !== t.el.tagName || (live.id || '') !== (t.el.id || '')) { out.shared = src; out.clips = []; out.resources.sort(); return out; }
+      const tm = mw.timing(live);
+      const copy = t.el.cloneNode(true);
+      for (const s of copy.querySelectorAll('script, style')) s.remove();
+      out.clips.push({ html: copy.outerHTML, start: tm.start, end: tm.end, name: mw.__selector(live) });
+    }
+    for (const t of tops) t.el.replaceWith(doc.createElement('mw-clip'));
+    out.shared = doc.documentElement.outerHTML + '\\n' + code.join('\\n');
+    out.resources.sort();
+    return out;
+  })()`);
+  // files the page loaded (stylesheets, scripts, images, fonts, data, video frames, audio), by content
+  const files = new Set();
+  const origin = new URL(ctx.url).origin;
+  for (const u of [...r.resources, ...(ctx.info.media || []).map((m) => new URL(m.src, ctx.url).href)]) {
+    let url;
+    try { url = new URL(u); } catch { continue; }
+    if (url.origin !== origin) { files.add('remote:' + u); continue; }
+    let p = decodeURIComponent(url.pathname);
+    if (p.startsWith('/__mw/')) { const s2 = url.searchParams.get('src'); if (!s2) continue; p = decodeURIComponent(new URL(s2, url).pathname); }
+    files.add(p);
+  }
+  const fileHash = [...files].sort().map((p) => {
+    if (p.startsWith('remote:')) return p;
+    const f = join(ctx.root, p);
+    try { const st = statSync(f); return p + ':' + (st.size > 64 * 1024 * 1024 ? st.size + '-' + st.mtimeMs : hashOf(readFileSync(f))); } catch { return p + ':missing'; }
+  });
+  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), clips: r.clips.map((c) => ({ fp: hashOf(c.html), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name })) };
 }
 
 /** Only the soundtrack: `render comp.html -o sound.mp3` (also .wav .m4a .ogg .flac) */

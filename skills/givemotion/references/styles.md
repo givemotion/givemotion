@@ -21,12 +21,17 @@ Contents
 
 ## Fonts that work everywhere
 
-`Caveat` (handwriting, 400-700) is built into the engine. Everything else comes from the machine, so each look gives a stack that falls back to fonts every system has. For identical results on every machine (and for a brand font), put the font file next to the HTML and load it with `@font-face`. A Google Fonts `<link>` also works (the render waits for it) but needs the network on every render.
+Built into the engine (no file, no network, the same on every machine, and they win over fonts installed on the machine):
+`Inter` (sans, 100-900, italic), `JetBrains Mono` (mono, 100-800, italic; ligatures are off inside `code`/`pre`), `Playfair Display`
+(display serif, 400-900, italic), `Space Grotesk` (grotesk display, 300-700), `Bebas Neue` (condensed caps, 400), `Caveat`
+(handwriting, 400-700). Use these names first in every stack. For a brand font, put the file next to the HTML and load it with
+`@font-face`. A Google Fonts `<link>` also works (the render waits for it) but needs the network on every render.
 
-- Sans: `Inter, "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif`
-- Display serif: `"Playfair Display", "DM Serif Display", Georgia, "Times New Roman", serif`
-- Mono: `"JetBrains Mono", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace`
-- Condensed/impact: `"Bebas Neue", "Arial Narrow", "Helvetica Neue", Impact, sans-serif`
+- Sans: `Inter, system-ui, sans-serif`
+- Display serif: `"Playfair Display", Georgia, serif`
+- Mono: `"JetBrains Mono", Menlo, monospace`
+- Grotesk display: `"Space Grotesk", Inter, sans-serif`
+- Condensed/impact: `"Bebas Neue", Impact, sans-serif`
 
 ## 1 Midnight Tech
 

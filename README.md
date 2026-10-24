@@ -333,8 +333,9 @@ givemotion itself has **zero required npm dependencies**.
 ## License
 
 MIT. Use it, change it, fork it, sell what you make with it. Chrome and ffmpeg are installed separately under
-their own licenses. The example music and images were made for this project and are MIT too. The bundled Caveat
-handwriting font is under the SIL Open Font License (`src/runtime/fonts/Caveat-OFL.txt`).
+their own licenses. The example music and images were made for this project and are MIT too. The bundled fonts
+(Inter, JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Caveat) are under the SIL Open Font License
+(license files in `src/runtime/fonts/`).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
 Remotion and HyperFrames, but no code from them. Remotion and HyperFrames are trademarks of their owners.

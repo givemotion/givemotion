@@ -50,5 +50,5 @@ Contents
 ## Fonts, images, paths
 
 - Paths are relative to the HTML file (`image-broken`, `http-404`, `video-frame` mean a wrong path).
-- Use local fonts (`@font-face` with a file next to the HTML) for identical results on every machine; `Caveat` (handwriting) is built in. Web fonts (a Google Fonts `<link>`) also load and the render waits for them, but they need the network on every render.
+- Use local fonts (`@font-face` with a file next to the HTML) for identical results on every machine; built in (no file needed): `Inter`, `JetBrains Mono`, `Playfair Display`, `Space Grotesk`, `Bebas Neue`, `Caveat`. Web fonts (a Google Fonts `<link>`) also load and the render waits for them, but they need the network on every render.
 - Animated GIF / WebP / APNG in `<img>` play frame-exact on clip time (`data-loop="false"`, `data-rate`).

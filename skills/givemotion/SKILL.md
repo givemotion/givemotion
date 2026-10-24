@@ -53,6 +53,8 @@ This file is the core. Full APIs live in `references/` next to this file; the ta
 </html>
 ```
 
+Built-in fonts, no file or network needed (same on every machine): `Inter`, `JetBrains Mono`, `Playfair Display`, `Space Grotesk`, `Bebas Neue`, `Caveat` (handwriting). Pairings per look: `references/styles.md`.
+
 ## Timing model (read this)
 
 - Settings live on `<html>`: `data-width`, `data-height` (even numbers), `data-fps` (default 30), optional `data-duration`, optional `data-background`.

@@ -1,0 +1,118 @@
+# Motion design: principles with numbers
+
+Purpose: how to make a givemotion video feel like real motion design instead of slides; concrete timings, easing, camera grammar, continuity, and the mistakes blind judges punished in our test rounds.
+
+Contents
+1. What judges punished and rewarded
+2. Timing and pacing numbers
+3. Easing and movement principles (with recipes)
+4. Camera grammar
+5. Scene-to-scene continuity
+6. Layout, type and hierarchy
+7. Anti-patterns checklist
+
+## 1. What judges punished and rewarded
+
+Across nine rounds, fresh agents made videos from these docs and blind judges (senior motion designer brief, 2 fps contact sheets) scored them. Counted over the round-8 notes:
+
+| Punished (share of notes) | What it looked like |
+|---|---|
+| Near-still holds (2 of 3 notes) | End card or a "booked" state frozen 1.5–3.5 s; a counter sitting at 96 for a second before it counts |
+| Small secondary text (2 of 3) | Taglines, card subtitles, axis labels, code in an editor, labels in the final wide shot |
+| Text cut by the frame (1 of 2) | During or after camera pans; a neighbour's label half in frame while the shot is about something else |
+| Empty space / unbalanced (2 of 5) | Small UI in a big empty frame; layouts crowding the top-left or the top half (vertical) |
+| Ghosted text (1 of 5) | Crossfades where two scenes' text sit half-visible on top of each other |
+| Slide/website feel | A flat centered screenshot that just scrolls; one centered card per benefit; every scene the same "big number top-left, graphic right" template |
+| Weak first frame | Nearly empty opening, 0.5–1.5 s where nothing changes |
+| Whiteboard-specific | Thin pale ink (3 px), tiny labels in the overview, the camera crossing empty paper, lines "too clean" |
+
+Rewarded: a camera that pushes into the subject (zoom into the code with numbered callouts, dim the rest); one world with one camera route; a camera that follows a moving thing (the line head of a chart, a package on a map); tight zooms that stay readable on a phone; varied kinetic type; one strong hit (burst + shake + flash) at the key moment; things that move from frame one; an element carried from one scene into the next; live counters tied to the visual; a clear payoff at the end. Videos the judges preferred changed 26–40% of the picture per half second; slide-like ones 12–22%.
+
+## 2. Timing and pacing numbers
+
+| What | Number |
+|---|---|
+| First frame | Something on screen at 0.0 s and moving by 0.3 s; first message readable by ~1 s |
+| Rhythm | A new change (entrance, move, cut, emphasis) every 0.5–1.5 s |
+| Scene length | One idea per scene, 2.5–5 s (shorter for social, up to 6–8 s for one camera world step) |
+| Reading hold | After text lands: 0.5 s + 0.3 s per word (~3 words/s). A 4-word headline holds ~1.7 s; never under 1 s |
+| Holding is not freezing | During a hold keep a slow motion alive: camera `push 1.04–1.08`, `float`, a counter, a drifting background |
+| End card | 1.5–2 s, with motion (slow push, a shine, the last word landing late); `still` fires at 1.9 s at the very end |
+| Small element entrance (icon, chip, label) | 0.25–0.45 s |
+| Text entrance | 0.5–0.8 s (per piece with stagger) |
+| Big panel or full-frame move | 0.7–1.2 s |
+| Camera move between shots | 0.8–1.6 s (fast push on a hit: 0.4–0.6 s) |
+| Transition | 0.4–0.8 s; whip 0.3–0.5 s; morph 0.7–1.0 s |
+| Exit | ~60–70% of the entrance duration, ease-in; or let the camera/transition carry it out |
+| Stagger | 40–90 ms per item; keep the whole group under ~0.6 s (`stagger: { amount: 0.5 }`) |
+| Overlap | Start the next move 0.1–0.3 s before the previous one ends (`'-=0.2'`, `'<0.1'`) |
+| Social / vertical | Faster: a change every 0.4–0.8 s, scenes 1.5–3 s |
+
+## 3. Easing and movement principles (with recipes)
+
+- **Ease-out on entrances, ease-in on exits.** Things arriving decelerate into place (`out-expo`, `out-quart`, `out-back`, `spring`); things leaving accelerate away (`in-quad`, `in-cubic`, `in-expo`). Moves from A to B on screen use in-out (`power3.inOut`, `in-out-quart`). Linear only for constant drifts, tickers and rotations.
+- **Weight.** Big things move slower and overshoot less; small things are quick and can bounce. A full-frame panel: 0.9 s `out-quart`; a chip: 0.35 s `back.out(1.6)`.
+- **Anticipation.** Before a big, fast move, a small move the other way (5–10% of the distance, 0.12–0.2 s, ease-in):
+  ```js
+  gm.timeline('#s2')
+    .to('#card', { x: -30, scale: 0.97, duration: 0.15, ease: 'power2.in' }, 1.0)
+    .to('#card', { x: 640, scale: 1, duration: 0.6, ease: 'expo.out' });
+  ```
+- **Overshoot and settle (follow-through).** Landings go slightly past and settle within ~0.3 s: `back.out(1.4–1.8)`, `bouncy`, `spring`, or presets `pop`, `drop`, `elastic`. Use it on the hero, not on everything (a whole screen of bouncing items looks cheap).
+- **Overlapping action and secondary motion.** Parts of one thing do not stop together: the card lands, its icon arrives 60–120 ms later, its label 60–120 ms after that; a slight rotation (3–8°) that settles to 0; a shadow that grows as it lifts.
+- **Arcs.** Natural movement curves. Move x and y with different eases at the same time, or travel along a path:
+  ```js
+  gm.timeline('#s3')
+    .to('#ball', { x: 900, duration: 0.9, ease: 'power2.inOut' }, 2)
+    .to('#ball', { keyframes: [{ y: -160, duration: 0.45, ease: 'sine.out' }, { y: 0, duration: 0.45, ease: 'sine.in' }] }, 2);
+  ```
+  For longer routes use `gm.path.travel` with `rotate: true` (`references/camera.md`).
+- **Squash and stretch, lightly.** A landing can flatten for 0.08–0.12 s (`scaleX: 1.08, scaleY: 0.92`) and recover; skip it for text and UI.
+- **Contrast of speed.** Fast in, slow drift while it is read, fast out. Constant medium speed everywhere reads as software.
+- **Emphasis.** To make a word or number matter: scale it 1.1–1.3, change its color to the accent, add a mark (`data-sketch-mark`), a flash or a small shake. One emphasis per beat.
+- **A big hit** (logo lock, peak number): at the same time, a burst of sparks, a ring that scales 0.6→1.6 while fading, `camera.shake` 10–16 px for 0.3–0.4 s, a 0.1 s brightness flash. Put it on a music hit if there is music.
+- **Motion blur.** Fast whips, spins and camera moves strobe at 30 fps; render with `--motion-blur 8` when the video has them. Classic `blur` on entrances (`rise`, `blur`) also suggests speed.
+- The engine's motion defaults follow `gm.motion` (`'natural'` by default); `<html data-motion="classic">` switches back to the older classic motion if you need to match an earlier render.
+
+## 4. Camera grammar
+
+- **Every scene has a camera.** At least `data-camera="push 1.04–1.1"` or `"float"`; a locked-off frame with one element fading in is the slide look.
+- **Shot order:** establish (wide, short, ≤ 1.5 s) → push in to the detail (zoom until text reads ≥ 32 px) → move to the next detail (short distance, through content, never across empty space) → wide recap at the very end, brief, with key labels scaled up.
+- **Motivated moves.** The camera moves because something moves or matters: it follows the line head, the package, the cursor, or pushes in when a callout appears. Start a shot when the thing appears, not before.
+- **Lead room.** A subject moving right sits in the left third with space ahead (`offset: [260, 0]` on a follow shot). A subject looking or pointing somewhere gets space on that side.
+- **Frame cleanly.** Every label fully in or fully out of a held shot. Fit the subject together with its label.
+- **Land on time.** A shot's time is when the move starts; to land on a beat or on a scene's key moment, start it `duration` earlier. Finish before the scene's exit transition (`camera-late`).
+- **Depth.** Background layers with `data-parallax` 0.2–0.5 make camera moves feel like real space; a soft blur on far layers helps. 3D tilt (`rotateX`/`rotateY` with `transformPerspective`) for screenshots and cards beats a flat rectangle.
+- **Impacts** use `shake`; a handheld feel (`data-camera="handheld"`) suits documentary or energetic styles, not clean corporate ones.
+
+## 5. Scene-to-scene continuity
+
+- **Carry something across.** `data-morph` a logo, card, number or shape into the next scene (`references/timeline.md`), or end one scene's element where the next scene's element starts (match cut: same position, shape or color).
+- **Direction means something.** Keep a consistent direction for "next" (e.g. always `push-left`/`whip-left`); `zoom-through` for going into detail; `iris` or a wipe from the hero element for a reveal; `dip` for a chapter break.
+- **Prefer one world.** Many of the best-scored videos were one big world (map, whiteboard, dashboard, chart) with one camera route instead of separate scenes.
+- **Exit text before a crossfade**, or use a transition that moves the old scene out (push, whip, cover, wipe, iris). Plain `fade` between two text scenes ghosts.
+- **Mid-transition frames count.** Look at `snapshot --transitions`: the middle frame must not be nearly empty or a muddy mix.
+- **Keep one look.** Same palette, fonts, corner radius, stroke width and motion personality across scenes (`references/styles.md`); change layout and camera, not the style.
+
+## 6. Layout, type and hierarchy
+
+- Sizes on screen (after camera zoom), 1920×1080: titles 96–160 px, kinetic lines 120–260 px, body ≥ 36 px, captions ≥ 56 px, secondary ≥ 32 px; ≥ 96 px from the edges; ~10 words on screen at most.
+- **Fill the frame.** The subject (or the group being shown) should cover roughly 40–70% of the frame. If a UI or code window looks small in empty space, zoom the camera in or scale it up, do not shrink the text.
+- **Balance, not centering everything.** Use the thirds (`snapshot --grid`): a hero on one third with its supporting text on the other; a big number with a graphic that fills the opposite side. Vary the layout per scene. In vertical video use the whole height, not just the top half.
+- **One hero per moment.** Dim the rest (opacity 0.3–0.4 or blur) when zooming into a detail; judges liked code with the other lines dimmed.
+- **Contrast.** 4.5:1 for normal text, 3:1 for large; colored type on a colored background is the usual failure; add a backing, a shadow or change the color.
+- **Shapes, lines and icons** drawn in SVG make it look designed; drop shadows, glows and grain give depth; avoid a page of rounded cards.
+
+## 7. Anti-patterns checklist
+
+Before rendering, none of these should be true:
+- [ ] A frame where nothing moves for > 1 s (look at the motion strip and neighbouring sheet cells).
+- [ ] The first frame is empty or only background.
+- [ ] Any text under 32 px on screen that matters, or any text cut by the frame.
+- [ ] A scene that is a centered title fading in and out.
+- [ ] The same entrance (`fade-up` everywhere) or the same layout in every scene.
+- [ ] A plain `fade` between every scene.
+- [ ] The camera crosses empty space, or a wide shot holds for long with tiny labels.
+- [ ] Particles, arrows or shapes crossing key text.
+- [ ] The end card sits still for 2 s or more.
+- [ ] The video drifts from the brief (a required part missing, a claim on screen that does not match what is shown, a dropped word from a required line).

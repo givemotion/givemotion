@@ -14,3 +14,4 @@ benchmarks/vs-hyperframes/hf/
 bench/agents/runs/
 .gm-parts/
 __pycache__/
+.claude/worktrees/

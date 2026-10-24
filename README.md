@@ -37,7 +37,15 @@ This creates a starter video and installs the instructions your agent needs. The
 The agent writes the video, runs the checks, looks at the frames, fixes what is wrong, and renders
 `out/video.mp4`. You can watch and scrub it live with `npx givemotion dev my-video`.
 
-Already have a project? `npx givemotion skill` adds just the agent instructions.
+Already have a project? `npx givemotion skill` adds just the agent instructions: a skill pack (a short
+`SKILL.md` plus topic files the agent reads when it needs them) in `.claude/skills/givemotion/` for Claude Code and
+`.agents/skills/givemotion/` for Codex, and a section in `AGENTS.md` for Cursor and other agents. Run it again after
+updating givemotion; `npx givemotion doctor` tells you when the installed pack is older than the engine.
+
+Other ways to install the skill:
+
+- Claude Code plugin: `/plugin marketplace add leonardogrig/givemotion`, then `/plugin install givemotion@givemotion`
+- Skills CLI (Claude Code, Codex, Cursor and more): `npx skills add leonardogrig/givemotion`
 
 **You need:** Node.js 20+ and ffmpeg. Chrome is downloaded for you (`npx givemotion install`).
 
@@ -325,8 +333,9 @@ givemotion itself has **zero required npm dependencies**.
 ## License
 
 MIT. Use it, change it, fork it, sell what you make with it. Chrome and ffmpeg are installed separately under
-their own licenses. The example music and images were made for this project and are MIT too. The bundled Caveat
-handwriting font is under the SIL Open Font License (`src/runtime/fonts/Caveat-OFL.txt`).
+their own licenses. The example music and images were made for this project and are MIT too. The bundled fonts
+(Inter, JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Caveat) are under the SIL Open Font License
+(license files in `src/runtime/fonts/`).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
 Remotion and HyperFrames, but no code from them. Remotion and HyperFrames are trademarks of their owners.

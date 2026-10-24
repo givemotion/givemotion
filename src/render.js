@@ -40,15 +40,14 @@ export const AUTO_BLUR = { v: 2, min: 3, maxEls: 48 };
 
 /**
  * --motion-blur: unset = auto in natural motion, off in classic motion (data-motion="classic"); "auto"; "off" (also
- * 0, false, none); a number = that many samples on every frame (averaged). Transparent renders get no auto blur by
- * default; a number still forces it.
+ * 0, false, none); a number = that many samples on every frame (averaged).
  */
-export function resolveMotionBlur(value, { motion = 'natural', transparent = false } = {}) {
+export function resolveMotionBlur(value, { motion = 'natural' } = {}) {
   const v = value == null || value === true ? '' : String(value).trim().toLowerCase();
   if (v === 'off' || v === 'false' || v === 'none' || v === 'no' || v === '0') return { mode: 'off', samples: 1 };
   if (v === '' || v === 'auto' || v === 'on') {
     if (v === '' && motion === 'classic') return { mode: 'off', samples: 1 };
-    return transparent ? { mode: 'off', samples: 1, why: 'transparent' } : { mode: 'auto', samples: 1 };
+    return { mode: 'auto', samples: 1 };
   }
   const n = parseInt(v, 10);
   if (!(n >= 1)) throw new Error(`Bad --motion-blur "${value}". Use auto, off, or a number of samples per frame (2-32).`);
@@ -204,7 +203,7 @@ export async function render(input, opts = {}) {
     const fps = comp.fps;
     // motion blur: off, a fixed number of samples for every frame, or auto (the default in natural motion)
     const motion = await ctx.page.evaluate('gm.motion').catch(() => 'natural');
-    let blur = resolveMotionBlur(opts.motionBlur, { motion, transparent });
+    let blur = resolveMotionBlur(opts.motionBlur, { motion });
     // requestAnimationFrame code keeps its own state from call to call: extra sub-frame calls would change what it
     // draws next (and differ between workers), so such pages get no auto blur
     const usesRAF = () => ctx.page.evaluate('gm.__usesRAF ? gm.__usesRAF() : gm.__stateful()');
@@ -263,7 +262,7 @@ export async function render(input, opts = {}) {
     const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: ' + (blur.why === 'transparent' ? 'transparent output' : 'the page uses requestAnimationFrame') : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: the page uses requestAnimationFrame' : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
@@ -471,8 +470,12 @@ export async function velocityBlur(t, dt, o = {}) {
     // own zoom: how far the farthest visible point of the box moves while the shutter is open
     const ex = Math.max(Math.abs(Math.max(0, b.left) - cx), Math.abs(Math.min(W, b.right) - cx));
     const ey = Math.max(Math.abs(Math.max(0, b.top) - cy), Math.abs(Math.min(H, b.bottom) - cy));
-    const Z = 2 * Math.max(Math.abs(b.width / a.width / psx - 1) * ex, Math.abs(b.height / a.height / psy - 1) * ey);
-    if (L >= MIN || Z >= 4 * MIN) cand.push({ el, vx, vy, L, Z: Z >= 4 * MIN ? Z : 0, b, w: Math.max(L, Z / 2) * Math.sqrt(Math.min(b.width, W) * Math.min(b.height, H)) });
+    const zx = 2 * Math.abs(b.width / a.width / psx - 1) * ex, zy = 2 * Math.abs(b.height / a.height / psy - 1) * ey, Z = Math.max(zx, zy);
+    // a smear costs about in proportion to the area it covers on screen: a big element (a camera world, a whole
+    // scene) needs a longer smear (up to 4x) before it is drawn
+    const area = (Math.max(0, Math.min(W, b.right) - Math.max(0, b.left)) * Math.max(0, Math.min(H, b.bottom) - Math.max(0, b.top))) / (W * H);
+    const min = MIN * (1 + 3 * area);
+    if (L >= min || Z >= 4 * min) cand.push({ el, vx, vy, L, zx: Z >= 4 * min ? zx : 0, zy: Z >= 4 * min ? zy : 0, Z: Z >= 4 * min ? Z : 0, b, w: Math.max(L, Z / 2) * Math.sqrt(area) });
   }
   cand.sort((x, y) => y.w - x.w);
   const ns = 'http://www.w3.org/2000/svg';
@@ -514,8 +517,10 @@ export async function velocityBlur(t, dt, o = {}) {
     if (alpha < 0.05 || soft * 4 >= Math.max(c.L, c.Z / 2)) continue;
     const inv = m.inverse();
     const ux = inv.a * c.vx + inv.c * c.vy, uy = inv.b * c.vx + inv.d * c.vy;
-    const Lu = Math.hypot(ux, uy), zu = 0.145 * c.Z * Math.sqrt(Math.abs(inv.a * inv.d - inv.b * inv.c));
-    if (!(Lu > 0 || zu > 0) || !isFinite(Lu) || !isFinite(zu)) continue;
+    // a zoom (or a box growing along one axis) adds a blur along each axis of about half the smear its edges get (the
+    // centre of a zoom stays sharper in a real camera; a filter cannot vary across the element)
+    const Lu = Math.hypot(ux, uy), zs = 0.145 * Math.sqrt(Math.abs(inv.a * inv.d - inv.b * inv.c)), zux = zs * c.zx, zuy = zs * c.zy;
+    if (!(Lu > 0 || c.Z > 0) || !isFinite(Lu) || !isFinite(zs)) continue;
     if (!st.svg) {
       st.svg = document.createElementNS(ns, 'svg');
       st.svg.setAttribute('aria-hidden', 'true');
@@ -526,35 +531,41 @@ export async function velocityBlur(t, dt, o = {}) {
     const id = 'gm-mblur-' + n;
     f.setAttribute('id', id);
     f.setAttribute('color-interpolation-filters', 'sRGB');
-    // region: the viewport in the element's units, one viewport of margin around it (the smear can reach past the
-    // element's box, and children can overflow it; the browser only draws what shows)
+    // a box of length L along the move has the spread of a gaussian with sigma L/sqrt(12). Straight moves (close to
+    // horizontal or vertical) get that along their axis. A gaussian can only spread along the element's axes, so a
+    // diagonal move first averages 2-8 copies spaced evenly along it (each halving step doubles them), then a gaussian
+    // half the spacing wide melts the copies into one even smear (no steps)
+    let src = 'SourceGraphic', k = 0.289;
+    if (Lu > 0 && Math.min(Math.abs(ux), Math.abs(uy)) > 0.38 * Lu) {
+      const lv = Math.max(1, Math.min(3, Math.ceil(Math.log2(c.L / 8))));
+      for (let i = 0; i < lv; i++) {
+        const d = 1 / 2 ** (i + 2), a1 = document.createElementNS(ns, 'feOffset'), a2 = document.createElementNS(ns, 'feOffset'), mix = document.createElementNS(ns, 'feComposite');
+        a1.setAttribute('in', src); a1.setAttribute('dx', num(ux * d)); a1.setAttribute('dy', num(uy * d)); a1.setAttribute('result', 'a' + i);
+        a2.setAttribute('in', src); a2.setAttribute('dx', num(-ux * d)); a2.setAttribute('dy', num(-uy * d)); a2.setAttribute('result', 'b' + i);
+        mix.setAttribute('in', 'a' + i); mix.setAttribute('in2', 'b' + i); mix.setAttribute('operator', 'arithmetic');
+        mix.setAttribute('k2', '0.5'); mix.setAttribute('k3', '0.5'); mix.setAttribute('result', 'c' + i);
+        f.append(a1, a2, mix);
+        src = 'c' + i;
+      }
+      k = 0.71 / 2 ** lv; // sigma along the move = half the spacing of the copies (L / 2^lv)
+    }
+    const g = document.createElementNS(ns, 'feGaussianBlur');
+    g.setAttribute('in', src);
+    const sx = Math.hypot(k * ux, zux), sy = Math.hypot(k * uy, zuy);
+    g.setAttribute('stdDeviation', `${num(sx)} ${num(sy)}`);
+    f.append(g);
+    // region: what shows (the viewport, in the element's units) plus the reach of the smear: content just outside the
+    // viewport smears into it. Drawing the filter costs in proportion to this area, so it is kept tight (a camera world
+    // can be much bigger than the screen). Rotated or flipped elements get a viewport of margin instead.
     f.setAttribute('filterUnits', 'userSpaceOnUse');
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const [qx, qy] of [[0, 0], [W, 0], [0, H], [W, H]]) {
       const lx = inv.a * (qx - ox) + inv.c * (qy - oy), ly = inv.b * (qx - ox) + inv.d * (qy - oy);
       x0 = Math.min(x0, lx); y0 = Math.min(y0, ly); x1 = Math.max(x1, lx); y1 = Math.max(y1, ly);
     }
-    const mx = x1 - x0 + Math.abs(ux), my = y1 - y0 + Math.abs(uy);
+    const loose = !svgChild && (Math.abs(m.b) + Math.abs(m.c) > 1e-6 || m.a < 0 || m.d < 0);
+    const mx = (loose ? x1 - x0 : 0) + Math.abs(ux) / 2 + 3 * sx + 2, my = (loose ? y1 - y0 : 0) + Math.abs(uy) / 2 + 3 * sy + 2;
     f.setAttribute('x', num(x0 - mx)); f.setAttribute('y', num(y0 - my)); f.setAttribute('width', num(x1 - x0 + 2 * mx)); f.setAttribute('height', num(y1 - y0 + 2 * my));
-    // a box of length L along the move has the spread of a gaussian with sigma L/sqrt(12). Straight moves (close to
-    // horizontal or vertical) get that along their axis; diagonal ones average two copies a half-smear apart first, so
-    // the smear leans along the move instead of spreading round
-    let src = 'SourceGraphic', k = 0.289;
-    if (Lu > 0 && Math.min(Math.abs(ux), Math.abs(uy)) > 0.38 * Lu) {
-      const a1 = document.createElementNS(ns, 'feOffset'), a2 = document.createElementNS(ns, 'feOffset'), mix = document.createElementNS(ns, 'feComposite');
-      a1.setAttribute('in', src); a1.setAttribute('dx', num(ux / 4)); a1.setAttribute('dy', num(uy / 4)); a1.setAttribute('result', 'a');
-      a2.setAttribute('in', src); a2.setAttribute('dx', num(-ux / 4)); a2.setAttribute('dy', num(-uy / 4)); a2.setAttribute('result', 'b');
-      mix.setAttribute('in', 'a'); mix.setAttribute('in2', 'b'); mix.setAttribute('operator', 'arithmetic');
-      mix.setAttribute('k2', '0.5'); mix.setAttribute('k3', '0.5'); mix.setAttribute('result', 'c');
-      f.append(a1, a2, mix);
-      src = 'c'; k = 0.144;
-    }
-    const g = document.createElementNS(ns, 'feGaussianBlur');
-    g.setAttribute('in', src);
-    // a zoom adds a round blur of about half the smear its edges get (the centre of a zoom stays sharper in a real
-    // camera; a filter cannot vary across the element)
-    g.setAttribute('stdDeviation', `${num(Math.hypot(k * ux, zu))} ${num(Math.hypot(k * uy, zu))}`);
-    f.append(g);
     st.svg.appendChild(f);
     const prev = el.style.getPropertyValue('filter'), prio = el.style.getPropertyPriority('filter');
     // !important: above the page's own filter animations, which are kept (the smear is added after them)

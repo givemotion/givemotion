@@ -821,7 +821,6 @@ test('motion blur: flag values', () => {
   assert.equal(resolveMotionBlur(false).mode, 'off');
   assert.equal(resolveMotionBlur('0').mode, 'off');
   assert.deepEqual(resolveMotionBlur('8'), { mode: 'fixed', samples: 8 });
-  assert.equal(resolveMotionBlur(undefined, { transparent: true }).mode, 'off');
   assert.throws(() => resolveMotionBlur('lots'), /Bad --motion-blur/);
 });
 
@@ -889,4 +888,48 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   const s2 = await render(f, { output: part, redo: '0.5s-0.9s', ...quiet });
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
+});
+
+// a camera-like world panning fast under a static HUD, and a box moving straight down
+const smearPage = () => page(`<section data-duration="1" style="position:absolute;inset:0">
+  <div id="world" style="position:absolute;left:0;top:0;width:1600px;height:360px">
+    <div style="position:absolute;left:600px;top:60px;width:120px;height:120px;background:#fff"></div>
+  </div>
+  <div id="drop" style="position:absolute;left:560px;top:0;width:40px;height:40px;background:#fff"></div>
+  <div style="position:absolute;right:10px;bottom:10px;width:100px;height:30px;background:#f80"></div>
+</section>
+<script>gm.timeline().fromTo('#world', { x: 0 }, { x: -960, duration: 0.6, ease: 'none' }, 0.2).fromTo('#drop', { y: -40 }, { y: 360, duration: 0.6, ease: 'none' }, 0.2);</script>`);
+
+test('motion blur: auto draws a smooth smear along the move (no stepped copies), keeps a HUD over a moving world sharp, and is the same with 1 and 3 workers', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, smearPage());
+  const a = join(d, 'a.mp4'), b = join(d, 'b.mp4'), o = join(d, 'off.mp4');
+  const sa = await render(f, { output: a, workers: 1, cache: false, ...quiet });
+  await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  await render(f, { output: o, motionBlur: 'off', cache: false, ...quiet });
+  assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
+  assert.equal(sa.motionBlur.mode, 'auto');
+  // both movers run from 0.2 s to 0.8 s: frames 7-24 (a frame is smeared when it moved in the half shutter before it)
+  assert.ok(sa.motionBlur.blurred >= 17 && sa.motionBlur.blurred <= 19, `blurred ${sa.motionBlur.blurred}`);
+  // frame 15: the world moves 53 px/frame; the card's edges are one smooth ramp about half that wide, no steps
+  const row = [...grayFrame(a, 15, 640, 0, 120)], sharp = [...grayFrame(o, 15, 640, 0, 120)];
+  const ramp = (px, lo, hi) => {
+    const seg = px.slice(Math.max(0, lo), hi), min = Math.min(...seg), max = Math.max(...seg), rise = max - min;
+    let jump = 0, wide = 0;
+    for (let i = 1; i < seg.length; i++) jump = Math.max(jump, Math.abs(seg[i] - seg[i - 1]));
+    for (const v of seg) if (v > min + 0.1 * rise && v < max - 0.1 * rise) wide++;
+    return { rise, jump, wide };
+  };
+  const edge = sharp.findIndex((v) => v > 128); // the card's left edge in the sharp frame
+  const ra = ramp(row, edge - 40, edge + 40), ro = ramp(sharp, edge - 40, edge + 40);
+  assert.ok(ra.rise > 150 && ro.rise > 150, `card edge found: ${ra.rise}, ${ro.rise}`);
+  assert.ok(ra.wide >= 12 && ro.wide <= 3, `ramp width: smeared ${ra.wide}, sharp ${ro.wide}`);
+  assert.ok(ra.jump <= 0.2 * ra.rise, `largest step in the smear ${ra.jump} of ${ra.rise}`);
+  // the box moving down keeps sharp left/right edges (the smear goes along the move only)
+  const mids = (px) => px.filter((v) => v > 40 && v < 215).length;
+  const ya = [...grayFrame(a, 15, 120, 520, 180)], yo = [...grayFrame(o, 15, 120, 520, 180)];
+  assert.ok(Math.max(...yo) > 200 && mids(ya) <= mids(yo) + 2, `side edges of the falling box: ${mids(ya)} vs ${mids(yo)}`);
+  // the static HUD box is the same as without blur
+  const ha = [...grayFrame(a, 15, 160, 470, 335)], ho = [...grayFrame(o, 15, 160, 470, 335)];
+  assert.ok(Math.max(...ha.map((v, i) => Math.abs(v - ho[i]))) <= 12, 'HUD unchanged');
 });

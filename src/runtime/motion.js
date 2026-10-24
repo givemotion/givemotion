@@ -941,6 +941,20 @@
   // Elements with data-parallax="0.3" next to the world move 30% as much (depth).
   // ---------------------------------------------------------------------------
   const cameras = [];
+  // The box of an element that is not displayed right now (its clip starts later), in world coordinates: shown for a
+  // moment to be measured, then remembered (rounded, so every worker gets the same numbers).
+  function hiddenBox(e, M) {
+    if (e.__mwHiddenBox !== undefined) return e.__mwHiddenBox;
+    const hidden = [];
+    for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-mw-hidden')) { hidden.push(a); a.removeAttribute('data-mw-hidden'); }
+    let box = null;
+    if (e.getClientRects().length) {
+      const c = e.getBoundingClientRect(), r2 = (x) => Math.round(x * 100) / 100;
+      box = { l: r2((c.left - M.ox) / M.k), t: r2((c.top - M.oy) / M.k), r: r2((c.right - M.ox) / M.k), b: r2((c.bottom - M.oy) / M.k) };
+    }
+    for (const a of hidden) a.setAttribute('data-mw-hidden', '');
+    return (e.__mwHiddenBox = hidden.length ? box : null);
+  }
   class Camera {
     constructor(world, opts = {}) {
       this.spec = world; this.opts = opts; this.shots = []; this.shakes = [];
@@ -988,8 +1002,15 @@
         return null;
       }
       let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-      for (const e of els) { const q = e.getBoundingClientRect(); l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); }
-      return { x: (l - M.ox) / M.k, y: (t - M.oy) / M.k, w: (r - l) / M.k, h: (b - t) / M.k };
+      for (const e of els) {
+        let q;
+        if (e.getClientRects().length) { const c = e.getBoundingClientRect(); q = { l: (c.left - M.ox) / M.k, t: (c.top - M.oy) / M.k, r: (c.right - M.ox) / M.k, b: (c.bottom - M.oy) / M.k }; }
+        else q = hiddenBox(e, M); // not on screen yet (a later clip): frame where it will be, not the corner of the screen
+        if (!q) continue;
+        l = Math.min(l, q.l); t = Math.min(t, q.t); r = Math.max(r, q.r); b = Math.max(b, q.b);
+      }
+      if (l === Infinity) return null;
+      return { x: l, y: t, w: r - l, h: b - t };
     }
     _state(sh, M, view) {
       // camera state = { cx, cy, zoom, rot } in world coordinates

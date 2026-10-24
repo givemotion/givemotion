@@ -1281,6 +1281,46 @@
     get world() { if (!this._w) { this._w = typeof this.spec === 'string' ? document.querySelector(this.spec) : this.spec; if (!this._w) I.report('error', 'camera-no-world', `gm.camera: "${this.spec}" matched nothing.`, null); } return this._w; }
     shot(at, s) { this.shots.push(Object.assign({ at: +at || 0, duration: 1, ease: 'in-out-cubic', padding: 60, __ease: !!(s && s.ease) }, s)); this.shots.sort((a, b) => a.at - b.at); this._plan = null; return this; }
     shake(at, o = {}) { this.shakes.push(Object.assign({ at: +at || 0, duration: 0.4, amount: 10, freq: 18 }, o)); return this; }
+    // where the camera looks in this frame, in world px: { x, y } centre, zoom, rotate and the visible world rect
+    // (view: { x, y, w, h }). Exact in gm.onLayout (after the camera moved); in gm.onFrame it is worked out on the spot.
+    state() {
+      if (!this._st || Math.abs(this._st.T - I.now) > 1e-9) this._apply(I.now);
+      const s = this._st;
+      if (!s) return null;
+      const w = s.vw / s.zoom, h = s.vh / s.zoom;
+      return { x: s.cx, y: s.cy, zoom: s.zoom, rotate: s.rot, view: { x: s.cx - w / 2, y: s.cy - h / 2, w, h } };
+    }
+    // data-parallax inside the world: each element's centre where it is laid out (world px), measured once at load
+    _prepInner() {
+      const w = this.world;
+      if (!w || this.__inner !== undefined) return;
+      const list = [];
+      const els = [...w.querySelectorAll('[data-parallax]')];
+      if (els.length) {
+        const lastTf = w.style.transform;
+        w.style.transform = '';
+        const hidden = [];
+        for (let a = w; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+        for (const a of w.querySelectorAll('[data-gm-hidden]')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+        try {
+          const M = this._markers(), r2 = (x) => Math.round(x * 100) / 100;
+          const area = Math.max(1, w.offsetWidth * w.offsetHeight);
+          for (const pl of els) {
+            const f = parseFloat(pl.getAttribute('data-parallax'));
+            if (!isFinite(f) || f === 1) continue;
+            const q = pl.getBoundingClientRect();
+            // a layer as big as a good part of the world (a tree layer): every child gets its own depth shift
+            const big = (q.width * q.height) / (M.k * M.k) >= 0.25 * area && pl.children.length;
+            for (const e of big ? [...pl.children] : [pl]) {
+              e.style.translate = '';
+              const b = e.getBoundingClientRect();
+              list.push({ el: e, f, x: r2(((b.left + b.right) / 2 - M.ox) / M.k), y: r2(((b.top + b.bottom) / 2 - M.oy) / M.k) });
+            }
+          }
+        } finally { for (const a of hidden) a.setAttribute('data-gm-hidden', ''); w.style.transform = lastTf; }
+      }
+      this.__inner = list.length ? list : null;
+    }
     _markers() {
       const w = this.world;
       if (!this._m || !this._m[0].isConnected) {
@@ -1336,28 +1376,87 @@
       if (l === Infinity) return null;
       return { x: l, y: t, w: r - l, h: b - t };
     }
+    // screen insets of a shot: padding (fit only) and the camera's / shot's keep-clear band (safe), per side, in px
+    _insets(sh, view) {
+      const sides = (v) => {
+        if (v == null || v === false) return [0, 0, 0, 0];
+        if (typeof v === 'number') return [v, v, v, v];
+        if (Array.isArray(v)) { const a = v.map((x) => +x || 0); return a.length === 1 ? [a[0], a[0], a[0], a[0]] : a.length === 2 ? [a[0], a[1], a[0], a[1]] : a.length === 3 ? [a[0], a[1], a[2], a[1]] : a.slice(0, 4); }
+        if (typeof v === 'object') return [+v.top || 0, +v.right || 0, +v.bottom || 0, +v.left || 0];
+        return [0, 0, 0, 0];
+      };
+      const s1 = sides(this.opts.safe), s2 = sides(sh.safe);
+      const safe = s1.map((x, i) => Math.max(0, Math.max(x, s2[i])));
+      return { safe, pad: sh.fit != null ? sides(sh.padding) : [0, 0, 0, 0] };
+    }
     _state(sh, M, view, t) {
       // camera state = { cx, cy, zoom, rot } in world coordinates
       // (t: natural motion only, for a follow shot that trails its target)
       const target = sh.fit ?? sh.follow ?? sh.center;
-      const box = target != null ? this._box(target, M) : { x: view.w / 2, y: view.h / 2, w: 0, h: 0 };
+      // (natural) a fit frames where its elements rest during the shot (measured while loading), not every step of
+      // their entrance: a window that scales in is seen scaling in, not held at one size by the camera
+      const box = sh.fit != null && sh.__rest ? sh.__rest : target != null ? this._box(target, M) : { x: view.w / 2, y: view.h / 2, w: 0, h: 0 };
       if (!box) return null;
+      const { safe, pad: pad0 } = (sh.safe != null || this.opts.safe != null || typeof sh.padding !== 'number') ? this._insets(sh, view) : { safe: null, pad: null };
+      // keep-clear band: the subject is centred in the rest of the frame (screen px -> world units at this zoom)
+      const sdx = (z) => (safe ? (safe[3] - safe[1]) / (2 * z) : 0), sdy = (z) => (safe ? (safe[0] - safe[2]) / (2 * z) : 0);
       if (t !== undefined && sh.__trail && sh.fit == null) {
         const zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, sh.zoom ?? 1)), off = sh.offset || [0, 0];
         const o = trailOffset(sh.__trail, t, view, zoom);
-        if (o) return { cx: box.x + box.w / 2 + o[0] + off[0], cy: box.y + box.h / 2 + o[1] + off[1], zoom, rot: sh.rotate || 0 };
+        if (o) return { cx: box.x + box.w / 2 + o[0] + off[0] - sdx(zoom), cy: box.y + box.h / 2 + o[1] + off[1] - sdy(zoom), zoom, rot: sh.rotate || 0 };
       }
-      let zoom = sh.zoom;
+      let zoom = sh.zoom, ix = 0, iy = 0;
       // with fit, zoom multiplies the fitted zoom (1.05 = a little closer)
       if (sh.fit != null) {
-        // padding is screen px on each side; never let it eat more than 40% of the frame
-        const pad = Math.max(0, Math.min(sh.padding, view.w * 0.4, view.h * 0.4));
-        if (pad < sh.padding && !sh.__padWarned) { sh.__padWarned = true; I.report('warning', 'camera-padding', `gm.camera shot at ${sh.at}s: padding ${sh.padding} is more than 40% of the frame, so it was reduced to ${Math.round(pad)}.`, null, 'padding is in screen px on each side of the framed element (the frame is ' + Math.round(view.w) + 'x' + Math.round(view.h) + '). To show the element smaller, use a smaller padding with zoom below 1, or center + zoom.'); }
-        zoom = Math.min((view.w - 2 * pad) / Math.max(1, box.w), (view.h - 2 * pad) / Math.max(1, box.h)) * (sh.zoom ?? 1);
+        if (!pad0) {
+          // padding is screen px on each side; never let it eat more than 40% of the frame
+          const pad = Math.max(0, Math.min(sh.padding, view.w * 0.4, view.h * 0.4));
+          if (pad < sh.padding && !sh.__padWarned) { sh.__padWarned = true; I.report('warning', 'camera-padding', `gm.camera shot at ${sh.at}s: padding ${sh.padding} is more than 40% of the frame, so it was reduced to ${Math.round(pad)}.`, null, 'padding is in screen px on each side of the framed element (the frame is ' + Math.round(view.w) + 'x' + Math.round(view.h) + '). To show the element smaller, use a smaller padding with zoom below 1, or center + zoom.'); }
+          zoom = Math.min((view.w - 2 * pad) / Math.max(1, box.w), (view.h - 2 * pad) / Math.max(1, box.h)) * (sh.zoom ?? 1);
+        } else {
+          // per side: [top, right, bottom, left] padding plus the keep-clear band; together at most 80% of the frame
+          const ins = pad0.map((p, i) => Math.max(0, p) + safe[i]);
+          const kx = Math.min(1, (view.w * 0.8) / Math.max(1e-9, ins[1] + ins[3])), ky = Math.min(1, (view.h * 0.8) / Math.max(1e-9, ins[0] + ins[2]));
+          if ((kx < 1 || ky < 1) && !sh.__padWarned) { sh.__padWarned = true; I.report('warning', 'camera-padding', `gm.camera shot at ${sh.at}s: padding and safe take more than 80% of the frame, so they were reduced.`, null, 'padding and safe are screen px (the frame is ' + Math.round(view.w) + 'x' + Math.round(view.h) + ').'); }
+          const [T, R, B, L] = [ins[0] * ky, ins[1] * kx, ins[2] * ky, ins[3] * kx];
+          zoom = Math.min((view.w - L - R) / Math.max(1, box.w), (view.h - T - B) / Math.max(1, box.h)) * (sh.zoom ?? 1);
+          zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom));
+          ix = (L - R) / (2 * zoom); iy = (T - B) / (2 * zoom);
+        }
       }
       zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom ?? 1));
       const off = sh.offset || [0, 0];
-      return { cx: box.x + box.w / 2 + off[0], cy: box.y + box.h / 2 + off[1], zoom, rot: sh.rotate || 0 };
+      if (sh.fit == null && safe) { ix = sdx(zoom); iy = sdy(zoom); }
+      return { cx: box.x + box.w / 2 + off[0] - ix, cy: box.y + box.h / 2 + off[1] - iy, zoom, rot: sh.rotate || 0 };
+    }
+    // bounds: the view never shows beyond this world rect (an explicit rect, a selector, 'world'); it slides (softly,
+    // near the edge) instead. When the view is bigger than the bounds in one direction, it is centred on them.
+    _bounds(M) {
+      let b = this.opts.bounds;
+      const sh = this._cur;
+      if (sh && sh.bounds !== undefined) b = sh.bounds;
+      if (b === undefined) b = this.__autoBounds ? 'world' : null;
+      if (b == null || b === false) return null;
+      if (b === 'world' || b === true) b = 'all';
+      if (typeof b === 'object' && !Array.isArray(b) && !(b instanceof Element) && 'x' in b) return b;
+      const key = typeof b === 'string' ? b : null;
+      if (key && this.__bcache && this.__bcache.k === key) return this.__bcache.v;
+      const v = this._box(b, M);
+      if (key && v) this.__bcache = { k: key, v }; // (measured once: bounds are layout, not animation)
+      return v;
+    }
+    _clamp(st, view, M) {
+      const b = this._bounds(M);
+      if (!b || !st) return st;
+      const one = (c, half, lo, hi) => {
+        const a = lo + half, z = hi - half;
+        if (a >= z) return (lo + hi) / 2;
+        const m = Math.min(0.05 * half * 2, (z - a) / 2); // soft zone: 5% of the view, so the camera eases to a stop
+        if (c < a + m) { const d = a + m - c; return a + m - m * (1 - Math.exp(-d / m)); }
+        if (c > z - m) { const d = c - (z - m); return z - m + m * (1 - Math.exp(-d / m)); }
+        return c;
+      };
+      return { cx: one(st.cx, view.w / 2 / st.zoom, b.x, b.x + b.w), cy: one(st.cy, view.h / 2 / st.zoom, b.y, b.y + b.h), zoom: st.zoom, rot: st.rot };
     }
     _apply(T) {
       const w = this.world;
@@ -1393,6 +1492,8 @@
         }
       }
       if (!st) { if (natural && lastTf) w.style.transform = lastTf; return false; }
+      st = this._clamp(st, view, M);
+      this._st = { T, cx: st.cx, cy: st.cy, zoom: st.zoom, rot: st.rot, vw: view.w, vh: view.h };
       let sx = 0, sy = 0, sr = 0;
       if (natural && this.opts.breathe !== false && this.opts.breathe !== 0) {
         // breathing: a hand-held drift of a pixel or two (smooth seeded noise on the time alone), so a held shot is alive
@@ -1422,6 +1523,12 @@
         const f = parseFloat(pl.getAttribute('data-parallax')) || 0;
         const ptf = `translate(${r4((view.w / 2 - st.zoom * st.cx - ox) * f + sx * f)}px, ${r4((view.h / 2 - st.zoom * st.cy - oy) * f + sy * f)}px) scale(${r4(1 + (st.zoom - 1) * f)})`;
         if (pl.style.transform !== ptf) { pl.style.transform = ptf; pl.style.transformOrigin = '50% 50%'; changed = true; }
+      }
+      // parallax inside the world: data-parallax="1.15" moves 15% faster than the world (near: trees, posts),
+      // "0.8" slower (far); each element is exactly where it was laid out when the camera looks straight at it
+      if (this.__inner) for (const it of this.__inner) {
+        const v = `${p8((it.f - 1) * (it.x - st.cx))}px ${p8((it.f - 1) * (it.y - st.cy))}px`;
+        if (it.el.style.translate !== v) { it.el.style.translate = v; changed = true; }
       }
       // depth (natural motion): background layers next to the world drift a little with the camera, as if far away
       if (natural && this.__bg && this.__ref) {
@@ -1581,10 +1688,44 @@
   // While loading (natural motion): sample the path of every followed element, find background layers for depth.
   function prepCameras() {
     if (!I.naturalMotion() || !cameras.length) return;
-    const jobs = [], hidden = [];
+    const jobs = [], hidden = [], jobsRest = [];
     const unhide = (e) => { for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); } };
     const resolve = (c, tg) => (Array.isArray(tg) ? tg : [tg]).flatMap((x) => typeof x === 'string' ? [...c.world.querySelectorAll(x)] : x instanceof Element ? [(I.replaced && I.replaced.get(x)) || x] : []);
     try {
+      // fit shots: where their elements rest during the shot. Sampled across the hold (from the arrival to the next shot
+      // or the end of the clip); the last two samples that agree give the box. A target still moving at the end of
+      // its hold (a truck that keeps driving) has no rest: it is measured live, every frame, as before.
+      if (I.probe) {
+        const rest = new Map();
+        for (const c of cameras) {
+          const w = c.world;
+          if (!w || !c.shots.length) continue;
+          const clip = I.nearestClip(w), base = c.opts.global ? 0 : I.clipStartOf(w);
+          const endLocal = (clip && isFinite(clip.end) ? clip.end : I.comp.duration) - base;
+          c.shots.forEach((sh, k) => {
+            const f = sh.fit;
+            if (f == null || sh.rest === false || f === 'all' || f === 'content' || (typeof f === 'object' && !Array.isArray(f) && !(f instanceof Element) && 'x' in f)) return;
+            if (typeof f === 'string' && w.matches(f)) return;
+            const arrive = sh.at + (k ? Math.max(0, +sh.duration || 0) : 0), nx = c.shots[k + 1];
+            const hold = Math.min(endLocal, nx ? nx.at : endLocal) - 1e-3;
+            if (!(hold > arrive)) return;
+            const n = 6, boxes = new Array(n + 1).fill(null);
+            for (let j = 0; j <= n; j++) {
+              const T = Math.max(0, Math.min(I.comp.duration, base + arrive + ((hold - arrive) * j) / n)), key = Math.round(T * 1e6);
+              if (!rest.has(key)) rest.set(key, { T, list: [] });
+              rest.get(key).list.push(() => { try { boxes[j] = c._box(f, c._markers()); } catch (e) {} });
+            }
+            jobsRest.push({ sh, boxes });
+          });
+        }
+        for (const { T, list } of [...rest.values()].sort((x, y) => x.T - y.T)) { I.probe(T); for (const fn of list) fn(); }
+        const same = (a, b) => a && b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5;
+        const r2 = (x) => Math.round(x * 100) / 100;
+        for (const { sh, boxes } of jobsRest) {
+          for (let j = boxes.length - 1; j > 0; j--) if (same(boxes[j], boxes[j - 1])) { const b = boxes[j]; sh.__rest = { x: r2(b.x), y: r2(b.y), w: r2(b.w), h: r2(b.h) }; break; }
+        }
+        if (rest.size) I.probe(0);
+      }
       for (const c of cameras) {
         const w = c.world;
         if (!w || !c.shots.length) continue;
@@ -2191,6 +2332,16 @@
   I.hooks.preinit.push(setupFit);
   I.hooks.init.push(() => { for (const c of cameras) if (c.world && c.shots.some((sh) => sh.fit === 'content' || sh.center === 'content')) { try { c._box('content', c._markers()); } catch (e) {} } });
   I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); for (const b of bursts) if (!b.canvas) setupBurst(b); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) { tl._build(); try { tl._warnLate(); } catch (e) {} } });
+  // data-parallax inside camera worlds; (natural) a world with its own opaque background keeps its edge out of view
+  I.hooks.init.push(() => {
+    for (const c of cameras) {
+      try { c._prepInner(); } catch (e) { I.pageError(e); }
+      const w = c.world;
+      if (!w || !I.naturalMotion() || c.opts.bounds !== undefined) continue;
+      const bg = toRGBA(getComputedStyle(w).backgroundColor);
+      c.__autoBounds = !!(bg && bg[3] > 0.95);
+    }
+  });
   // A camera shot that only arrives after its scene has started to leave (or ended) is never seen at rest.
   I.hooks.init.push(() => {
     for (const cm of cameras) {

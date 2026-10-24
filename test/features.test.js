@@ -936,3 +936,50 @@ test('timeline (r10): a tween timed after its clip ends is reported (unscoped ti
   const w = r.issues.find((i) => i.code === 'timeline-after-clip');
   assert.ok(w && /15\.05s/.test(w.message) && /0\.05/.test(w.fix), JSON.stringify(r.issues.map((i) => i.code)));
 });
+
+test('camera (r10): bounds keep the view inside the world (auto for an opaque world, explicit rect), safe band and per-side padding move the framing, fit frames where an element rests (its scale-in is seen), data-parallax inside the world, cam.state(); classic unchanged; 1 worker == 2', { skip }, async () => {
+  const d = tmp();
+  const mk = (name, cam, attrs = 'data-width="640" data-height="360" data-fps="30" data-duration="4"') => {
+    const f = join(d, name);
+    writeFileSync(f, page(`<section class="scene" data-duration="4" style="position:absolute;inset:0;overflow:hidden">
+      <div id="world" style="position:absolute;left:0;top:0;width:1600px;height:900px;background:#234">
+        <div id="dot" style="position:absolute;left:20px;top:20px;width:40px;height:40px;background:#fc3"></div>
+        <div id="win" style="position:absolute;left:1000px;top:500px;width:300px;height:200px;background:#e55"></div>
+        <i id="tree" data-parallax="1.5" style="position:absolute;left:700px;top:400px;width:40px;height:40px;background:#4c8"></i>
+      </div></section>
+      <script>gm.timeline('#world').fromTo('#win', { scale: 0.3 }, { scale: 1, duration: 1.5, ease: 'linear' }, 2);
+      window.cam = gm.camera('#world'${cam.opts || ''}).shot(0, ${cam.a}).shot(1.5, ${cam.b});</script>`, attrs));
+    return f;
+  };
+  const expr = `(() => { const box = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; };
+    const w = document.querySelector('#world').getBoundingClientRect(); const st = cam.state();
+    return { world: [Math.round(w.left), Math.round(w.top), Math.round(w.right), Math.round(w.bottom)], dot: box('#dot'), win: box('#win'), tree: box('#tree'), st: { x: Math.round(st.x), y: Math.round(st.y), zoom: +st.zoom.toFixed(3), vw: Math.round(st.view.w) } }; })()`;
+  // follow a dot in the world's corner at zoom 2: the view stays inside the (opaque) world
+  const f = mk('a.html', { a: `{ follow: '#dot', zoom: 2, lag: 0 }`, b: `{ fit: '#win', padding: 40, duration: 0.4 }` });
+  const [a0, a25, a38] = await seekEach(f, [0.5, 2.5, 3.8], expr);
+  assert.ok(a0.world[0] <= 0.5 && a0.world[1] <= 0.5, 'no space beyond the world edge: ' + JSON.stringify(a0.world));
+  assert.equal(a0.st.zoom, 2); assert.equal(a0.st.vw, 320);
+  assert.ok(a0.st.x >= 160 && a0.st.y >= 90, 'state() reports the clamped centre: ' + JSON.stringify(a0.st));
+  // fit on a window that scales in: framed where it rests, so it grows on screen
+  assert.ok(a25.win[2] < 0.8 * a38.win[2], 'the scale-in is visible: ' + a25.win[2] + ' -> ' + a38.win[2]);
+  assert.ok(Math.abs(a38.win[0] + a38.win[2] / 2 - 320) < 2 && Math.abs(a38.win[1] + a38.win[3] / 2 - 180) < 2, 'framed centred at rest: ' + a38.win);
+  // parallax 1.5 inside the world: exactly in place when the camera looks at it, displaced 50% more elsewhere
+  const g = mk('b.html', { a: `{ center: '#tree', zoom: 1 }`, b: `{ center: '#tree', offset: [200, 0], zoom: 1, duration: 0.01 }` });
+  const [p0, p1] = await seekEach(g, [0.5, 3], expr);
+  assert.ok(Math.abs(p0.tree[0] + 20 - 320) <= 1, 'tree in place when looked at: ' + p0.tree);
+  assert.ok(Math.abs(p1.tree[0] + 20 - (320 - 300)) <= 1.5, 'near layer moves 1.5x: ' + p1.tree);
+  // explicit bounds rect, a keep-clear band at the bottom and per-side padding
+  const h = mk('c.html', { opts: `, { safe: { bottom: 120 }, bounds: { x: 0, y: 0, w: 1600, h: 900 } }`, a: `{ fit: '#win', padding: [20, 20, 20, 20], rest: false }`, b: `{ fit: '#win', padding: [20, 20, 20, 200], duration: 0.01, rest: false }` });
+  const [s0, s1] = await seekEach(h, [1.4, 3.95], expr);
+  assert.ok(Math.abs(s0.win[1] + s0.win[3] / 2 - (360 - 120) / 2) < 2, 'centred above the band: ' + s0.win);
+  assert.ok(s1.win[0] + s1.win[2] / 2 > 320 + 30, 'a big left padding moves the subject right: ' + s1.win);
+  // classic: no automatic bounds (the follow shows beyond the corner)
+  const [c0] = await seekEach(mk('d.html', { a: `{ follow: '#dot', zoom: 2 }`, b: `{ follow: '#dot', zoom: 2 }` }, 'data-width="640" data-height="360" data-fps="30" data-duration="4" data-motion="classic"'), [0.5], expr);
+  assert.ok(c0.world[0] > 50, 'classic: unchanged (no bounds): ' + c0.world);
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 120);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});

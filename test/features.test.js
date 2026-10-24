@@ -154,6 +154,26 @@ test('analyze: finds a hard cut and a fade with their times, and the colors', { 
   assert.equal(r.colors.theme, 'dark');
 });
 
+test('analyze: on one shared background, small content that is pushed, wiped and cut is found and named', { skip }, async () => {
+  // the scene changes only touch small cards; the gradient behind them stays (bench/analyze has the bigger benchmark)
+  const { analyzeVideo } = await import('../src/analyze.js');
+  const d = tmp(), f = join(d, 'a.html');
+  const card = (x, y, c, t) => `<div style="position:absolute;left:${x}px;top:${y}px;width:190px;padding:14px;border-radius:12px;background:${c};font:700 30px sans-serif;color:#fff">${t}<div style="height:10px;margin-top:10px;width:120px;background:#fff8;border-radius:5px"></div></div>`;
+  writeFileSync(f, `<!doctype html><html data-width="640" data-height="360" data-fps="30"><head><style>body{margin:0;background:linear-gradient(135deg,#1d2b64,#5b247a);color:#fff}</style></head><body>
+<main data-sequence>
+<section class="scene" data-duration="2">${card(60, 60, '#e76f51', 'One')}</section>
+<section class="scene" data-duration="2" data-transition="push-left 0.5">${card(360, 170, '#2a9d8f', 'Two')}</section>
+<section class="scene" data-duration="2" data-transition="wipe-right 0.6">${card(80, 200, '#e9c46a', 'Three')}${card(380, 40, '#264653', 'Four')}</section>
+<section class="scene" data-duration="1.5">${card(220, 120, '#8338ec', 'Five')}</section>
+</main></body></html>`);
+  const out = join(d, 'v.mp4');
+  await render(f, { output: out, ...quiet });
+  const r = await analyzeVideo(out, { output: join(d, 'an'), sheets: false, audio: false });
+  assert.deepEqual(r.transitions.map((t) => t.type), ['push-left', 'wipe-right', 'cut'], JSON.stringify(r.transitions));
+  // push 1.5-2.0, wipe 2.9-3.5, cut at 4.9
+  for (const [t, at] of r.transitions.map((t, i) => [t, [1.75, 3.2, 4.9][i]])) assert.ok(Math.abs(t.at - at) <= 0.25, `${t.type} at ${t.at}`);
+});
+
 test('determinism: a line drawing on in a zoomed world is the same with 1 and 3 workers (no partial raster)', { skip }, async () => {
   // this exact page gave one frame that differed by a pixel or two with partial raster on
   const d = tmp(), f = join(d, 'a.html');

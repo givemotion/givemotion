@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- analyze benchmark (tuning): one drifting gradient behind every scene, small content cards.
+     Only the content changes at a scene change: fade, push-right, wipe-up, zoom, cut, iris, whip-left. -->
+<html data-width="1280" data-height="720" data-fps="30">
+<head>
+<style>
+  body { margin: 0; background: #0b0d17; color: #fff; font-family: Inter, system-ui, sans-serif; }
+  main { z-index: 5; }
+  .card { position: absolute; width: 380px; padding: 28px 30px; border-radius: 22px; background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.18); }
+  .card h2 { margin: 0 0 10px; font-size: 44px; font-weight: 800; letter-spacing: -0.02em; }
+  .card p { margin: 0; font-size: 22px; opacity: .75; line-height: 1.3; }
+  .icon { width: 70px; height: 70px; border-radius: 18px; margin-bottom: 18px; }
+  .big { position: absolute; margin: 0; font-size: 72px; font-weight: 900; letter-spacing: -0.03em; }
+  .pill { position: absolute; padding: 10px 22px; border-radius: 999px; font-size: 22px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="scene" id="bg"><mw-include src="../../../blocks/gradient-bg.html" c1="#3a2a9c" c2="#0f4c6b" c3="#7a1f5c" base="#0b0d17" speed="2"></mw-include></div>
+<main data-sequence>
+  <section class="scene" data-duration="2.4">
+    <div class="card" style="left:120px;top:200px" data-enter="fade-up 0.5 0.2"><div class="icon" style="background:#ffb703"></div><h2>Collect</h2><p>Gather every signal in one place.</p></div>
+    <span class="pill" style="left:560px;top:250px;background:#ffb703;color:#111" data-enter="fade 0.4 0.7">step 1</span>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="fade 0.5">
+    <div class="card" style="right:120px;top:160px" data-enter="fade-up 0.5 0.3"><div class="icon" style="background:#8ecae6"></div><h2>Sort</h2><p>Group what belongs together.</p></div>
+    <h3 class="big" style="left:110px;top:430px" data-enter="fade-right 0.5 0.5">2 / 6</h3>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="push-right 0.5">
+    <div class="card" style="left:450px;top:120px" data-enter="scale 0.5 0.3"><div class="icon" style="background:#fb8500"></div><h2>Score</h2><p>Rank each group by value.</p></div>
+    <span class="pill" style="left:450px;top:520px;background:#fb8500" data-enter="fade 0.4 0.6">step 3</span>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="wipe-up 0.6">
+    <h3 class="big" style="left:120px;top:110px" data-enter="fade-down 0.5 0.3">Ship it.</h3>
+    <div class="card" style="left:120px;top:300px;width:300px" data-enter="fade-up 0.5 0.5"><div class="icon" style="background:#90be6d"></div><h2>Deliver</h2></div>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="zoom 0.6">
+    <div class="card" style="right:200px;top:250px" data-enter="fade-left 0.5 0.3"><div class="icon" style="background:#f94144"></div><h2>Measure</h2><p>See what changed for real.</p></div>
+    <span class="pill" style="left:200px;top:300px;background:#f94144" data-enter="pop 0.4 0.6">step 5</span>
+  </section>
+  <section class="scene" data-duration="2.4">
+    <h3 class="big" style="left:340px;top:280px" data-enter="rise 0.5 0.2">Repeat weekly</h3>
+  </section>
+  <section class="scene" data-duration="2.4" data-transition="iris 0.6">
+    <div class="card" style="left:160px;top:140px" data-enter="fade-up 0.5 0.3"><div class="icon" style="background:#43aa8b"></div><h2>Learn</h2><p>Keep what worked.</p></div>
+    <div class="card" style="left:640px;top:240px" data-enter="fade-up 0.5 0.5"><div class="icon" style="background:#577590"></div><h2>Drop</h2><p>Cut what did not.</p></div>
+  </section>
+  <section class="scene" data-duration="2.9" data-transition="whip-left 0.3">
+    <h3 class="big" style="left:420px;top:300px" data-enter="pop 0.5 0.3">Done.</h3>
+  </section>
+</main>
+</body>
+</html>

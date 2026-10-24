@@ -11,6 +11,7 @@ Test rounds with fresh AI agents (docs only) and blind AI judges. How to run one
 | 2026-10-t2-examples.md | Round-3 examples vs the ones they replaced: 7.9 vs 3.7, 9 of 9 judges picked the new ones. |
 | 2026-10-t3-hand-drawn.md | Hand-drawn whiteboard brief: before/after sketch tools, and the same brief in another framework. |
 | 2026-10-t7-speed.md | Where render time goes without a GPU (compositing), what did not help, a determinism fix. |
+| 2026-10-analyze-accuracy.md | `analyze` scored on 13 videos with known scene changes (`bench/analyze/`): recall 66% → 95%, types 56% → 74% of found, 3x faster. |
 | data/ | raw results tables from `round.js results`. |
 
 Overall scores so far (blind Opus judges, 1-10): round 1 7.5 average, round 2 6.6, round-3 examples 7.9, hand-drawn

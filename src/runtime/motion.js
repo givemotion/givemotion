@@ -1528,7 +1528,15 @@
   // camera shots in video time (inspect lists them; snapshot shows each shot once the camera has arrived)
   mw.__cameraShots = () => cameras.flatMap((c) => {
     const base = c.opts.global || !c.world ? 0 : mw.timing(c.world).start;
-    return c.shots.map((s, i) => ({ world: c.world ? mw.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null }));
+    // what each shot shows of the world, in world px (a follow shot: where its target is right now)
+    let M = null, view = null;
+    try { if (c.world) { M = c._markers(); const p = c.world.offsetParent || c.world.parentElement; view = { w: p.clientWidth || I.comp.width, h: p.clientHeight || I.comp.height }; } } catch (e) {}
+    const r1 = (x) => Math.round(x);
+    return c.shots.map((s, i) => {
+      let shows = null;
+      try { const st = M && c._state(s, M, view); if (st) { const w = view.w / st.zoom, h = view.h / st.zoom; shows = { x: r1(st.cx - w / 2), y: r1(st.cy - h / 2), w: r1(w), h: r1(h), zoom: Math.round(st.zoom * 1000) / 1000 }; } } catch (e) {}
+      return { world: c.world ? mw.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null, shows };
+    });
   });
   Object.assign(mw, {
     timeline: (scope, opts) => new Timeline(scope, opts),

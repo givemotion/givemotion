@@ -534,6 +534,9 @@
       tx.setAttribute('dominant-baseline', 'middle');
       tx.style.fill = L.color || c.o.color || 'currentColor';
       tx.style.fontSize = (L.size ?? 30) * px() + 'px';
+      // hand-drawn arrows get handwriting; otherwise the text around the arrow's own font
+      tx.style.fontFamily = L.font || (c.o.sketch ? 'Caveat, cursive' : 'inherit');
+      if (L.weight) tx.style.fontWeight = L.weight;
       tx.style.stroke = 'none';
       svg.appendChild(tx);
       c.label = tx; c.labelOpt = L;

@@ -251,6 +251,38 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     t.color = cs.color;
     t.clipText = cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text' || /transparent|rgba\(\d+, \d+, \d+, 0\)/.test(cs.webkitTextFillColor || '');
   }
+  // 4b. A line drawn through text (an arrow, the edge of a box): visible strokes that pass through the letters.
+  //     Fills (a card behind a label, hatching) are fine; strokes being drawn on or dashed are skipped.
+  const strokes = [];
+  for (const sh of document.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')) {
+    if (sh.closest('defs,clipPath,mask,marker,pattern,symbol,[data-mw-sketch-guide],[data-mw-sketch-fill],.mw-sketch-mark,[data-mw-internal]') || ignored(sh)) continue;
+    const cs = getComputedStyle(sh);
+    if (cs.stroke === 'none' || /rgba\([^)]*,\s*0\)/.test(cs.stroke) || cs.visibility !== 'visible' || cs.strokeDasharray !== 'none') continue;
+    const b = sh.getBoundingClientRect();
+    if (!b.width && !b.height) continue;
+    let op = parseFloat(cs.strokeOpacity);
+    for (let a = sh; a && a.nodeType === 1 && op > 0.3; a = a.parentElement) op *= parseFloat(getComputedStyle(a).opacity);
+    if (op <= 0.3) continue;
+    const ctm = sh.getScreenCTM && sh.getScreenCTM();
+    if (!ctm || parseFloat(cs.strokeWidth) * Math.hypot(ctm.a, ctm.b) < 1.5 * PX) continue;
+    strokes.push({ sh, b, inv: ctm.inverse() });
+  }
+  if (strokes.length) for (const t of texts) {
+    if (t.moving || t.hidden || t.covered || t.op < 0.5) continue;
+    const tu = tight(t.u);
+    let hit = null;
+    for (const st of strokes) {
+      const b = st.b;
+      if (b.right < tu.left || b.left > tu.right || b.bottom < tu.top || b.top > tu.bottom || st.sh.closest('svg') === t.el.closest('svg') && t.el.closest('text') && false) continue;
+      for (let iy = 0; iy < 3 && !hit; iy++) for (let ix = 0; ix < 7 && !hit; ix++) {
+        const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 7, y = tu.top + (tu.bottom - tu.top) * (iy + 0.5) / 3;
+        const pt = new DOMPoint(x, y).matrixTransform(st.inv);
+        try { if (st.sh.isPointInStroke(pt)) hit = st.sh; } catch (e) {}
+      }
+      if (hit) break;
+    }
+    if (hit) out.push({ severity: 'warning', code: 'text-over-line', selector: sel(t.el), text: snippet(t.el), message: 'A line runs through this text: ' + sel(hit) + '.', minSpan: 0.3, fix: 'Move the label off the line (or the line around it), or give the label a paper-colored backing.' });
+  }
   // 5. Overlapping text (settled, visible, not covered)
   const live = texts.filter((t) => !t.moving && !t.hidden && !t.covered);
   for (let i = 0; i < live.length; i++) {

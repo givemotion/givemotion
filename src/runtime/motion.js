@@ -960,8 +960,14 @@
     // where something is, in world coordinates (unaffected by the camera itself)
     _box(target, M) {
       if (target && typeof target === 'object' && !Array.isArray(target) && !(target instanceof Element) && 'x' in target) return { x: target.x, y: target.y, w: target.w || 0, h: target.h || 0 };
-      const els = (Array.isArray(target) ? target : [target]).flatMap((t) => typeof t === 'string' ? [...this.world.querySelectorAll(t)] : t ? [t] : []);
-      if (!els.length) return null;
+      const w = this.world;
+      // the whole world: fit: 'all' (or the world's own selector)
+      if (target === 'all' || target === w || (typeof target === 'string' && w.matches(target))) return { x: 0, y: 0, w: w.offsetWidth, h: w.offsetHeight };
+      const els = (Array.isArray(target) ? target : [target]).flatMap((t) => typeof t === 'string' ? [...w.querySelectorAll(t)] : t ? [t] : []);
+      if (!els.length) {
+        if (!this._warned) { this._warned = true; I.report('warning', 'camera-no-target', `mw.camera: shot target ${JSON.stringify(typeof target === 'string' ? target : String(target))} matched nothing inside the world, so that shot does nothing.`, null, "Use a selector of elements inside the world, a list of them, {x, y, w, h}, or fit: 'all' for the whole world."); }
+        return null;
+      }
       let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
       for (const e of els) { const q = e.getBoundingClientRect(); l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); }
       return { x: (l - M.ox) / M.k, y: (t - M.oy) / M.k, w: (r - l) / M.k, h: (b - t) / M.k };
@@ -1039,7 +1045,9 @@
   const travels = [];
   function setupTravel(tr) {
     const el = typeof tr.el === 'string' ? document.querySelector(tr.el) : tr.el;
-    const pth = typeof tr.path === 'string' && !/^\s*[Mm]/.test(tr.path) ? document.querySelector(tr.path) : tr.path;
+    let pth = typeof tr.path === 'string' && !/^\s*[Mm]/.test(tr.path) ? document.querySelector(tr.path) : tr.path;
+    // a sketched shape (data-sketch) is a group: travel along its exact shape
+    if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-mw-sketch-guide]') || pth.querySelector('path') || pth;
     if (!el) { I.report('error', 'travel-no-element', `mw.path.travel: "${tr.el}" matched nothing.`, null); return; }
     if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) return setupTravelSVG(tr, el, pth);
     const cb = el.offsetParent || el.parentElement;

@@ -50,7 +50,9 @@
     }
     return d;
   }
-  const passes = (o, fn) => { const R = rng(o.seed); let d = ''; for (let p = 0; p < o.passes; p++) d += fn(R, p); return d; };
+  // Passes are joined into one stroke (the pen goes round again): SVG restarts dashes at every "M", so separate
+  // subpaths would all draw at once and finish early when drawn on.
+  const passes = (o, fn) => { const R = rng(o.seed); let d = ''; for (let p = 0; p < o.passes; p++) { const q = fn(R, p); d += p ? q.replace(/^M/, 'L') : q; } return d; };
 
   /** A rough straight line. */
   function line(x1, y1, x2, y2, o) { o = opts(o); return passes(o, (R) => strokeLine(x1, y1, x2, y2, o, R)); }
@@ -174,7 +176,7 @@
     let d = '';
     const cb = Math.cos(angle), sb = Math.sin(angle);
     const back = (x, y) => [x * cb - y * sb, x * sb + y * cb];
-    let k = 0;
+    let k = 0, lastEnd = null;
     for (let y = minY + gap / 2; y < maxY; y += gap, k++) {
       const xs = [];
       for (let i = 0; i < rot.length; i++) {
@@ -185,8 +187,11 @@
       for (let i = 0; i + 1 < xs.length; i += 2) {
         const inset = Math.min(gap * 0.3, (xs[i + 1] - xs[i]) * 0.1);
         const [ax, ay] = back(xs[i] + inset, y), [bx, by] = back(xs[i + 1] - inset, y);
-        // alternate direction like a hand going back and forth
-        d += k % 2 ? strokeLine(bx, by, ax, ay, o, R) : strokeLine(ax, ay, bx, by, o, R);
+        // alternate direction like a hand going back and forth, and keep the pen down between close lines
+        const [sx, sy] = k % 2 ? [bx, by] : [ax, ay], [ex, ey] = k % 2 ? [ax, ay] : [bx, by];
+        const near = lastEnd && Math.hypot(sx - lastEnd[0], sy - lastEnd[1]) < gap * 2.5;
+        d += strokeLine(sx, sy, ex, ey, o, R, !near);
+        lastEnd = [ex, ey];
       }
     }
     if (raw.cross) d += hachure(shape, { ...raw, cross: false, angle: (raw.angle ?? -41) + 90, seed: String(o.seed) + 'x' });
@@ -223,7 +228,7 @@
     const o = { ...inherited };
     if (/^[\d.]+$/.test(v)) o.roughness = +v;
     else for (const part of v.split(/[;,]/)) { const m = /^\s*([\w-]+)\s*[:=\s]\s*([^\s].*?)\s*$/.exec(part); if (m) o[m[1].replace(/-(\w)/g, (_, c) => c.toUpperCase())] = isNaN(+m[2]) ? m[2] : +m[2]; }
-    for (const k of ['fill', 'gap', 'angle', 'seed', 'roughness', 'passes']) { const a = el.getAttribute('data-sketch-' + k); if (a != null) o[k] = isNaN(+a) ? a : +a; }
+    for (const k of ['fill', 'gap', 'angle', 'seed', 'roughness', 'passes', 'arrow', 'head']) { const a = el.getAttribute('data-sketch-' + k); if (a != null) o[k] = isNaN(+a) ? a : +a; }
     return o;
   }
   function geometryPath(el) {
@@ -248,13 +253,43 @@
     if (g.kind === 'path') return a;
     return null;
   }
+  // the shape as plain path data
+  function guidePath(g) {
+    const [a, b, c, d] = g.args;
+    switch (g.kind) {
+      case 'rect': return `M${a} ${b}H${a + c}V${b + d}H${a}Z`;
+      case 'ellipse': return `M${a - c} ${b}A${c} ${d} 0 1 0 ${a + c} ${b}A${c} ${d} 0 1 0 ${a - c} ${b}Z`;
+      case 'line': return `M${a} ${b}L${c} ${d}`;
+      case 'polyline': case 'polygon': { const P = toPoints(a); return P.length ? 'M' + P.map((q) => q[0] + ' ' + q[1]).join('L') + (g.kind === 'polygon' ? 'Z' : '') : null; }
+      case 'path': return a || null;
+    }
+    return null;
+  }
   function sketchOne(el, o, index) {
     const g = geometryPath(el);
     if (!g) return;
     const cs = getComputedStyle(el);
     const seed = o.seed != null ? String(o.seed) + ':' + index : (el.id || '') + ':' + index;
     const so = { roughness: o.roughness ?? 1, passes: o.passes ?? 2, bow: o.bow ?? 1, seed, raw: o };
-    const outline = { rect, ellipse, line, polyline, polygon, path }[g.kind](...g.args, so);
+    const fnK = { rect, ellipse, line, polyline, polygon, path }[g.kind];
+    const nPass = Math.max(1, Math.min(3, so.passes));
+    const outlines = [];
+    for (let p = 0; p < nPass; p++) outlines.push(fnK(...g.args, { ...so, passes: 1, seed: seed + ':' + p }));
+    // arrowheads at the ends of open shapes (data-sketch-arrow="end" | "start" | "both")
+    const arrowAt = o.arrow && /^(path|line|polyline)$/.test(g.kind) ? String(o.arrow) : null;
+    const guideD = guidePath(g);
+    if (arrowAt && guideD) {
+      const m = measure(guideD), L = m.getTotalLength(), R = rng(seed + 'a'), hl = (o.head ?? 20) * px();
+      const head = (at, dir) => {
+        const q = m.getPointAtLength(at), q2 = m.getPointAtLength(Math.max(0, Math.min(L, at - dir * Math.min(L / 3, hl))));
+        const ang = Math.atan2(q.y - q2.y, q.x - q2.x), sp = 0.45 + (R() - 0.5) * 0.1;
+        const b1 = [q.x - Math.cos(ang - sp) * hl, q.y - Math.sin(ang - sp) * hl], b2 = [q.x - Math.cos(ang + sp) * hl, q.y - Math.sin(ang + sp) * hl];
+        const ho = { ...so, overshoot: 0.3 };
+        return strokeLine(q.x, q.y, b1[0], b1[1], ho, R, false) + strokeLine(b1[0], b1[1], q.x, q.y, ho, R, false) + strokeLine(q.x, q.y, b2[0], b2[1], ho, R, false);
+      };
+      if (arrowAt === 'end' || arrowAt === 'both' || arrowAt === 'true' || arrowAt === '1') outlines[0] += head(L, 1);
+      if (arrowAt === 'start' || arrowAt === 'both') outlines[0] = 'M' + outlines[0].slice(1) + `M${f1(m.getPointAtLength(0).x)} ${f1(m.getPointAtLength(0).y)}` + head(0, -1);
+    }
     const grp = document.createElementNS(SVGNS, 'g');
     // keep identity and styling: id, classes, data-* (enter, exit, timing), style, presentation attributes
     for (const at of [...el.attributes]) if (!GEOM[el.tagName.toLowerCase()].includes(at.name) && at.name !== 'data-sketch' && !at.name.startsWith('data-sketch-') && at.name !== 'pathLength') grp.setAttribute(at.name, at.value);
@@ -280,13 +315,23 @@
       fp.setAttribute('data-mw-sketch-fill', mode);
       grp.appendChild(fp);
     }
-    const op = document.createElementNS(SVGNS, 'path');
-    op.setAttribute('d', outline);
-    op.setAttribute('fill', 'none');
-    op.style.strokeLinecap = 'round';
-    op.style.strokeLinejoin = 'round';
-    if (cs.stroke === 'none' || !cs.stroke) op.style.stroke = 'currentColor';
-    grp.appendChild(op);
+    for (const d of outlines) {
+      const op = document.createElementNS(SVGNS, 'path');
+      op.setAttribute('d', d);
+      op.setAttribute('fill', 'none');
+      op.style.strokeLinecap = 'round';
+      op.style.strokeLinejoin = 'round';
+      if (cs.stroke === 'none' || !cs.stroke) op.style.stroke = 'currentColor';
+      grp.appendChild(op);
+    }
+    // the exact shape, hidden: mw.path.travel('#pkg', '#route') follows it when '#route' is a sketched shape
+    if (guideD) {
+      const gp = document.createElementNS(SVGNS, 'path');
+      gp.setAttribute('d', guideD);
+      gp.setAttribute('data-mw-sketch-guide', '');
+      gp.setAttribute('style', 'fill:none;stroke:none;visibility:hidden');
+      grp.appendChild(gp);
+    }
     grp.style.fill = 'none';
     el.replaceWith(grp);
     return grp;
@@ -372,6 +417,19 @@
     path.style.strokeLinecap = 'round'; path.style.strokeLinejoin = 'round';
     if (c.o.dash) path.style.strokeDasharray = c.o.dash;
     svg.appendChild(path);
+    // a label on the arrow: label: 'GET /' or { text, offset, size, color }
+    if (c.o.label != null) {
+      const L = typeof c.o.label === 'object' ? c.o.label : { text: String(c.o.label) };
+      const tx = document.createElementNS(SVGNS, 'text');
+      tx.textContent = L.text;
+      tx.setAttribute('text-anchor', 'middle');
+      tx.setAttribute('dominant-baseline', 'middle');
+      tx.style.fill = L.color || c.o.color || 'currentColor';
+      tx.style.fontSize = (L.size ?? 30) * px() + 'px';
+      tx.style.stroke = 'none';
+      svg.appendChild(tx);
+      c.label = tx; c.labelOpt = L;
+    }
     if (c.o.behind) c.space.insertBefore(svg, c.space.firstChild); else c.space.appendChild(svg);
     if (c.space !== document.body && getComputedStyle(c.space).position === 'static') c.space.style.position = 'relative';
     c.svg = svg; c.path = path;
@@ -401,8 +459,10 @@
         const mx = (ra.cx + rb.cx) / 2, my = (ra.cy + rb.cy) / 2, len = Math.hypot(rb.cx - ra.cx, rb.cy - ra.cy) || 1;
         const nx = -(rb.cy - ra.cy) / len, ny = (rb.cx - ra.cx) / len;
         const qx = mx + nx * curve * len, qy = my + ny * curve * len;
-        const [x1, y1] = edgePoint(ra, curve ? qx : rb.cx, curve ? qy : rb.cy, gap);
-        const [x2, y2] = edgePoint(rb, curve ? qx : ra.cx, curve ? qy : ra.cy, gap);
+        // from/to: 'top' 'right' 'bottom' 'left' (middle of that side) or 'center'; default: where the line crosses the edge
+        const side = (r, sd, gp) => ({ top: [r.cx, r.y - gp], bottom: [r.cx, r.y + r.h + gp], left: [r.x - gp, r.cy], right: [r.x + r.w + gp, r.cy], center: [r.cx, r.cy] })[sd];
+        const [x1, y1] = side(ra, o.from, gap) || edgePoint(ra, curve ? qx : rb.cx, curve ? qy : rb.cy, gap);
+        const [x2, y2] = side(rb, o.to, gap) || edgePoint(rb, curve ? qx : ra.cx, curve ? qy : ra.cy, gap);
         const head = o.head === false || o.head === 'none' ? null : o.head || 'end';
         const hl = (o.headSize ?? 20) * px();
         if (o.sketch) {
@@ -417,6 +477,19 @@
         }
       }
       if (d !== c.lastD) { c.path.setAttribute('d', d); c.lastD = d; changed = true; }
+      if (c.label && d) {
+        // halfway along the line, pushed off to the outside of the bend (or above a straight line)
+        const m = measure(d.replace(/^(M[^M]*?)M.*$/, '$1')), L = m.getTotalLength(), q = m.getPointAtLength(L / 2), q2 = m.getPointAtLength(Math.min(L, L / 2 + 1));
+        let nx = -(q2.y - q.y), ny = q2.x - q.x; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+        const curve = o.curve ?? 0;
+        // the bend bulges toward +normal when curve > 0; a straight line gets its label above it
+        const sgn = curve > 0 ? 1 : curve < 0 ? -1 : ny > 0 ? -1 : 1; nx *= sgn; ny *= sgn;
+        const off = (c.labelOpt.offset ?? (c.labelOpt.size ?? 30) * 0.6 + 12) * px();
+        const pos = `${f1(q.x + nx * off)},${f1(q.y + ny * off)}`;
+        if (pos !== c.lastLabel) { const [lx, ly] = pos.split(','); c.label.setAttribute('x', lx); c.label.setAttribute('y', ly); c.lastLabel = pos; changed = true; }
+        const vis = c.progressAt ? (c.progressAt(T) >= 0.5 ? '' : 'hidden') : '';
+        if (c.label.style.visibility !== vis) { c.label.style.visibility = vis; changed = true; }
+      }
       if (c.progressAt) {
         const p = c.progressAt(T);
         // nothing at all before it starts (a zero-length dash still paints round caps as dots)

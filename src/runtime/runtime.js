@@ -799,7 +799,9 @@
           else {
             if (m.name === 'draw') prepDraw(tg);
             if (m.name === 'clock') prepClock(tg);
-            const kf = PRESETS[m.name]();
+            let kf = PRESETS[m.name]();
+            // sketched solid fills fade in near the end of the drawing (a stroke dash cannot hide a fill)
+            if (m.name === 'draw' && tg.querySelector && (tg.matches('[data-mw-sketch-fill="solid"]') || tg.querySelector('[data-mw-sketch-fill="solid"]'))) kf = [{ ...kf[0], fillOpacity: 0 }, { offset: 0.6, fillOpacity: 0 }, { ...kf[1], fillOpacity: 1 }];
             if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
           }
         }
@@ -962,7 +964,9 @@
       // Reserve the final size so the layout doesn't jump while typing (block-level elements).
       const disp = getComputedStyle(el).display;
       if (disp !== 'inline' && el.offsetHeight > 0 && !el.style.minHeight) el.style.minHeight = el.offsetHeight + 'px';
-      typers.push({ el, nodes, total, cps: cps > 0 ? cps : 30, delay: parseTime(el.getAttribute('data-type-delay'), el, 'data-type-delay') ?? 0, caret, last: -1 });
+      // data-type-caret="0.8": the caret goes away 0.8 s after the typing is done (without a number it keeps blinking)
+      const keep = caret ? parseFloat(el.getAttribute('data-type-caret')) : NaN;
+      typers.push({ el, nodes, total, cps: cps > 0 ? cps : 30, delay: parseTime(el.getAttribute('data-type-delay'), el, 'data-type-delay') ?? 0, caret, keep: isFinite(keep) ? keep : null, last: -1 });
     }
   }
   function dec(n) { const s = String(n); const i = s.indexOf('.'); return i < 0 ? 0 : s.length - i - 1; }
@@ -1003,7 +1007,7 @@
       }
       if (typing) ty.el.setAttribute('data-mw-typing', ''); else ty.el.removeAttribute('data-mw-typing');
       // no caret before typing starts (a stray blinking bar on an empty line looks like a mistake)
-      const wait = lt < 0;
+      const wait = lt < 0 || (ty.keep != null && lt > ty.total / ty.cps + ty.keep);
       if (wait !== ty.el.hasAttribute('data-mw-type-wait')) { changed = true; if (wait) ty.el.setAttribute('data-mw-type-wait', ''); else ty.el.removeAttribute('data-mw-type-wait'); }
     }
     return changed;

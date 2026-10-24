@@ -276,7 +276,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) out.push({ severity: 'error', code: 'image-broken', selector: sel(img), message: 'Image did not load: ' + img.getAttribute('src'), fix: 'Check the file path (relative to the HTML file).' });
   }
   // Text boxes for the contrast pass. Fading, moving, covered or clip-filled text is not judged.
-  window.__mwTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75).map((t) => {
+  // (text cut by the frame edge is not judged for contrast: only part of it can be measured, and the crop is its own issue)
+  const inFrame = (t) => t.u.left >= -2 && t.u.top >= -2 && t.u.right <= W + 2 && t.u.bottom <= H + 2;
+  window.__mwTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && inFrame(t)).map((t) => {
     const cs = getComputedStyle(t.el);
     // A dark/light text-shadow or outline gives text its own backing; be lenient then.
     const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;

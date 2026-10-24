@@ -802,12 +802,27 @@
       const ca = I.nearestClip(A);
       if (found && ca && isFinite(ca.end)) {
         const keep = [...A.querySelectorAll('[data-morph]')].filter((e) => map.get(e.getAttribute('data-morph')) && [...B.querySelectorAll('[data-morph]')].some((x) => x.getAttribute('data-morph') === e.getAttribute('data-morph')));
+        // Fade with filter: opacity() *added* to the element's own filter, so the page's own opacity
+        // (an element already faded out) is kept. Boxes that contain a morphing element lose their
+        // own paint (background, border, shadow) instead, so no empty card is left behind.
+        const timing = { duration: pair.dur * 1000 * 0.7, delay: Math.max(0, ca.end - ca.start - pair.dur) * 1000, easing: 'ease-in-out', fill: 'forwards' };
         const fadeKids = (node) => {
           for (const ch of node.children) {
-            if (I.SKIP_TAGS.has(ch.tagName)) continue;
+            if (I.SKIP_TAGS.has(ch.tagName) || ch.hasAttribute('data-mw-internal')) continue;
             if (keep.includes(ch)) continue;
-            if (keep.some((k) => ch.contains(k))) { fadeKids(ch); continue; }
-            const an = I.real.animate.call(ch, [{ opacity: 1 }, { opacity: 0 }], { duration: pair.dur * 1000 * 0.7, delay: Math.max(0, ca.end - ca.start - pair.dur) * 1000, easing: 'ease-in-out', fill: 'forwards' });
+            if (keep.some((k) => ch.contains(k))) {
+              const cs = getComputedStyle(ch);
+              const paints = cs.backgroundImage !== 'none' || !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) || cs.boxShadow !== 'none' || parseFloat(cs.borderTopWidth) > 0;
+              if (paints) {
+                const an = I.real.animate.call(ch, [{ backgroundColor: cs.backgroundColor, borderColor: cs.borderTopColor, boxShadow: cs.boxShadow }, { backgroundColor: 'transparent', borderColor: 'transparent', boxShadow: 'none', backgroundImage: 'none' }], timing);
+                an.pause(); I.addOwnAnim(an, ca.start);
+              }
+              fadeKids(ch);
+              continue;
+            }
+            let an;
+            try { an = I.real.animate.call(ch, [{ filter: 'opacity(1)' }, { filter: 'opacity(0)' }], Object.assign({ composite: 'add' }, timing)); }
+            catch (e) { an = I.real.animate.call(ch, [{ opacity: 1 }, { opacity: 0 }], timing); }
             an.pause(); I.addOwnAnim(an, ca.start);
           }
         };
@@ -853,6 +868,170 @@
     }
     return changed;
   }
+
+  // ---------------------------------------------------------------------------
+  // mw.camera(world): a virtual camera over a big "world" layer. Shots frame elements,
+  // follow moving ones, and blend smoothly from one to the next. Pure function of time.
+  //   const cam = mw.camera('#world');
+  //   cam.shot(0, { fit: ['#a', '#b'], padding: 80 })
+  //      .shot(2, { follow: '#package', zoom: 1.8, duration: 1.2 })
+  //      .shot(12, { fit: '#route', duration: 1.5, ease: 'in-out-quart' })
+  //      .shake(6.2, { duration: 0.4, amount: 12 });
+  // Elements with data-parallax="0.3" next to the world move 30% as much (depth).
+  // ---------------------------------------------------------------------------
+  const cameras = [];
+  class Camera {
+    constructor(world, opts = {}) {
+      this.spec = world; this.opts = opts; this.shots = []; this.shakes = [];
+      cameras.push(this);
+    }
+    get world() { if (!this._w) { this._w = typeof this.spec === 'string' ? document.querySelector(this.spec) : this.spec; if (!this._w) I.report('error', 'camera-no-world', `mw.camera: "${this.spec}" matched nothing.`, null); } return this._w; }
+    shot(at, s) { this.shots.push(Object.assign({ at: +at || 0, duration: 1, ease: 'in-out-cubic', padding: 60 }, s)); this.shots.sort((a, b) => a.at - b.at); return this; }
+    shake(at, o = {}) { this.shakes.push(Object.assign({ at: +at || 0, duration: 0.4, amount: 10, freq: 18 }, o)); return this; }
+    _markers() {
+      const w = this.world;
+      if (!this._m || !this._m[0].isConnected) {
+        const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0;pointer-events:none`; w.appendChild(d); return d; };
+        this._m = [mk(0), mk(1000)];
+        if (getComputedStyle(w).position === 'static') w.style.position = 'relative';
+        w.style.transformOrigin = '0 0';
+      }
+      const a = this._m[0].getBoundingClientRect(), b = this._m[1].getBoundingClientRect();
+      return { ox: a.left, oy: a.top, k: (b.left - a.left) / 1000 || 1 };
+    }
+    // where something is, in world coordinates (unaffected by the camera itself)
+    _box(target, M) {
+      if (target && typeof target === 'object' && !Array.isArray(target) && !(target instanceof Element) && 'x' in target) return { x: target.x, y: target.y, w: target.w || 0, h: target.h || 0 };
+      const els = (Array.isArray(target) ? target : [target]).flatMap((t) => typeof t === 'string' ? [...this.world.querySelectorAll(t)] : t ? [t] : []);
+      if (!els.length) return null;
+      let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+      for (const e of els) { const q = e.getBoundingClientRect(); l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom); }
+      return { x: (l - M.ox) / M.k, y: (t - M.oy) / M.k, w: (r - l) / M.k, h: (b - t) / M.k };
+    }
+    _state(sh, M, view) {
+      // camera state = { cx, cy, zoom, rot } in world coordinates
+      const target = sh.fit ?? sh.follow ?? sh.center;
+      const box = target != null ? this._box(target, M) : { x: view.w / 2, y: view.h / 2, w: 0, h: 0 };
+      if (!box) return null;
+      let zoom = sh.zoom;
+      if (sh.fit != null && zoom == null) zoom = Math.min((view.w - 2 * sh.padding) / Math.max(1, box.w), (view.h - 2 * sh.padding) / Math.max(1, box.h));
+      zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom ?? 1));
+      const off = sh.offset || [0, 0];
+      return { cx: box.x + box.w / 2 + off[0], cy: box.y + box.h / 2 + off[1], zoom, rot: sh.rotate || 0 };
+    }
+    _apply(T) {
+      const w = this.world;
+      if (!w || !this.shots.length) return false;
+      const c = I.nearestClip(w);
+      if (c) { const vt = I.mapT(c.parent || null, T); if (vt < c.start - 1e-9 || vt >= c.end - 1e-9) return false; }
+      const t = I.mapT(w, T) - (this.opts.global ? 0 : I.clipStartOf(w));
+      const parent = w.offsetParent || w.parentElement;
+      const view = { w: parent.clientWidth || I.comp.width, h: parent.clientHeight || I.comp.height };
+      const M = this._markers();
+      // current shot and the one before it
+      let i = -1;
+      for (let k = 0; k < this.shots.length; k++) if (this.shots[k].at <= t + 1e-9) i = k;
+      const cur = this.shots[Math.max(0, i)];
+      let st = this._state(cur, M, view);
+      if (!st) return false;
+      if (i > 0 && t < cur.at + cur.duration) {
+        const prevS = this._state(this.shots[i - 1], M, view);
+        if (prevS) {
+          const p = mw.easing(cur.ease)(Math.max(0, Math.min(1, (t - cur.at) / Math.max(0.001, cur.duration))));
+          // zoom blends in log space so it feels even
+          const z = Math.exp(Math.log(prevS.zoom) + (Math.log(st.zoom) - Math.log(prevS.zoom)) * p);
+          st = { cx: prevS.cx + (st.cx - prevS.cx) * p, cy: prevS.cy + (st.cy - prevS.cy) * p, zoom: z, rot: prevS.rot + (st.rot - prevS.rot) * p };
+        }
+      }
+      let sx = 0, sy = 0, sr = 0;
+      for (const sk of this.shakes) {
+        const lt = t - sk.at;
+        if (lt < 0 || lt > sk.duration) continue;
+        const env = Math.sin((lt / sk.duration) * Math.PI) * (1 - lt / sk.duration * 0.5);
+        sx += (mw.noise(lt * sk.freq, 11) * 2 - 1) * sk.amount * env; sy += (mw.noise(lt * sk.freq, 23) * 2 - 1) * sk.amount * env; sr += (mw.noise(lt * sk.freq, 37) * 2 - 1) * sk.amount * 0.05 * env;
+      }
+      const ox = w.offsetLeft, oy = w.offsetTop;
+      const tx = view.w / 2 - ox - st.zoom * st.cx + sx, ty = view.h / 2 - oy - st.zoom * st.cy + sy;
+      const rot = st.rot + sr;
+      const tf = `translate(${r4(tx)}px, ${r4(ty)}px)` + (rot ? ` rotate(${r4(rot)}deg)` : '') + ` scale(${r4(st.zoom)})`;
+      let changed = false;
+      if (w.style.transform !== tf) { w.style.transform = tf; changed = true; }
+      // parallax layers: siblings of the world (or inside its parent) with data-parallax
+      for (const pl of parent.querySelectorAll('[data-parallax]')) {
+        if (w.contains(pl)) continue;
+        const f = parseFloat(pl.getAttribute('data-parallax')) || 0;
+        const ptf = `translate(${r4((view.w / 2 - st.zoom * st.cx - ox) * f + sx * f)}px, ${r4((view.h / 2 - st.zoom * st.cy - oy) * f + sy * f)}px) scale(${r4(1 + (st.zoom - 1) * f)})`;
+        if (pl.style.transform !== ptf) { pl.style.transform = ptf; pl.style.transformOrigin = '50% 50%'; changed = true; }
+      }
+      return changed;
+    }
+  }
+  // ---------------------------------------------------------------------------
+  // mw.path.travel(el, path, { stops, ease, rotate }): move an element along an SVG path.
+  //   stops: [[time, progress], ...] e.g. [[0, 0], [1.5, 0.3], [2.5, 0.3], [4, 1]] (holds where progress repeats)
+  // The path is converted to the element's own coordinates once, then played by the browser
+  // (CSS offset-path), so it is exact and cheap. Times are relative to the element's clip.
+  // ---------------------------------------------------------------------------
+  const travels = [];
+  function setupTravel(tr) {
+    const el = typeof tr.el === 'string' ? document.querySelector(tr.el) : tr.el;
+    const pth = typeof tr.path === 'string' && !/^\s*[Mm]/.test(tr.path) ? document.querySelector(tr.path) : tr.path;
+    if (!el) { I.report('error', 'travel-no-element', `mw.path.travel: "${tr.el}" matched nothing.`, null); return; }
+    const cb = el.offsetParent || el.parentElement;
+    const mk = (x) => { const d = document.createElement('div'); d.setAttribute('data-mw-internal', ''); d.style.cssText = `position:absolute;left:${x}px;top:0;width:0;height:0`; cb.appendChild(d); return d; };
+    const m0 = mk(0), m1 = mk(1000);
+    const a = m0.getBoundingClientRect(), b = m1.getBoundingClientRect();
+    const k = (b.left - a.left) / 1000 || 1;
+    m0.remove(); m1.remove();
+    let pts = [];
+    if (pth && pth.nodeType === 1 && pth.getTotalLength) {
+      const len = pth.getTotalLength(), ctm = pth.getScreenCTM(), sv = pth.ownerSVGElement;
+      const N = Math.max(60, Math.min(600, Math.round(len / 4)));
+      for (let i = 0; i <= N; i++) {
+        const q = pth.getPointAtLength((i / N) * len);
+        const sp = sv.createSVGPoint(); sp.x = q.x; sp.y = q.y;
+        const s2 = sp.matrixTransform(ctm);
+        pts.push([(s2.x - a.left) / k, (s2.y - a.top) / k]);
+      }
+    } else {
+      // raw path data: already in the container's coordinates
+      const pe = pathEl(String(tr.path)); const len = pe.getTotalLength(); const N = Math.max(60, Math.min(600, Math.round(len / 4)));
+      for (let i = 0; i <= N; i++) { const q = pe.getPointAtLength((i / N) * len); pts.push([q.x, q.y]); }
+    }
+    // offset-path point (0,0) is the element's own layout top-left corner; its center is placed on the path
+    const ox = el.offsetLeft, oy = el.offsetTop;
+    const d = 'M' + pts.map(([x, y]) => r4(x - ox) + ' ' + r4(y - oy)).join(' L');
+    el.style.offsetPath = `path('${d}')`;
+    el.style.offsetAnchor = 'center';
+    el.style.offsetRotate = tr.opts.rotate === false || tr.opts.rotate == null ? '0deg' : tr.opts.rotate === true || tr.opts.rotate === 'auto' ? 'auto' : String(tr.opts.rotate);
+    let stops = (tr.opts.stops || [[0, 0], [tr.opts.duration || 2, 1]]).map((s0) => (Array.isArray(s0) ? s0 : [s0.at, s0.to]));
+    stops = stops.sort((x, y) => x[0] - y[0]);
+    const T0 = stops[0][0], T1 = stops[stops.length - 1][0];
+    const total = Math.max(0.001, T1 - T0);
+    const ease = tr.opts.ease || 'in-out-cubic';
+    const kf = stops.map(([t, pr], i) => ({ offsetDistance: r4(pr * 100) + '%', offset: (t - T0) / total, easing: I.cssEasing(Array.isArray(ease) ? ease[i] || 'linear' : ease) }));
+    const c = I.nearestClip(el);
+    const an = I.real.animate.call(el, kf, { duration: total * 1000, delay: T0 * 1000, fill: 'both' });
+    an.pause(); I.addOwnAnim(an, c ? c.start : 0);
+    tr.done = true;
+    tr.stops = stops; tr.easeFn = (i) => mw.easing(Array.isArray(ease) ? ease[i] || 'linear' : ease);
+  }
+  function travel(el, path, opts = {}) {
+    const tr = { el, path, opts, done: false };
+    travels.push(tr);
+    if (initDone) setupTravel(tr);
+    // progress (0..1) at local time t, e.g. to draw the route behind the traveler
+    tr.progress = (t) => {
+      const st = tr.stops || (opts.stops || []).map((s0) => (Array.isArray(s0) ? s0 : [s0.at, s0.to]));
+      if (!st.length) return 0;
+      if (t <= st[0][0]) return st[0][1];
+      for (let i = 1; i < st.length; i++) if (t <= st[i][0]) { const p = (t - st[i - 1][0]) / Math.max(1e-6, st[i][0] - st[i - 1][0]); return st[i - 1][1] + (st[i][1] - st[i - 1][1]) * (tr.easeFn ? tr.easeFn(i - 1)(p) : p); }
+      return st[st.length - 1][1];
+    };
+    return tr;
+  }
+
+  function updateCameras(T) { let ch = false; for (const c of cameras) if (c._apply(T)) ch = true; return ch; }
 
   // ---------------------------------------------------------------------------
   // data-fit: shrink (or grow) text so it fits its box exactly
@@ -1025,8 +1204,9 @@
   // Hook into the runtime
   // ---------------------------------------------------------------------------
   I.hooks.preinit.push(setupFit);
-  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
+  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
+  I.hooks.post.push(updateCameras);
   I.hooks.post.push(updateMorphs);
   I.hooks.seek.push((T) => {
     let changed = updateScramble(T);
@@ -1045,12 +1225,13 @@
   }
   Object.assign(mw, {
     timeline: (scope, opts) => new Timeline(scope, opts),
+    camera: (world, opts) => new Camera(world, opts),
     to: (t, v) => tween('to', t, v),
     from: (t, v) => tween('from', t, v),
     fromTo: (t, a, b) => tween('fromTo', t, a, b),
     set: (t, v) => tween('set', t, v),
     color: { mix: mixColor, parse: toRGBA },
-    path: { point: pointAt, length: (d) => pathInfo(d).len, morph: morphInterp, interpolate: morphInterp },
+    path: { point: pointAt, length: (d) => pathInfo(d).len, morph: morphInterp, interpolate: morphInterp, travel },
     shape,
     mapRange: (v, a, b, c, d, clamp = true) => { let p = (v - a) / (b - a); if (clamp) p = Math.max(0, Math.min(1, p)); return c + (d - c) * p; },
     snap: (v, step) => Math.round(v / step) * step,

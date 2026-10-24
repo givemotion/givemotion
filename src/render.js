@@ -206,6 +206,8 @@ export async function render(input, opts = {}) {
       let last = null;
       const prof = { seek: 0, cap: 0, write: 0, end: 0 };
       try {
+        // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
+        if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); }
         for (let f = a; f < b; f++) {
           for (let s = 0; s < blurSamples; s++) {
             const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;

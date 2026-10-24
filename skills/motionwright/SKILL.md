@@ -104,10 +104,35 @@ mw.to('#logo', { rotate: 360, duration: 2, delay: 0.5, repeat: -1, ease: 'none' 
 - Positions: number (seconds), `'<'` (with previous), `'>'` (after previous, default), `'+=0.3'`, `'-=0.2'`, `'<0.2'`, labels.
 - Props: `x` `y` `z` `xPercent` `yPercent` `rotate` `rotateX` `rotateY` `scale` `scaleX` `scaleY` `skewX` `skewY` `transformPerspective` (written to `transform`), any CSS property (`backgroundColor`, `clipPath`, `filter`, `borderRadius`, `--css-var` …; colors blend in OKLab), `autoAlpha`, `attr: {cx: 50}`, `morph`, `draw`, `text` (type a new string), `textContent` (count). Options: `duration` (0.5) `ease` (`power1.out`) `delay` `stagger` `repeat` `yoyo` `repeatDelay` `keyframes` `onUpdate(progress, el)`.
 - `mw.timeline(scope, { repeat: -1, yoyo: true, delay: 1, global: true })` (global = times from the start of the video).
-- The timeline uses `transform`; `data-enter`/`data-exit` use `translate`/`scale`, and `data-camera` adds on top, so all three combine on one element.
+- The timeline uses `transform`, added on top of the element's own CSS transform (so `translate(-50%,-50%)` centering is kept). `data-enter`/`data-exit` use `translate`/`scale`, and `data-camera` adds on top, so all of them combine on one element.
+- `from()` and `fromTo()` show their start values from the beginning of the clip until the tween starts (useful to keep things hidden until they enter); pass `immediateRender: false` to stop that. `tl.set(el, {…}, time)` sets values instantly. When tweens overlap on the same property, the one that started last wins.
+- SVG shapes scale and rotate around their own center unless you set `transform-origin`.
 - Plain objects work too (for canvas/three.js): `const s = { r: 0 }; mw.to(s, { r: 100, duration: 2 }); mw.onFrame(() => draw(s.r));`
 
-## Shapes, paths and motion along a path
+## Camera over a world (maps, big diagrams, product tours)
+
+Put everything in one big layer and point a camera at it. Shots frame elements, follow moving ones, and blend smoothly; the camera measures elements every frame, so it always lands on them.
+
+```html
+<section class="scene" data-duration="12">
+  <div class="sky" data-parallax="0.3"></div>            <!-- moves 30% as much: depth -->
+  <div id="world" style="position:absolute;left:0;top:0;width:3000px;height:1600px">…route, stops, #pkg…</div>
+</section>
+<script>
+mw.camera('#world')                                        // times are seconds in the world's clip
+  .shot(0,   { fit: '#route', padding: 80 })               // frame one or more elements: fit: ['#a', '.stop']
+  .shot(1,   { follow: '#pkg', zoom: 1.6, duration: 1 })   // keep a moving element centered
+  .shot(6.5, { fit: '.stop', padding: 120, duration: 1.5, ease: 'in-out-quart' })
+  .shake(3.2, { duration: 0.35, amount: 14 });             // impact
+</script>
+```
+Shot options: `fit` | `follow` | `center` (selector, list or `{x,y,w,h}`), `zoom`, `padding`, `offset: [x, y]`, `rotate`, `duration` (blend time from the previous shot), `ease`, `minZoom`, `maxZoom`.
+
+## Moving along a path
+
+`mw.path.travel('#pkg', '#route', { stops: [[1, 0], [3.2, 0.5], [4.2, 0.5], [6.5, 1]], rotate: true, ease: 'in-out-cubic' })` moves an element along an SVG path: each stop is `[seconds in the clip, progress 0..1]`, a repeated progress is a hold (a stop on the way). `rotate: true` turns it to face the direction of travel. The returned object has `.progress(t)` so other things can follow it, e.g. draw the route behind it: `mw.onFrame('#world', t => route.style.strokeDasharray = trip.progress(t) + ' 2')` (with `pathLength="1"` on the path).
+
+## Shapes and path morphs
 
 - `mw.shape.circle(r)` `.rect(w, h, {r})` `.polygon(sides, r)` `.star(points, outer, inner)` `.heart(size)` `.wave(width, {amp, freq, phase})` `.blob(r, {t, wobble, points, seed})` return SVG path data centered on 0,0 (`{cx, cy}` to move). Animate a living blob: `mw.onFrame(t => path.setAttribute('d', mw.shape.blob(200, { t })))`.
 - Morph any path into any other: timeline `{ morph: '#other' or 'M…' }`, or `const f = mw.path.morph(a, b); f(0.5)`.
@@ -126,6 +151,7 @@ mw.width, mw.height, mw.fps, mw.duration
 mw.wait(promise)   // hold rendering until it resolves (fetch JSON, load a model…)
 mw.onLayout('#scene2', (local) => { /* runs after all animations are placed: measure with getBoundingClientRect, follow or aim at elements */ });
 mw.color.mix('#ff0', 'oklch(60% .2 260)', 0.5), mw.mapRange(v, 0, 1, 10, 50), mw.wrap(v, 0, 360)
+mw.random('dot-7')  // the same number in [0,1) for that seed, every frame and every render; mw.rng(seed) → generator
 ```
 
 Rules for seekable JS:
@@ -144,7 +170,8 @@ Rules for seekable JS:
 ```
 - Video is decoded frame-exact by ffmpeg (any codec); style the `<video>` element with CSS as usual. `data-from` = where to start in the source. `muted` drops its audio.
 - Audio is mixed by ffmpeg: `data-start`, `data-duration`, `data-from`, `data-rate`, `data-volume`, `data-fade-in`, `data-fade-out`, `loop`. Volume curve: `data-volume="0:0 1:0.8 9:0.8 10:0"` (seconds in the clip : volume). `data-duck="0.25"` lowers music to 25% while any other sound plays (voice-over, video with sound).
-- **React to sound**: `const music = mw.audio('#music')` (or a file path). In `onFrame(t => …)`: `music.level(t)` (0..1 loudness), `music.bass(t)` `music.mid(t)` `music.treble(t)`, `music.bands(t, 16)` (spectrum), `music.wave(t, 128)` (waveform), `music.beat(t, 0.25)` (1 on each beat, fading to 0: great for pulses), `music.beats` / `music.onsets` (times, to cut on the beat), `music.bpm`.
+- **Plan cuts on the beat first**: `npx motionwright audio music.mp3` prints the tempo, every beat, bar starts (downbeats) and big hits. Beats sit on the kick drum.
+- **React to sound**: `const music = mw.audio('#music')` (or a file path like `'music.mp3'`; call it once at the top of your script). In `onFrame(t => …)`: `music.level(t)` (0..1 loudness), `music.bass(t)` `music.mid(t)` `music.treble(t)`, `music.bands(t, 16)` (spectrum), `music.wave(t, 128)` (waveform), `music.beat(t, 0.25)` (1 on each beat, fading to 0: great for pulses), `music.beats` / `music.downbeats` / `music.onsets` (times in the video, to cut on the beat), `music.bpm`, `await music.ready` (data loaded). Beat lists only cover the part of the song that plays in the video.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack; `--muted` renders without audio.
 - Paths are relative to the HTML file. Use local fonts (`@font-face` with a file) for identical results on every machine.
 
@@ -210,7 +237,9 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `non-seekable-animation` | A CSS animation started inside `onFrame`; use `data-start` or set styles from `t`. |
 | `timeline-no-target`, `cursor-target` | A selector matched nothing. |
 | `morph-no-pairs` | `morph` transition without matching `data-morph` names in both scenes. |
+| `audio-not-found`, `audio-no-beats`, `audio-late` | `mw.audio()` found no file/element, found no steady beat, or was called after the video started. |
+| `camera-no-world`, `travel-no-element` | A selector given to `mw.camera` / `mw.path.travel` matched nothing. |
 | `load-timeout` | Something given to `mw.wait()` never finished. |
 | `script-error`, `console-error` | Your JS threw; the message has the stack. |
 
-Checks skip elements that are mid-animation, and skip overlap/contrast during scene transitions (two scenes are on screen then); look at `sheet.png` for motion problems.
+How check decides: it compares frames, so anything moving or fading (CSS, timeline, React, onFrame, a camera follow) is skipped while it moves, and a problem must last ~0.25s to count. Text that is fully hidden (outside the frame, behind a mask, waiting to slide in) or covered by something solid is not judged. Mark decorative copies (echoes, ghosts, outlines) with `data-check="ignore"`. Re-check one moment fast with `check --at 7.5`, or part of the video with `--from 6 --to 9`. Problems list every time range they happen in.

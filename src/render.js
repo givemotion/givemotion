@@ -253,6 +253,9 @@ export async function render(input, opts = {}) {
       const page = pages[wi];
       let last = null, prevFrame = -2;
       const prof = { seek: 0, cap: 0, write: 0, end: 0 };
+      // a finished part's encoder keeps working while the next part is captured (the encoder pipeline stays full)
+      const ending = [], open = [];
+      try {
       for (const { a, b, file } of group) {
         const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
         const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
@@ -278,13 +281,21 @@ export async function render(input, opts = {}) {
             done++;
             progress();
           }
-          const q1 = Date.now();
-          if (writer) { await writer.end(); renameSync(tmpFile, file); }
-          prof.end += Date.now() - q1;
+          if (writer) { open.push(writer); ending.push(writer.end().then(() => { renameSync(tmpFile, file); open.splice(open.indexOf(writer), 1); })); }
+          // do not let more than two parts queue up behind the encoder
+          if (ending.length > 2) { const q1 = Date.now(); await ending[ending.length - 3]; prof.end += Date.now() - q1; }
         } catch (e) {
           if (writer) writer.kill();
           throw e;
         }
+      }
+      const q1 = Date.now();
+      await Promise.all(ending);
+      prof.end += Date.now() - q1;
+      } catch (e) {
+        for (const w of open) w.kill();
+        await Promise.allSettled(ending);
+        throw e;
       }
       if (process.env.MOTIONWRIGHT_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${group.reduce((s, g) => s + g.b - g.a, 0)} frames`);
     }));

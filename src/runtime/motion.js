@@ -1052,6 +1052,7 @@
       let i = -1;
       for (let k = 0; k < this.shots.length; k++) if (this.shots[k].at <= t + 1e-9) i = k;
       const cur = this.shots[Math.max(0, i)];
+      this._cur = cur; // (check asks which shot is on, to judge only what it frames)
       let st = this._state(cur, M, view);
       if (!st) return false;
       if (i > 0 && t < cur.at + cur.duration) {
@@ -1583,6 +1584,12 @@
       try { const st = M && c._state(s, M, view); if (st) { const w = view.w / st.zoom, h = view.h / st.zoom; shows = { x: r1(st.cx - w / 2), y: r1(st.cy - h / 2), w: r1(w), h: r1(h), zoom: Math.round(st.zoom * 1000) / 1000 }; } } catch (e) {}
       return { world: c.world ? mw.__selector(c.world) : String(c.spec), start: base + s.at, arrive: base + s.at + (i ? s.duration || 0 : 0), next: c.shots[i + 1] ? base + c.shots[i + 1].at : null, shows };
     });
+  });
+  // what the current shot of each camera frames (its fit/follow target), in screen px; for check
+  mw.__cameraFocus = () => cameras.flatMap((c) => {
+    const sh = c._cur, target = sh && (sh.fit ?? sh.follow ?? sh.center);
+    if (!c.world || target == null || target === 'all' || target === 'content' || !c.world.isConnected || c.world.closest('[data-mw-hidden]')) return [];
+    try { const M = c._markers(), b = c._box(target, M); return b ? [{ world: c.world, l: M.ox + b.x * M.k, t: M.oy + b.y * M.k, r: M.ox + (b.x + b.w) * M.k, b: M.oy + (b.y + b.h) * M.k }] : []; } catch (e) { return []; }
   });
   Object.assign(mw, {
     timeline: (scope, opts) => new Timeline(scope, opts),

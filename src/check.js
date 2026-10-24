@@ -102,6 +102,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   }
   window.__mwPrevBoxes = next;
   // Is a camera world moving right now? Labels the camera passes over on its way to the next shot are not framing mistakes.
+  const focus = (window.mw && mw.__cameraFocus) ? mw.__cameraFocus() : [];
   const prevCam = window.__mwPrevCam || new Map(), nextCam = new Map(), camMoving = new Set();
   for (const wEl of document.querySelectorAll('[data-mw-camera-world]')) {
     const r = wEl.getBoundingClientRect(), c = { x: r.left, y: r.top, s: r.width / (wEl.offsetWidth || r.width || 1) };
@@ -208,7 +209,10 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
     const cropMeant = !!el.closest('[data-check~="crop-ok"]');
     const camWorld = el.closest('[data-mw-camera-world]');
-    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5 && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
+    // (a label of the next part of the drawing that peeks in at the edge is not the shot's subject: only text that
+    //  touches what the current shot frames is judged)
+    const offFocus = camWorld && focus.some((f) => f.world === camWorld) && !focus.some((f) => f.world === camWorld && tu.right > f.l && tu.left < f.r && tu.bottom > f.t && tu.top < f.b);
+    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5 && !offFocus && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
     if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
     else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {

@@ -316,6 +316,24 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     }
     if (hit) out.push({ severity: 'warning', code: 'text-over-line', selector: sel(t.el), text: snippet(t.el), message: 'A line runs through this text: ' + sel(hit) + '.', minSpan: 0.3, fix: 'Move the label off the line (or the line around it), or give the label a paper-colored backing.' });
   }
+  // 5a. During a scene change: text of the old scene and text of the new one on top of each other, both half visible
+  //     (a crossfade of two headlines reads as a smudge; judges call it "ghosted text")
+  if (transitioning) {
+    const sceneOf = (e) => { for (let c = e; c && c.parentElement; c = c.parentElement) if (c.parentElement.hasAttribute('data-sequence')) return c; return null; };
+    const vis = texts.filter((t) => !t.hidden && !t.covered && t.op >= 0.25 && sceneOf(t.el));
+    const seen = new Set();
+    for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
+      const a = vis[i], b = vis[j], sa = sceneOf(a.el), sb = sceneOf(b.el);
+      if (sa === sb || seen.has(a.el) || seen.has(b.el)) continue;
+      let ov = 0;
+      for (const ra0 of a.rs) for (const rb0 of b.rs) ov += area(inter(tight(ra0), tight(rb0)));
+      const ar = (t) => t.rs.reduce((m, r0) => m + area(tight(r0)), 0);
+      if (ov > 0.2 * Math.min(ar(a), ar(b)) && Math.min(a.op, b.op) >= 0.3) {
+        seen.add(a.el); seen.add(b.el);
+        out.push({ severity: 'warning', code: 'ghost-overlap', selector: sel(b.el), text: snippet(b.el), message: 'During the scene change, this text and "' + snippet(a.el) + '" from the other scene are both half visible on top of each other.', minSpan: 0.15, fix: 'Use a transition that does not stack the two scenes (push-*, whip-*, cover-*, wipe-*, iris), move one of the texts, or let the old text leave before the new one enters.' });
+      }
+    }
+  }
   // 5. Overlapping text (settled, visible, not covered)
   const live = texts.filter((t) => !t.moving && !t.hidden && !t.covered);
   for (let i = 0; i < live.length; i++) {

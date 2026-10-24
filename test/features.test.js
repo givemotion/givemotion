@@ -354,3 +354,9 @@ test('check: empty-start when the first half second shows only a gradient backgr
   assert.ok((await check(mk(0.7))).issues.some((i) => i.code === 'empty-start'));
   assert.ok(!(await check(mk(0))).issues.some((i) => i.code === 'empty-start'));
 });
+
+test('check: ghost-overlap when a crossfade stacks two headlines, not for a push', { skip }, async () => {
+  const d = tmp(), mk = (tr) => { const f = join(d, `${tr}.html`); writeFileSync(f, page(`<main data-sequence><section class="scene" data-duration="2"><h1 style="font-size:70px;text-align:center;margin-top:120px">HTML IN</h1></section><section class="scene" data-duration="2" data-transition="${tr} 0.8"><h1 style="font-size:70px;text-align:center;margin-top:120px">VIDEO OUT</h1></section></main>`)); return f; };
+  assert.ok((await check(mk('fade'))).issues.some((i) => i.code === 'ghost-overlap'));
+  assert.ok(!(await check(mk('push-left'))).issues.some((i) => i.code === 'ghost-overlap'));
+});

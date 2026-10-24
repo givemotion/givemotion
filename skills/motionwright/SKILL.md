@@ -276,6 +276,7 @@ You can also write a composition as a React component in `video.jsx`; every comm
 | `text-overflows-box` | Text spills out of its card/background. Add padding/width or shorten. |
 | `text-overlap` | Two texts on top of each other while settled. Move one or change timing. |
 | `unsafe-zone` | Text where the app's buttons and titles cover vertical video (with `data-safe-zone` or `check --safe-zone shorts`). Move it inward, or `data-check="safe-ok"`. |
+| `ghost-overlap` | During a scene change, text of both scenes is half visible on top of each other (a smudge). Use push/whip/cover/wipe/iris, move one text, or let the old one leave first. |
 | `text-over-line` | A visible stroke (an arrow, a line, the edge of a box) runs through the letters. Move the label or the line, or give the label a backing. |
 | `empty-frame` | Almost nothing on screen for a second or more in the middle of the video (a camera crossing empty space between parts, a gap between scenes, a zoom so far out that everything is a speck). |
 | `still` | Little changes on screen for 2.5 s or more (1.9 s at the very end: a dead end card): nothing enters, leaves or moves, and a slow float or a faint glow does not count. Viewers read it as the video stalling. Cut the hold, start the next beat sooner, or end earlier. |

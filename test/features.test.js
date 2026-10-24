@@ -500,3 +500,62 @@ test('mw.chart.line: values and points at known times, holds, callouts enter on 
   assert.equal(fa.length, 105);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
 });
+
+test('morph: inline pairs fly; different content hands over (old out, then new in); same content keeps both solid', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence data-transition="morph 1 linear">
+    <section class="scene" data-duration="2"><p style="font-size:40px;margin:40px">Total <span id="a1" data-morph="n">48,000</span></p><div id="c1" data-morph="c" style="position:absolute;left:20px;top:200px;width:80px;height:80px;background:#f55">GO</div></section>
+    <section class="scene" data-duration="2"><p style="font-size:30px;margin:260px 0 0 300px">1,200 → <b id="b1" data-morph="n">48,000 users</b></p><div id="c2" data-morph="c" style="position:absolute;left:500px;top:40px;width:80px;height:80px;background:#f55">GO</div></section>
+  </main>`));
+  const at = (t) => evalAt(f, t, `JSON.stringify(['a1', 'b1', 'c1', 'c2'].map((id) => { const e = document.getElementById(id), r = e.getBoundingClientRect(), cs = getComputedStyle(e); return { x: r.left + r.width / 2, y: r.top + r.height / 2, f: +cs.opacity, disp: cs.display }; }))`).then(JSON.parse);
+  const [a0] = await at(0.5);
+  assert.equal(a0.disp, 'inline-block'); // an inline <span> cannot be moved by translate/scale
+  const [a, b, c1, c2] = await at(1.5); // halfway through the transition (it runs 1 to 2)
+  assert.ok(Math.abs(a.x - b.x) < 2 && Math.abs(a.y - b.y) < 2, 'the pair flies together');
+  assert.ok(Math.abs(a.x - a0.x) > 50, 'the old text left its place');
+  assert.ok(a.f < 0.2, 'old text mostly gone halfway: ' + a.f);
+  assert.equal(c1.f, 1); assert.equal(c2.f, 1); // same content: no hand-over fade
+  assert.ok(Math.abs(c1.x - c2.x) < 2);
+  const [a2, b2] = await at(1.1);
+  assert.ok(a2.f > 0.8 && b2.f < 0.05, 'early: old solid, new hidden ' + a2.f + ' ' + b2.f);
+  const [, b3] = await at(1.85);
+  assert.ok(b3.f > 0.95, 'late: new one solid ' + b3.f);
+});
+
+test('fly: starts on the source box (measured where both rest, also in a later scene) and lands home', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence>
+    <section class="scene" id="s1" data-duration="1"></section>
+    <section class="scene" id="s2" data-duration="3">
+      <div data-enter="fade-up 0.6"><div id="slot" style="position:absolute;left:400px;top:250px;width:200px;height:60px;background:#345"></div></div>
+      <div id="ev" style="position:absolute;left:50%;top:30%;width:100px;height:100px;transform:translate(-50%,-50%);background:#48f"></div>
+      <div id="sq" style="position:absolute;left:40px;top:40px;width:50px;height:50px;background:#f84"></div>
+      <div id="src2" style="position:absolute;left:500px;top:40px;width:100px;height:100px"></div>
+    </section></main>
+    <script>mw.fly('#ev', { from: '#slot', at: 1, duration: 1, ease: 'linear' }); mw.timeline('#s2').fly('#sq', { from: '#src2', duration: 1, ease: 'linear', hideBefore: false }, 0.5);</script>`));
+  const at = (t) => evalAt(f, t, `JSON.stringify(['ev', 'slot', 'sq'].map((id) => { const e = document.getElementById(id), r = e.getBoundingClientRect(); return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width, h: r.height, vis: getComputedStyle(e).visibility }; }))`).then(JSON.parse);
+  const [ev0, , sq0] = await at(1.5); // s2 starts at 1: ev waits hidden, sq sits on its source
+  assert.equal(ev0.vis, 'hidden');
+  assert.ok(Math.abs(sq0.cx - 550) < 1 && Math.abs(sq0.cy - 90) < 1 && Math.abs(sq0.w - 100) < 1, JSON.stringify(sq0));
+  const [ev, slot] = await at(2);
+  assert.equal(ev.vis, 'visible');
+  assert.ok(Math.abs(ev.cx - slot.cx) < 1 && Math.abs(ev.cy - slot.cy) < 1, JSON.stringify([ev, slot]));
+  assert.ok(Math.abs(ev.h - 60) < 1 && Math.abs(ev.w - 60) < 1, 'other proportions: scaled evenly to fit inside the source ' + JSON.stringify(ev));
+  const [ev2, , sq2] = await at(3.5);
+  assert.ok(Math.abs(ev2.cx - 320) < 1 && Math.abs(ev2.cy - 108) < 1 && Math.abs(ev2.w - 100) < 1, JSON.stringify(ev2));
+  assert.ok(Math.abs(sq2.cx - 65) < 1 && Math.abs(sq2.w - 50) < 1);
+});
+
+test('morph hand-over and fly render the same with 1 and 2 workers', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence data-transition="morph 0.6">
+    <section class="scene" data-duration="1"><div id="g" data-morph="g" style="position:absolute;left:40px;top:40px;font-size:60px">&lt;/&gt;</div><div id="slot" style="position:absolute;left:400px;top:200px;width:160px;height:60px;background:#345"></div><div id="ev" style="position:absolute;left:60px;top:220px;width:90px;height:90px;background:#48f"></div></section>
+    <section class="scene" data-duration="1"><svg data-morph="g" viewBox="0 0 10 10" style="position:absolute;left:300px;top:120px;width:120px;height:120px"><circle cx="5" cy="5" r="5" fill="#fc3"/></svg></section>
+  </main><script>mw.fly('#ev', { from: '#slot', at: 0.1, duration: 0.5 });</script>`));
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, workers: 1, ...quiet });
+  await render(f, { output: b, workers: 2, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.ok(fa.length >= 40);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
+});

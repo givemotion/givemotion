@@ -34,6 +34,8 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       const cs = getComputedStyle(cur);
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') return 0;
       op *= parseFloat(cs.opacity);
+      // fades the runtime adds as filter: opacity() (a morph's old scene, a morph pair handing over)
+      if (cs.filter !== 'none' && cs.filter.includes('opacity(')) for (const m of cs.filter.matchAll(/opacity\(([\d.]+)(%?)\)/g)) op *= parseFloat(m[1]) / (m[2] ? 100 : 1);
       if (op < 0.04) return 0;
       cur = cur.parentElement;
     }
@@ -197,7 +199,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     t.covered = cov.n > 0 && cov.hits === cov.n;
     if (t.moving || t.hidden || t.covered) continue;
     // Partly hidden behind a shape or box that is drawn on top of it
-    if (cov.hits > 0 && cov.by && t.op >= 0.5 && !transitioning && !ignored(cov.by) && !cov.by.closest('[data-mw-internal]')) {
+    // (something flying over it on its way somewhere does not count)
+    const passing = (c) => inAnim(c) || texts.some((o) => o.moving && (o.el === c || c.contains(o.el)));
+    if (cov.hits > 0 && cov.by && t.op >= 0.5 && !transitioning && !ignored(cov.by) && !cov.by.closest('[data-mw-internal]') && !passing(cov.by)) {
       out.push({ severity: 'warning', code: 'text-covered', selector: sel(el), text: snippet(el), message: 'Part of the text is hidden behind ' + sel(cov.by) + ', which is drawn on top of it.', minSpan: 0.3, fix: 'Move one of them, or put the text above it (z-index, or later in the HTML).' });
     }
     // Inside a camera world (or data-check="crop-ok"), being cut by the frame edge is framing, not a mistake.
@@ -232,7 +236,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
         const slack = 2, vslack = 0.3 * parseFloat(cs.fontSize);
         if ((u.right > r.right + slack || u.left < r.left - slack || u.bottom > r.bottom + vslack || u.top < r.top - vslack) && !reportedBox.has(anc)) {
           reportedBox.add(anc);
-          out.push({ severity: 'warning', code: 'text-overflows-box', selector: sel(el), text: snippet(el), message: 'Text spills outside its box ' + sel(anc) + '.', fix: 'Add padding/width to the box, shorten the text, or reduce font-size.' });
+          out.push({ severity: 'warning', code: 'text-overflows-box', selector: sel(el), text: snippet(el), message: 'Text spills outside its box ' + sel(anc) + '.', minSpan: 0.15, fix: 'Add padding/width to the box, shorten the text, or reduce font-size.' });
         }
         break;
       }
@@ -325,6 +329,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     for (let i = 0; i < vis.length; i++) for (let j = i + 1; j < vis.length; j++) {
       const a = vis[i], b = vis[j], sa = sceneOf(a.el), sb = sceneOf(b.el);
       if (sa === sb || seen.has(a.el) || seen.has(b.el)) continue;
+      // the two halves of a morph pair fly together on purpose
+      const ma = a.el.closest('[data-morph]'), mb = b.el.closest('[data-morph]');
+      if (ma && mb && ma.getAttribute('data-morph') === mb.getAttribute('data-morph')) continue;
       let ov = 0;
       for (const ra0 of a.rs) for (const rb0 of b.rs) ov += area(inter(tight(ra0), tight(rb0)));
       const ar = (t) => t.rs.reduce((m, r0) => m + area(tight(r0)), 0);
@@ -349,7 +356,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       for (const ra0 of a.rs) for (const rb0 of b.rs) ov += area(inter(tight(ra0), tight(rb0)));
       const ar = (t) => t.rs.reduce((s, r) => s + r.width * r.height * 0.58, 0);
       if (ov > 0.12 * Math.min(ar(a), ar(b))) {
-        out.push({ severity: 'warning', code: 'text-overlap', selector: sel(a.el), text: snippet(a.el), message: 'Text overlaps other text: ' + sel(b.el) + ' ("' + snippet(b.el) + '").', fix: 'Move one of them, or make sure they are not visible at the same time.' });
+        out.push({ severity: 'warning', code: 'text-overlap', selector: sel(a.el), text: snippet(a.el), message: 'Text overlaps other text: ' + sel(b.el) + ' ("' + snippet(b.el) + '").', minSpan: 0.15, fix: 'Move one of them, or make sure they are not visible at the same time.' });
       }
     }
   }

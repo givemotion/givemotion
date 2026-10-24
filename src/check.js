@@ -211,7 +211,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const camWorld = el.closest('[data-mw-camera-world]');
     // (a label of the next part of the drawing that peeks in at the edge is not the shot's subject: only text that
     //  touches what the current shot frames is judged)
-    const offFocus = camWorld && focus.some((f) => f.world === camWorld) && !focus.some((f) => f.world === camWorld && tu.right > f.l && tu.left < f.r && tu.bottom > f.t && tu.top < f.b);
+    const boxes = focus.filter((f) => f.world === camWorld && !f.overview);
+    const offFocus = camWorld && boxes.length && !boxes.some((f) => tu.right > f.l && tu.left < f.r && tu.bottom > f.t && tu.top < f.b);
+    const overview = camWorld && focus.some((f) => f.world === camWorld && f.overview);
     if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5 && !offFocus && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
     if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
@@ -249,7 +251,7 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const lineH = t.rs.reduce((m, r) => Math.max(m, r.height), 0);
     const scaleY = el.offsetHeight > 0 ? el.getBoundingClientRect().height / el.offsetHeight : 1;
     const visualFs = fs * (isFinite(scaleY) && scaleY > 0 ? scaleY : 1);
-    if (visualFs < 18 * PX && lineH > 0 && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'tiny-text', selector: sel(el), text: snippet(el), message: 'Text is ' + Math.round(visualFs) + 'px tall in a ' + W + 'x' + H + ' frame, which is hard to read in a video.', fix: 'Use at least ' + Math.round(24 * PX) + 'px (' + Math.round(28 * PX) + 'px+ for body text).' });
+    if (visualFs < 18 * PX && lineH > 0 && !overview && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'tiny-text', selector: sel(el), text: snippet(el), message: 'Text is ' + Math.round(visualFs) + 'px tall in a ' + W + 'x' + H + ' frame, which is hard to read in a video.', fix: 'Use at least ' + Math.round(24 * PX) + 'px (' + Math.round(28 * PX) + 'px+ for body text).' });
     t.fontPx = visualFs;
     t.bold = parseInt(cs.fontWeight, 10) >= 600;
     // (SVG text is painted with its fill, not its CSS color; a gradient fill is judged like clip-filled text: not at all)

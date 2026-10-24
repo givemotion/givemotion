@@ -1651,7 +1651,9 @@
   // what the current shot of each camera frames (its fit/follow target), in screen px; for check
   mw.__cameraFocus = () => cameras.flatMap((c) => {
     const sh = c._cur, target = sh && (sh.fit ?? sh.follow ?? sh.center);
-    if (!c.world || target == null || target === 'all' || target === 'content' || !c.world.isConnected || c.world.closest('[data-mw-hidden]')) return [];
+    if (!c.world || !c.world.isConnected || c.world.closest('[data-mw-hidden]')) return [];
+    if (sh && sh.overview) return [{ world: c.world, overview: true }]; // a wide shot of everything on purpose: small text is fine
+    if (target == null || target === 'all' || target === 'content') return [];
     try { const M = c._markers(), b = c._box(target, M); return b ? [{ world: c.world, l: M.ox + b.x * M.k, t: M.oy + b.y * M.k, r: M.ox + (b.x + b.w) * M.k, b: M.oy + (b.y + b.h) * M.k }] : []; } catch (e) { return []; }
   });
   Object.assign(mw, {

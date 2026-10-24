@@ -209,12 +209,10 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
     const cropMeant = !!el.closest('[data-check~="crop-ok"]');
     const camWorld = el.closest('[data-mw-camera-world]');
-    // (a label of the next part of the drawing that peeks in at the edge is not the shot's subject: only text that
-    //  touches what the current shot frames is judged)
-    const boxes = focus.filter((f) => f.world === camWorld && !f.overview);
-    const offFocus = camWorld && boxes.length && !boxes.some((f) => tu.right > f.l && tu.left < f.r && tu.bottom > f.t && tu.top < f.b);
+    // (a label of another part of the drawing that sits half in frame is still reported: judges and viewers read a
+    //  half-cut label as a mistake, whatever the shot is about)
     const overview = camWorld && focus.some((f) => f.world === camWorld && f.overview);
-    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5 && !offFocus && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view (more padding, or move the label). If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
+    if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.5 && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view or fully out (more padding, a slightly different center, or move the label); a neighbour half in frame reads as a mistake. If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
     if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
     else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
@@ -581,7 +579,8 @@ function stillStretches(change, info, from, to) {
   const flush = (end, atEnd) => {
     if (start == null) return;
     const len = end - start;
-    if (len >= 2.5 - 1e-6) {
+    // (an end card that sits still for ~2 s already reads as dead air: judges named it in most videos of round 8)
+    if (len >= (atEnd ? 1.9 : 2.5) - 1e-6) {
       const r = (x) => Math.round(x * 100) / 100;
       out.push({ severity: 'warning', code: 'still', time: r(start), until: r(end), ranges: [[r(start), r(end)]],
         message: 'Little changes on screen from ' + start.toFixed(1) + ' s to ' + end.toFixed(1) + ' s (' + len.toFixed(1) + ' s' + (atEnd ? ', at the end' : '') + '). Viewers read this as the video stalling.',

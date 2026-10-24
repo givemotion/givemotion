@@ -131,7 +131,7 @@ test('sketch: data-sketch shapes are rough, seeded and keep their id; mw.connect
   const v = await evalAt(f, 1.5, `(() => { const r = document.getElementById('r'); const p = document.querySelector('.mw-connect path').getAttribute('d').match(/-?[\\d.]+/g).map(Number);
     return { tag: r.tagName, paths: r.querySelectorAll('path').length, same: mw.sketch.rect(0, 0, 100, 50, { seed: 3 }) === mw.sketch.rect(0, 0, 100, 50, { seed: 3 }), differ: mw.sketch.rect(0, 0, 100, 50, { seed: 3 }) !== mw.sketch.rect(0, 0, 100, 50, { seed: 4 }), end: p.slice(-2) }; })()`);
   assert.equal(v.tag, 'g');
-  assert.equal(v.paths, 2, 'outline + hatching');
+  assert.equal(v.paths, 4, 'hatching + two passes + the hidden guide');
   assert.ok(v.same && v.differ);
   // the line ends on the left edge of #b (moved down by 100px) minus the gap (10px at 1080p = 3.3px here)
   assert.ok(Math.abs(v.end[0] - 396.8) < 2 && Math.abs(v.end[1] - 308.6) < 2, 'end ' + v.end);

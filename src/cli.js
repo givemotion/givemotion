@@ -26,6 +26,7 @@ Look (for AI review)
                                 overlaps, tiny text, low contrast, broken assets
   snapshot [file] -o dir        Key moments as PNGs + one contact sheet (sheet.png)
   inspect [file]                Timeline as JSON: size, fps, duration, clips, media
+  audio <file>                  Tempo, beats, bar starts and big hits of a sound file
 
 Share
   bundle [file] -o dir          Standalone page that plays in any browser, plus
@@ -80,8 +81,14 @@ const CMD_HELP = {
   --transparent     Show a checkerboard behind (auto-detected when the page has no background)
   --json            Machine-readable output`,
   check: `motionwright check [file.html] [--json] [--samples 10] [--transparent]
+  --at 7.5          Check one moment only (fast, after a fix)
+  --from 6 --to 9   Check part of the video
+  --fast            Fewer samples (quicker, may miss short problems)
+  Moving or fading text is skipped automatically; problems must last ~0.25s to count.
+  Mark decorative copies with data-check="ignore" (or aria-hidden="true").
   Exit code 1 when there are errors. Warnings do not fail.`,
   bundle: 'motionwright bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), mw-player.js and player.html.\n  Embed: <script src="mw-player.js"></script> <mw-player src="index.html" controls autoplay loop muted></mw-player>',
+  audio: 'motionwright audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
   inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), media, issues.',
   dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
   init: 'motionwright init [dir] [--force]',
@@ -90,7 +97,7 @@ const CMD_HELP = {
   bench: 'motionwright bench [file.html] [--workers n] [--json]',
 };
 
-const BOOLS = ['json', 'force', 'transparent', 'muted', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
+const BOOLS = ['json', 'force', 'transparent', 'muted', 'fast', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -106,6 +113,7 @@ async function main() {
     case 'check': return cmdCheck(args);
     case 'inspect': return cmdInspect(args);
     case 'bundle': case 'export': return cmdBundle(args);
+    case 'audio': case 'beats': return cmdAudio(args);
     case 'dev': case 'preview': case 'studio': return cmdDev(args);
     case 'init': return cmdInit(args);
     case 'blocks': return cmdBlocks(args);
@@ -198,7 +206,7 @@ async function cmdSnapshot(args) {
 async function cmdCheck(args) {
   const { check, formatReport } = await import('./check.js');
   try {
-    const rep = await check(inputOf(args), { ...commonOpts(args), transparent: args.transparent, contrastSamples: args.samples ? +args.samples : undefined });
+    const rep = await check(inputOf(args), { ...commonOpts(args), transparent: args.transparent, contrastSamples: args.samples ? +args.samples : undefined, at: args.at, from: args.from, to: args.to, fast: args.fast });
     if (args.json) console.log(JSON.stringify(rep, null, 2));
     else console.log(formatReport(rep, { file: inputOf(args) }));
     if (!rep.ok) process.exitCode = 1;
@@ -210,6 +218,16 @@ async function cmdInspect(args) {
   try {
     const info = await inspect(inputOf(args), commonOpts(args));
     console.log(JSON.stringify(info, null, 2));
+  } catch (e) { fail(e, args); }
+}
+
+async function cmdAudio(args) {
+  const { analyzeAudio, formatAudio } = await import('./audio-cli.js');
+  try {
+    const f = args._[0];
+    if (!f) throw new Error('Usage: motionwright audio music.mp3 [--json]');
+    const r = await analyzeAudio(f, { fps: args.fps ? +args.fps : 30, chrome: args.chrome });
+    console.log(args.json ? JSON.stringify(r, null, 2) : formatAudio(r));
   } catch (e) { fail(e, args); }
 }
 

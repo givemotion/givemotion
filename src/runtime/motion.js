@@ -341,7 +341,7 @@
   }
   function decompose(el) {
     const base = { x: 0, y: 0, z: 0, xPercent: 0, yPercent: 0, rotate: 0, rotateX: 0, rotateY: 0, skewX: 0, skewY: 0, scale: 1, scaleX: 1, scaleY: 1 };
-    if (!(el instanceof Element)) return base;
+    if (!el || !(el instanceof Element)) return base;
     const tf = el instanceof SVGElement && !(el instanceof SVGSVGElement) ? el.getAttribute('transform') && null : getComputedStyle(el).transform;
     if (!tf || tf === 'none') return base;
     const m = /matrix\(([^)]+)\)/.exec(tf);
@@ -527,7 +527,13 @@
       }
       for (const tm of tracks.values()) {
         const el = tm.el;
-        tm.tfBase = decompose(el);
+        // Keep the element's own CSS transform (e.g. translate(-50%,-50%) centering) and add the tween on top.
+        tm.tfBase = decompose(null);
+        tm.cssPrefix = '';
+        if (el instanceof Element && [...tm.props.keys()].some((k) => k in TF || k === 'transformPerspective')) {
+          const tf = el instanceof SVGElement && !(el instanceof SVGSVGElement) ? 'none' : getComputedStyle(el).transform;
+          if (tf && tf !== 'none' && !/^matrix\(1, 0, 0, 1, 0, 0\)$/.test(tf)) tm.cssPrefix = tf + ' ';
+        }
         tm.hasTF = [...tm.props.keys()].some((k) => k in TF || k === 'transformPerspective');
         tm.anchor = this.opts.global ? null : (this.scope || (el instanceof Element ? el : null));
         tm.inline = el instanceof Element ? {} : null;
@@ -571,14 +577,21 @@
     _apply(T) {
       this._resolve();
       let changed = false;
+      const clipsNow = I.clips();
+      const perClip = new Map(); // many targets share one clip: work out its time once per frame
       for (const tm of this.tracks.values()) {
         const el = tm.el;
-        // Skip elements whose clip is not on screen (they get updated when they appear).
-        if (tm.anchor) {
-          const c = I.nearestClip(tm.anchor);
-          if (c) { const vt = I.mapT(c.parent || null, T); if (vt < c.start - 1e-9 || vt >= c.end - 1e-9) continue; }
+        if (tm.clipsRef !== clipsNow) { tm.clipsRef = clipsNow; tm.clip = tm.anchor ? I.nearestClip(tm.anchor) : null; }
+        const c = tm.clip;
+        let ct = perClip.get(c || tm.anchor);
+        if (!ct) {
+          // Skip elements whose clip is not on screen (they get updated when they appear).
+          const vis = !c || (() => { const vt = I.mapT(c.parent || null, T); return vt >= c.start - 1e-9 && vt < c.end - 1e-9; })();
+          ct = { vis, t: vis ? this._localTime(tm.anchor, T) : 0 };
+          perClip.set(c || tm.anchor, ct);
         }
-        const t = this._localTime(tm.anchor, T);
+        if (!ct.vis) continue;
+        const t = ct.t;
         const vals = {};
         for (const [k, segs] of tm.props) {
           let seg = null;
@@ -601,7 +614,7 @@
               if (it.yoyo && cyc % 2) p = 1 - p;
             }
             v = seg.interp(it.ease(Math.max(0, Math.min(1, p))));
-            if (it.onUpdate && k === Object.keys(it.props)[0]) { try { it.onUpdate.call(it, p, el, it.i); } catch (e) { I.pageError(e); } }
+            if (it.onUpdate && k === (it.firstKey ??= Object.keys(it.props)[0])) { try { it.onUpdate.call(it, p, el, it.i); } catch (e) { I.pageError(e); } }
           }
           vals[k] = v;
         }
@@ -634,17 +647,22 @@
       for (const k of Object.keys(vals)) if ((k in TF || k === 'transformPerspective') && vals[k] !== undefined) { c[k] = typeof vals[k] === 'number' ? vals[k] : parseFloat(vals[k]); any = true; }
       if (any) {
         const sx = c.scale * c.scaleX, sy = c.scale * c.scaleY;
-        let s = '';
+        let s = tm.cssPrefix || '';
         if (c.transformPerspective) s += `perspective(${r4(c.transformPerspective)}px) `;
-        s += `translate3d(${r4(c.x)}px, ${r4(c.y)}px, ${r4(c.z)}px)`;
+        // 2D unless 3D is really used: 3D transforms give every element its own layer, which is slower to paint
+        s += c.z || c.rotateX || c.rotateY || c.transformPerspective ? `translate3d(${r4(c.x)}px, ${r4(c.y)}px, ${r4(c.z)}px)` : `translate(${r4(c.x)}px, ${r4(c.y)}px)`;
         if (c.xPercent || c.yPercent) s += ` translate(${r4(c.xPercent)}%, ${r4(c.yPercent)}%)`;
         if (c.rotate) s += ` rotate(${r4(c.rotate)}deg)`;
         if (c.rotateY) s += ` rotateY(${r4(c.rotateY)}deg)`;
         if (c.rotateX) s += ` rotateX(${r4(c.rotateX)}deg)`;
         if (c.skewX || c.skewY) s += ` skew(${r4(c.skewX)}deg, ${r4(c.skewY)}deg)`;
         if (sx !== 1 || sy !== 1) s += ` scale(${r4(sx)}, ${r4(sy)})`;
-        if (el instanceof SVGElement && !(el instanceof SVGSVGElement) && !el.style.transformBox) el.style.transformBox = 'fill-box';
-        if (el instanceof SVGElement && !(el instanceof SVGSVGElement) && !el.style.transformOrigin && !('transformOrigin' in vals)) el.style.transformOrigin = '50% 50%';
+        // SVG shapes turn and scale around their own center, unless an origin was set (then leave it exactly as written).
+        if (el instanceof SVGElement && !(el instanceof SVGSVGElement) && tm.svgOrigin === undefined) {
+          const cso = getComputedStyle(el);
+          tm.svgOrigin = !el.style.transformOrigin && !('transformOrigin' in vals) && /^0px 0px/.test(cso.transformOrigin) && cso.transformBox === 'view-box';
+          if (tm.svgOrigin) { el.style.transformBox = 'fill-box'; el.style.transformOrigin = '50% 50%'; }
+        }
         if (setCached(tm, 'transform', s, (v) => { el.style.transform = v; })) changed = true;
       }
     }
@@ -668,7 +686,8 @@
         if (Array.isArray(v)) [a, b] = v; else if (typeof v === 'string') { const m = v.trim().split(/\s+/).map(parseFloat); if (m.length > 1) [a, b] = m; else b = m[0]; }
         if (!el.hasAttribute('pathLength')) el.setAttribute('pathLength', '1');
         const len = Math.max(0, b - a);
-        if (setCached(tm, k, r4(a) + ' ' + r4(len), () => { el.style.strokeDasharray = `${r4(len)} ${r4(1 + len + 1)}`; el.style.strokeDashoffset = String(r4(-a)); })) changed = true;
+        // at zero length, round line caps would still paint a dot: hide the stroke then
+        if (setCached(tm, k, r4(a) + ' ' + r4(len), () => { el.style.strokeDasharray = `${r4(len)} ${r4(1 + len + 1)}`; el.style.strokeDashoffset = String(r4(-a)); el.style.strokeOpacity = len <= 0.0005 ? '0' : ''; })) changed = true;
         continue;
       }
       if (k === 'morph') { if (v !== undefined && setCached(tm, k, v, (d) => el.setAttribute('d', d))) changed = true; continue; }
@@ -753,6 +772,7 @@
         const a = I.real.animate.call(el, kf, { duration: dur * 1000, delay: from * 1000, easing: I.cssEasing(ease), fill: 'both', composite: 'add' });
         a.pause();
         // register with the runtime clock
+        a.__mwCamera = true;
         I.addOwnAnim(a, cs);
       }
     }
@@ -953,10 +973,59 @@
   else mw.wait(setupAnimatedImages());
 
   // ---------------------------------------------------------------------------
+  // Fast big blurs. A large CSS blur (soft glow blobs) is very slow to paint at full size.
+  // For plain shapes (no children, no text) we paint the blur at 1/k size and scale it up,
+  // which looks the same because the result is already very soft. Opt out: data-mw-exact.
+  // ---------------------------------------------------------------------------
+  function optimizeBlurs() {
+    const els = document.body ? document.body.getElementsByTagName('*') : [];
+    for (const el of els) {
+      if (el.__mwBlur || el.hasAttribute('data-mw-exact') || el.children.length || (el.textContent || '').trim() || !(el instanceof HTMLElement)) continue;
+      const cs = getComputedStyle(el);
+      const m = /^blur\(([\d.]+)px\)$/.exec(cs.filter);
+      if (!m) continue;
+      const r = parseFloat(m[1]);
+      if (r < 24) continue;
+      const w = el.offsetWidth, h = el.offsetHeight;
+      if (!w || !h) continue;
+      if (/px/.test(cs.backgroundImage) || cs.boxShadow !== 'none' || cs.backdropFilter !== 'none' || (cs.borderStyle !== 'none' && parseFloat(cs.borderWidth) > 0)) continue;
+      // skip if something animates its look (not just transform/opacity)
+      let animated = false;
+      try { for (const an of el.getAnimations()) { const kf = an.effect && an.effect.getKeyframes ? an.effect.getKeyframes() : []; for (const k of kf) for (const p of Object.keys(k)) if (!/^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|left|top|right|bottom|offsetDistance|offsetPath)$/.test(p)) animated = true; } } catch (e) {}
+      if (animated) continue;
+      const k = Math.min(8, Math.max(2, Math.floor(r / 10)));
+      el.__mwBlur = true;
+      // Bake: a small SVG image (shape + blur) is decoded once; moving it later is just copying pixels.
+      const sw = w / k, sh = h / k, br = r / k, pad = Math.ceil(br * 3);
+      const radius = cs.borderRadius.split(' ').map((v) => (v.endsWith('%') ? v : (parseFloat(v) / k) + 'px')).join(' ');
+      const esc = (x) => String(x).replace(/&/g, '&amp;').replace(/"/g, "'").replace(/</g, '&lt;');
+      const style = `position:absolute;left:${pad}px;top:${pad}px;width:${sw}px;height:${sh}px;background-color:${cs.backgroundColor};background-image:${cs.backgroundImage};background-size:${cs.backgroundSize};background-position:${cs.backgroundPosition};background-repeat:${cs.backgroundRepeat};border-radius:${radius};filter:blur(${br}px)`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sw + 2 * pad}" height="${sh + 2 * pad}"><foreignObject x="0" y="0" width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="${esc(style)}"></div></foreignObject></svg>`;
+      // An SVG image would be re-rasterized at full size on every paint, so draw it once into a small
+      // canvas: a canvas is a fixed bitmap, and scaling it up costs almost nothing.
+      const cv = document.createElement('canvas');
+      cv.setAttribute('data-mw-internal', '');
+      cv.width = Math.ceil(sw + 2 * pad); cv.height = Math.ceil(sh + 2 * pad);
+      cv.style.cssText = `position:absolute;left:${-pad * k}px;top:${-pad * k}px;width:${cv.width * k}px;height:${cv.height * k}px;pointer-events:none;display:block`;
+      const img = new Image();
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      const done = img.decode().then(() => {
+        cv.getContext('2d').drawImage(img, 0, 0);
+        el.style.setProperty('filter', 'none', 'important');
+        el.style.setProperty('background', 'transparent', 'important');
+        if (cs.position === 'static') el.style.position = 'relative';
+        el.style.overflow = 'visible';
+        el.appendChild(cv);
+      }).catch(() => {});
+      I.pendingWaits.push(done);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Hook into the runtime
   // ---------------------------------------------------------------------------
   I.hooks.preinit.push(setupFit);
-  I.hooks.init.push(() => { initDone = true; setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
+  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
   I.hooks.post.push(updateMorphs);
   I.hooks.seek.push((T) => {

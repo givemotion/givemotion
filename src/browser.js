@@ -113,9 +113,12 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
   ];
   if (platform() === 'linux' && (process.getuid && process.getuid() === 0 || process.env.MOTIONWRIGHT_NO_SANDBOX)) args.push('--no-sandbox');
   const mode = gl === 'auto' ? (hasGPU() ? 'gpu' : 'swiftshader') : gl;
-  if (mode === 'swiftshader') args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist');
+  // No real GPU: WebGL still runs on SwiftShader, but page compositing stays in Chrome's software
+  // path, which is 1.5-4x faster than compositing through an emulated GPU.
+  if (mode === 'swiftshader') args.push('--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-compositing');
   else if (mode === 'none') args.push('--disable-gpu');
   else args.push('--ignore-gpu-blocklist', '--enable-gpu-rasterization');
+  if (process.env.MOTIONWRIGHT_CHROME_ARGS) args.push(...process.env.MOTIONWRIGHT_CHROME_ARGS.split(/\s+/).filter(Boolean));
   if (beginFrame) {
     args.push('--deterministic-mode', '--enable-begin-frame-control', '--disable-threaded-animation', '--disable-threaded-scrolling',
       '--disable-checker-imaging', '--disable-new-content-rendering-timeout', '--run-all-compositor-stages-before-draw', '--disable-image-animation-resync');

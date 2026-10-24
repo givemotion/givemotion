@@ -176,6 +176,12 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'max-age=31536000, immutable' });
         return createReadStream(f).pipe(res);
       }
+      if (path === '/__mw_analyze') {
+        // Tiny page used by `motionwright audio <file>`
+        const src = JSON.stringify(u.searchParams.get('src') || '');
+        const fps = parseFloat(u.searchParams.get('fps')) || 30;
+        return send(res, 200, MIME['.html'], injectRuntime(`<!doctype html><html data-width="320" data-height="180" data-fps="${fps}" data-duration="1"><body><script>window.__mwA = mw.audio(${src});</script></body></html>`, { inlineConfig: { mode: 'render' } }), { 'Cache-Control': 'no-store' });
+      }
       if (path === '/__mw/pcm') {
         // Mono 32-bit float PCM of any audio/video file, for in-page analysis (mw.audio).
         const src = u.searchParams.get('src');

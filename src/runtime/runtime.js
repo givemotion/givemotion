@@ -73,6 +73,12 @@
     };
   }
   Math.random = makeRandom(CONFIG.seed);
+  function hashSeed(x) {
+    if (typeof x === 'number' && Number.isFinite(x)) x = String(x);
+    let h = 2166136261 >>> 0;
+    for (const ch of String(x)) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619) >>> 0; }
+    return h || 1;
+  }
 
   function runTimersUntil(T) {
     let guard = 0;
@@ -737,7 +743,7 @@
         if (en) {
           const nm = String(en).trim().split(/\s+/)[0];
           const m = parseMotion(en, el, 'data-enter', (PRESET_DEFAULTS[nm] || {}).dur ?? 0.6, (PRESET_DEFAULTS[nm] || {}).ease || 'out-expo');
-          if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).join(', ')); }
+          if (!PRESETS[m.name]) { report('error', 'bad-enter', `Unknown data-enter "${m.name}".`, el, 'Use one of: ' + Object.keys(PRESETS).filter((k) => !/^(zoom-near|flip-in|dip-in|clock|diagonal)$/.test(k)).join(', ')); }
           else {
             if (m.name === 'draw') prepDraw(tg);
             if (m.name === 'clock') prepClock(tg);
@@ -1442,7 +1448,10 @@
     ease: new Proxy({}, { get: (_, k) => easing(String(k).replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())) }),
     clamp: (v, a = 0, b = 1) => Math.min(b, Math.max(a, v)),
     lerp: (a, b, p) => a + (b - a) * p,
-    random: makeRandom,
+    // random('dot-3') → the same number in [0,1) every time for that seed (strings or numbers).
+    // random() → next value of the page's seeded Math.random. rng(seed) → a generator function.
+    random: (seed) => (seed === undefined || seed === null ? Math.random() : makeRandom(hashSeed(seed))()),
+    rng: (seed) => makeRandom(hashSeed(seed ?? 1)),
     ready, seek, inspect,
     // internal
     __issues: () => issues.slice(),

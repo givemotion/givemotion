@@ -14,9 +14,10 @@ async function autoTransparent(ctx, opts) {
 // ---------------------------------------------------------------------------
 // Page-side analysis (stringified and evaluated in the composition page)
 // ---------------------------------------------------------------------------
-const PAGE_ANALYZE = String.raw`(() => {
+const PAGE_ANALYZE = String.raw`((dt) => {
   const W = mw.width, H = mw.height, PX = mw.px;
   const out = [];
+  const ignored = (el) => !!el.closest('[data-check="ignore"],[aria-hidden="true"],[data-mw-internal]');
   const isTextEl = (el) => {
     // Emoji-only text is a picture, not reading text.
     for (const n of el.childNodes) if (n.nodeType === 3 && n.data.trim() && !/^[\s\p{Extended_Pictographic}‍️⃣]+$/u.test(n.data)) return true;
@@ -44,61 +45,118 @@ const PAGE_ANALYZE = String.raw`(() => {
   };
   const union = (rs) => rs.reduce((a, r) => a ? { left: Math.min(a.left, r.left), top: Math.min(a.top, r.top), right: Math.max(a.right, r.right), bottom: Math.max(a.bottom, r.bottom) } : { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, null);
   const sel = (el) => mw.__selector(el);
-  // Elements that are mid-animation right now are skipped (they are moving into place).
-  const moving = new Set();
+  // Glyph boxes are taller than the visible letters; shrink them for clip/overlap tests.
+  const tight = (r) => { const h = r.bottom - r.top; return { left: r.left, right: r.right, top: r.top + h * 0.2, bottom: r.bottom - h * 0.22, width: r.right - r.left, height: h * 0.58 }; };
+  const area = (r) => Math.max(0, r.right - r.left) * Math.max(0, r.bottom - r.top);
+  const inter = (a, b) => ({ left: Math.max(a.left, b.left), top: Math.max(a.top, b.top), right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom) });
+  // 1. Short animations (entrances, exits, transitions) mean "moving". Camera moves and long
+  //    looping/ambient animations do not: they would hide every problem.
+  const animating = new Set();
   for (const a of document.getAnimations()) {
     try {
+      if (a.__mwCamera) continue;
       const ct = a.effect.getComputedTiming();
       const lt = ct.localTime, d = ct.delay || 0, ad = ct.activeDuration;
-      if (ct.progress != null && lt > d && lt < d + ad && isFinite(ad)) moving.add(a.effect.target);
+      if (ct.progress != null && lt > d && lt < d + ad && isFinite(ad) && ad <= 2500) animating.add(a.effect.target);
     } catch (e) {}
   }
-  const isMoving = (el) => { for (let c = el; c; c = c.parentElement) if (moving.has(c)) return true; return false; };
-  // A scene transition (a direct child of a data-sequence animating) puts two scenes on screen at once.
-  const transitioning = [...moving].some((m) => m && m.parentElement && m.parentElement.hasAttribute('data-sequence'));
-  // Glyph boxes are taller than the visible letters; shrink them for overlap tests.
-  const tight = (r) => ({ left: r.left, right: r.right, top: r.top + r.height * 0.2, bottom: r.bottom - r.height * 0.22, width: r.width, height: r.height * 0.58 });
+  const inAnim = (el) => { for (let c = el; c; c = c.parentElement) if (animating.has(c)) return true; return false; };
+  const transitioning = [...animating].some((m) => m && m.parentElement && m.parentElement.hasAttribute('data-sequence'));
+  // 2. Motion from any code (timeline, React, onFrame): compare with the previous sample.
+  const prev = window.__mwPrevBoxes || new Map();
+  const next = new Map();
   const snippet = (el) => (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40);
   const texts = [];
   for (const el of document.body.querySelectorAll('*')) {
-    if (el.closest('[data-mw-hidden]')) continue;
+    if (el.closest('[data-mw-hidden]') || ignored(el)) continue;
     if (!isTextEl(el)) continue;
     const op = visible(el);
     if (!op) continue;
     const rs = textRects(el);
     if (!rs.length) continue;
     const u = union(rs);
-    texts.push({ el, rs, u, op, moving: isMoving(el) });
+    const box = { cx: (u.left + u.right) / 2, cy: (u.top + u.bottom) / 2, w: u.right - u.left, h: u.bottom - u.top, op };
+    next.set(el, box);
+    const p = prev.get(el);
+    let speedMoving = false;
+    if (p && dt > 0) {
+      const v = Math.hypot(box.cx - p.cx, box.cy - p.cy) / dt;
+      const sz = Math.abs(box.w - p.w) / Math.max(1, p.w) / dt + Math.abs(box.h - p.h) / Math.max(1, p.h) / dt;
+      const fo = Math.abs(box.op - p.op) / dt;
+      speedMoving = v > 40 * PX || sz > 0.25 || fo > 0.4;
+    }
+    texts.push({ el, rs, u, op, moving: inAnim(el) || speedMoving });
   }
-  const reportedBox = new Set(); // one report per container per frame
+  window.__mwPrevBoxes = next;
+  // Visible part of the text: inside the frame and inside every clipping ancestor (overflow or clip-path inset).
+  const clipBoxOf = (el) => {
+    let r = { left: -1e9, top: -1e9, right: 1e9, bottom: 1e9 }, by = null, masked = false;
+    for (let anc = el; anc && anc !== document.body; anc = anc.parentElement) {
+      const acs = getComputedStyle(anc);
+      if (acs.maskImage && acs.maskImage !== 'none' || acs.webkitMaskImage && acs.webkitMaskImage !== 'none') masked = true;
+      if (acs.clipPath && acs.clipPath !== 'none') {
+        const m = /inset\(([^)]*)\)/.exec(acs.clipPath);
+        if (m) {
+          const b = anc.getBoundingClientRect();
+          const v = m[1].replace(/round.*/, '').trim().split(/\s+/).map((x) => ({ n: parseFloat(x) || 0, pct: x.endsWith('%') }));
+          const [t0, r0 = t0, b0 = t0, l0 = r0] = v;
+          const f = (x, size) => (x.pct ? (x.n / 100) * size : x.n);
+          const box = { left: b.left + f(l0, b.width), top: b.top + f(t0, b.height), right: b.right - f(r0, b.width), bottom: b.bottom - f(b0, b.height) };
+          r = inter(r, box);
+        } else masked = true;
+      }
+      if (/(hidden|clip)/.test(acs.overflowX + acs.overflowY) && !anc.classList.contains('scene') && anc.getAttribute('data-sequence') == null) {
+        const b = anc.getBoundingClientRect();
+        if (b.width > 0 && b.height > 0) { const n = inter(r, b); if (area(n) < area(r) - 1 && !by) by = anc; r = n; }
+      }
+    }
+    return { r, by, masked };
+  };
+  // Is the text covered by something drawn on top of it (another layer, a wipe, an iris)?
+  const covered = (t) => {
+    if (getComputedStyle(t.el).pointerEvents === 'none') return false;
+    let hits = 0, n = 0;
+    for (const q of t.rs.slice(0, 3)) {
+      const x = (q.left + q.right) / 2, y = (q.top + q.bottom) / 2;
+      if (x < 0 || y < 0 || x > W || y > H) continue;
+      n++;
+      const top = document.elementFromPoint(x, y);
+      if (!top || top === t.el || t.el.contains(top) || top.contains(t.el)) continue;
+      // Only something that paints a solid surface hides the text (an image, a filled shape or box), not other text.
+      let solid = false;
+      for (let c = top; c && !c.contains(t.el); c = c.parentElement) {
+        if (/^(IMG|CANVAS|VIDEO|svg|path|rect|circle|ellipse|polygon)$/i.test(c.tagName)) { solid = true; break; }
+        const cs2 = getComputedStyle(c);
+        const m = /rgba?\(([^)]+)\)/.exec(cs2.backgroundColor);
+        const alpha = m ? (m[1].split(',')[3] != null ? parseFloat(m[1].split(',')[3]) : 1) : 0;
+        if (alpha > 0.6 || cs2.backgroundImage !== 'none') { solid = true; break; }
+      }
+      if (solid) hits++;
+    }
+    return n > 0 && hits === n;
+  };
+  const reportedBox = new Set();
   for (const t of texts) {
     const { el, u } = t;
     const cs = getComputedStyle(el);
-    if (t.moving) continue;
-    // 1. Off-screen text
-    const outX = Math.max(0, -u.left) + Math.max(0, u.right - W);
-    const outY = Math.max(0, -u.top) + Math.max(0, u.bottom - H);
-    if (outX > 2 || outY > 2) {
-      const full = u.right < 0 || u.left > W || u.bottom < 0 || u.top > H;
-      out.push({ severity: full ? 'warning' : 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: full ? 'Text is completely outside the frame.' : 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
-    }
-    // 2. Clipped by an ancestor with overflow hidden/clip
-    let anc = el;
-    while (anc && anc !== document.body) {
-      const acs = getComputedStyle(anc);
-      if (/(hidden|clip)/.test(acs.overflowX + acs.overflowY) && !anc.classList.contains('scene') && anc.getAttribute('data-sequence') == null) {
-        const r = anc.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0 && (u.left < r.left - 2 || u.right > r.right + 2 || u.top < r.top - 2 || u.bottom > r.bottom + 2)) {
-          if (reportedBox.has(anc)) break;
-          reportedBox.add(anc);
-          out.push({ severity: 'error', code: 'text-clipped', selector: sel(el), text: snippet(el), message: 'Text is cut off by ' + (anc === el ? 'its own box' : sel(anc)) + ' (overflow: hidden).', fix: 'Make the text smaller, let it wrap, or make the container bigger.' });
-          break;
-        }
-      }
-      anc = anc.parentElement;
+    const tu = tight(u);
+    const frame = { left: 0, top: 0, right: W, bottom: H };
+    const cb = clipBoxOf(el);
+    const shown = inter(inter(tu, frame), cb.r);
+    t.hidden = area(shown) < 4 || cb.masked && t.moving;
+    t.covered = !t.hidden && covered(t);
+    if (t.moving || t.hidden || t.covered) continue;
+    // 1. Text partly outside the frame (fully outside = not shown, which is fine)
+    const outX = Math.max(0, -tu.left) + Math.max(0, tu.right - W);
+    const outY = Math.max(0, -tu.top) + Math.max(0, tu.bottom - H);
+    if (outX > 2 || outY > 2) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
+    // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
+    else if (cb.by && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
+      reportedBox.add(cb.by);
+      out.push({ severity: 'error', code: 'text-clipped', selector: sel(el), text: snippet(el), message: 'Text is partly cut off by ' + sel(cb.by) + ' (overflow: hidden).', fix: 'Make the text smaller, let it wrap, or make the container bigger.' });
     }
     // 3. Spills out of its card (nearest ancestor with a visible background or border)
-    anc = el.parentElement;
+    let anc = el.parentElement;
     let escapes = /^(absolute|fixed)$/.test(cs.position);
     const clipText = cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text';
     while (!escapes && !clipText && anc && anc !== document.body && !anc.classList.contains('scene')) {
@@ -128,42 +186,39 @@ const PAGE_ANALYZE = String.raw`(() => {
     t.color = cs.color;
     t.clipText = cs.webkitBackgroundClip === 'text' || cs.backgroundClip === 'text' || /transparent|rgba\(\d+, \d+, \d+, 0\)/.test(cs.webkitTextFillColor || '');
   }
-  // 5. Overlapping text
-  for (let i = 0; i < texts.length; i++) {
-    for (let j = i + 1; j < texts.length; j++) {
-      const a = texts[i], b = texts[j];
-      if (a.moving || b.moving || transitioning) continue;
+  // 5. Overlapping text (settled, visible, not covered)
+  const live = texts.filter((t) => !t.moving && !t.hidden && !t.covered);
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) {
+      const a = live[i], b = live[j];
+      if (transitioning) continue;
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
       const splitParent = (e) => e.closest('[data-split]');
       if (splitParent(a.el) && splitParent(a.el) === splitParent(b.el)) continue;
-      let inter = 0;
-      for (const ra0 of a.rs) for (const rb0 of b.rs) {
-        const ra = tight(ra0), rb = tight(rb0);
-        const w = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
-        const h = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);
-        if (w > 0 && h > 0) inter += w * h;
-      }
-      const area = (t) => t.rs.reduce((s, r) => s + r.width * r.height * 0.58, 0);
-      if (inter > 0.12 * Math.min(area(a), area(b))) {
+      // letters or short pieces of one word (tight kinetic type) are not "overlapping text"
+      if (a.el.parentElement === b.el.parentElement && (a.el.textContent.trim().length <= 2 || b.el.textContent.trim().length <= 2)) continue;
+      let ov = 0;
+      for (const ra0 of a.rs) for (const rb0 of b.rs) ov += area(inter(tight(ra0), tight(rb0)));
+      const ar = (t) => t.rs.reduce((s, r) => s + r.width * r.height * 0.58, 0);
+      if (ov > 0.12 * Math.min(ar(a), ar(b))) {
         out.push({ severity: 'warning', code: 'text-overlap', selector: sel(a.el), text: snippet(a.el), message: 'Text overlaps other text: ' + sel(b.el) + ' ("' + snippet(b.el) + '").', fix: 'Move one of them, or make sure they are not visible at the same time.' });
       }
     }
   }
   // 6. Broken images
   for (const img of document.images) {
-    if (img.closest('[data-mw-hidden]')) continue;
+    if (img.closest('[data-mw-hidden]') || ignored(img)) continue;
     if (img.complete && img.naturalWidth === 0 && img.getAttribute('src')) out.push({ severity: 'error', code: 'image-broken', selector: sel(img), message: 'Image did not load: ' + img.getAttribute('src'), fix: 'Check the file path (relative to the HTML file).' });
   }
-  // Text boxes for the contrast pass
-  // Text that is mostly transparent is usually fading in or out; don't judge its contrast.
-  window.__mwTextBoxes = transitioning ? [] : texts.filter((t) => !t.clipText && !t.moving && t.op >= 0.75).map((t) => {
+  // Text boxes for the contrast pass. Fading, moving, covered or clip-filled text is not judged.
+  window.__mwTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75).map((t) => {
     const cs = getComputedStyle(t.el);
     // A dark/light text-shadow or outline gives text its own backing; be lenient then.
     const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;
     return { sel: sel(t.el), text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, backed, large: t.fontPx >= 32 * PX || (t.bold && t.fontPx >= 24 * PX) };
   });
   return { issues: out, textCount: texts.length, boxes: window.__mwTextBoxes.length };
-})()`;
+})`;
 
 const PAGE_HIDE_TEXT = `(() => { let s = document.getElementById('__mw_hide'); if (!s) { s = document.createElement('style'); s.id='__mw_hide'; document.head.appendChild(s); }
   s.textContent = '*{color:transparent!important;-webkit-text-fill-color:transparent!important;text-shadow:none!important;-webkit-text-stroke-color:transparent!important;caret-color:transparent!important;text-decoration-color:transparent!important} .mw-caret{visibility:hidden!important}';
@@ -256,19 +311,26 @@ export async function check(input, opts = {}) {
     push(info.issues);
     const fps = info.fps;
     const lastT = Math.max(0, info.duration - 1 / fps);
-    // One forward pass over the video (works for stateful pages too). Every sample is analysed;
-    // elements that are mid-animation at that moment are skipped by the page-side analyser.
-    const step = Math.max(1 / fps, Math.min(0.1, info.duration / 300));
+    // One forward pass over the video (works for stateful pages too). Elements that are moving
+    // (seen by comparing samples) are skipped; problems must last 2 samples to count.
+    const from = opts.from != null ? Math.max(0, +opts.from) : 0, to = opts.to != null ? Math.min(lastT, +opts.to) : lastT;
+    const step = opts.at != null ? 1 / fps : Math.max(1 / fps, Math.min(opts.fast ? 0.25 : 0.12, info.duration / 300));
     const planned = new Set();
-    for (let t = 0; t <= lastT + 1e-9; t += step) planned.add(Math.round(t * fps) / fps);
-    for (const k of keyTimes(info, 24)) planned.add(k);
+    if (opts.at != null) { const at = +opts.at; for (const d of [-2, -1, 0]) planned.add(Math.round(Math.max(0, at + d / fps) * fps) / fps); }
+    else {
+      for (let t = from; t <= to + 1e-9; t += step) planned.add(Math.round(t * fps) / fps);
+      for (const k of keyTimes(info, 24)) if (k >= from && k <= to) planned.add(k);
+    }
     const times = [...planned].sort((a, b) => a - b);
-    const contrastEvery = Math.max(info.duration / (opts.contrastSamples || 10), 0.4);
-    let lastContrast = -Infinity;
+    const contrastEvery = opts.at != null ? 0 : Math.max((to - from) / (opts.contrastSamples || 10), 0.4);
+    let lastContrast = -Infinity, prevT = null;
+    const perSample = [];
     for (const t of times) {
       await ctx.page.seek(t);
-      const a = await ctx.page.evaluate(PAGE_ANALYZE);
-      push(a.issues, t);
+      const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT})`);
+      prevT = t;
+      if (opts.at != null && Math.abs(t - +opts.at) > 0.5 / fps) continue; // warm-up samples only feed motion detection
+      perSample.push({ t, issues: a.issues });
       if (a.boxes && t - lastContrast >= contrastEvery) {
         lastContrast = t;
         await ctx.page.evaluate(PAGE_HIDE_TEXT);
@@ -278,11 +340,18 @@ export async function check(input, opts = {}) {
         push(c, t);
       }
     }
+    // Keep layout problems that last at least two samples in a row (or the single --at moment).
+    const key = (i) => i.code + '|' + i.selector;
+    for (let k = 0; k < perSample.length; k++) {
+      const { t, issues: list } = perSample[k];
+      const nb = new Set([...(perSample[k - 1]?.issues || []), ...(perSample[k + 1]?.issues || [])].map(key));
+      push(list.filter((i) => opts.at != null || nb.has(key(i)) || i.code === 'image-broken'), t);
+    }
     for (const e of ctx.page.errors) issues.push({ severity: 'error', code: e.code, message: e.message, time: null });
-    const merged = mergeIssues(issues);
+    const merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
     const errors = merged.filter((i) => i.severity === 'error').length;
     const warnings = merged.filter((i) => i.severity === 'warning').length;
-    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info) };
+    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), logs: ctx.page.logs || [] };
   } finally {
     await ctx.page.close();
     await ctx.server.close();
@@ -296,8 +365,8 @@ function pickSpread(arr, n) {
   return [...new Set(out)];
 }
 
-/** Same issue at many times → one entry with a time range (the worst message is kept). */
-function mergeIssues(list) {
+/** Same issue at many times → one entry listing when it happens (separate ranges). */
+function mergeIssues(list, gap = 0.3, contrastGap = gap) {
   const rank = { error: 0, warning: 1, info: 2 };
   const map = new Map();
   for (const i of list) {
@@ -308,10 +377,17 @@ function mergeIssues(list) {
     if (rank[i.severity] < rank[cur.severity]) { cur.severity = i.severity; cur.message = i.message; }
   }
   const out = [...map.values()].map((i) => {
-    const ts = i.times.sort((a, b) => a - b);
+    const ts = [...new Set(i.times)].sort((a, b) => a - b);
     const r = { ...i };
     delete r.times;
-    if (ts.length) { r.time = ts[0]; if (ts.length > 1) r.until = ts[ts.length - 1]; }
+    if (ts.length) {
+      const ranges = [];
+      const g = i.code === 'low-contrast' ? contrastGap : gap;
+      for (const t of ts) { const l = ranges[ranges.length - 1]; if (l && t - l[1] <= g + 1e-6) l[1] = t; else ranges.push([t, t]); }
+      r.time = ts[0];
+      if (ts.length > 1) r.until = ts[ts.length - 1];
+      r.ranges = ranges;
+    }
     return r;
   });
   return out.sort((a, b) => rank[a.severity] - rank[b.severity] || (a.time ?? -1) - (b.time ?? -1));
@@ -327,7 +403,8 @@ export function formatReport(rep, { file } = {}) {
   lines.push(`${file ? basename(file) + ': ' : ''}${i.width}x${i.height} ${i.fps}fps ${i.duration.toFixed(2)}s, ${i.clips} timed elements`);
   if (!rep.issues.length) { lines.push('✓ No problems found.'); return lines.join('\n'); }
   for (const x of rep.issues) {
-    const when = x.time == null ? '' : x.until != null ? ` at ${x.time.toFixed(2)}–${x.until.toFixed(2)}s` : ` at ${x.time.toFixed(2)}s`;
+    const rg = (r) => (r[0] === r[1] ? `${r[0].toFixed(2)}s` : `${r[0].toFixed(2)}–${r[1].toFixed(2)}s`);
+    const when = x.time == null ? '' : x.ranges ? ' at ' + x.ranges.slice(0, 4).map(rg).join(', ') + (x.ranges.length > 4 ? ` (+${x.ranges.length - 4} more)` : '') : ` at ${x.time.toFixed(2)}s`;
     lines.push(`${x.severity === 'error' ? '✖' : x.severity === 'warning' ? '⚠' : 'ℹ'} [${x.code}]${when}${x.selector ? '  ' + x.selector : ''}${x.text ? '  "' + x.text + '"' : ''}`);
     lines.push(`    ${x.message}`);
     if (x.fix) lines.push(`    fix: ${x.fix}`);

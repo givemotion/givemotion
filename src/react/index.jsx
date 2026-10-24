@@ -42,14 +42,16 @@ function timeAttrs(p) {
   if (p.speed != null) a['data-speed'] = String(p.speed);
   return a;
 }
-const OWN = ['start', 'duration', 'end', 'transition', 'enter', 'exit', 'camera', 'loop', 'freeze', 'speed', 'as', 'children'];
+const OWN = ['start', 'duration', 'end', 'transition', 'enter', 'exit', 'camera', 'loop', 'freeze', 'speed', 'as', 'children', 'ref'];
 const rest = (p) => Object.fromEntries(Object.entries(p).filter(([k]) => !OWN.includes(k)));
 
 /** A part of the video that is shown from `start` for `duration` seconds (relative to its parent clip). */
 export function Clip(props) {
   const ref = useRef(null);
   const Tag = props.as || 'div';
-  return <ClipContext.Provider value={ref}><Tag ref={ref} {...timeAttrs(props)} {...rest(props)}>{props.children}</Tag></ClipContext.Provider>;
+  const outer = props.ref;
+  const setRef = (el) => { ref.current = el; if (typeof outer === 'function') outer(el); else if (outer) outer.current = el; };
+  return <ClipContext.Provider value={ref}><Tag ref={setRef} {...timeAttrs(props)} {...rest(props)}>{props.children}</Tag></ClipContext.Provider>;
 }
 /** A full-frame scene (a Clip with class "scene"). */
 export function Scene(props) {
@@ -89,6 +91,7 @@ export const easing = (...a) => mw().easing(...a);
 export const clamp = (...a) => mw().clamp(...a);
 export const lerp = (...a) => mw().lerp(...a);
 export const random = (...a) => mw().random(...a);
+export const rng = (...a) => mw().rng(...a);
 export const shape = new Proxy({}, { get: (_, k) => mw().shape[k] });
 export const path = new Proxy({}, { get: (_, k) => mw().path[k] });
 export const color = new Proxy({}, { get: (_, k) => mw().color[k] });

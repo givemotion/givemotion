@@ -636,7 +636,7 @@
         targets.forEach((el, i) => {
           const rnd = I.makeRandom(1 + this.id * 1000003 + opIndex * 7919 + i * 104729);
           const s = start + offs[i] + (jit ? jit[i].off : 0);
-          const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: gm.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, seq: this.items.length };
+          const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: gm.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, irAuto: timing.immediateRender == null, natural0: nat, seq: this.items.length };
           for (const k of keys) it.props[k] = { from: fromProps && k in fromProps ? evalVal(fromProps[k], i, el, targets, rnd) : undefined, to: toProps && k in toProps ? evalVal(toProps[k], i, el, targets, rnd) : undefined };
           if (natE) { it.natural = true; it.ease = entrance ? I.physEase(0.8) : I.moveEase(0.7); it.easeSoft = entrance ? I.physEase(1) : I.moveEase(1); }
           if (arc) { it.arc = arc; it.arcDefault = timing.arc == null; }
@@ -662,6 +662,26 @@
       this.total = cursor.end;
       this.resolved = false;
     }
+    // A tween that starts after the clip it is timed in has ended never plays: say so (an unscoped timeline times each
+    // target in its own clip, so 15.05 on an element with data-start="15" is 30.05 s of the video). Run at load.
+    _warnLate() {
+      this._build();
+      if (this.opts.global) return;
+      const late = new Map(); // element -> earliest late item
+      const delay = +this.opts.delay || 0;
+      for (const it of this.items) {
+        if (it.start < -1e5) continue;
+        const anchor = this.scope || (it.el instanceof Element ? it.el : null);
+        const c = anchor && I.nearestClip(anchor);
+        if (!c || !isFinite(c.end) || !isFinite(c.start) || it.start + delay <= c.end - c.start + 1e-6) continue;
+        const prev = late.get(it.el);
+        if (!prev || it.start < prev.it.start) late.set(it.el, { it, c });
+      }
+      for (const [el, { it, c }] of late) {
+        const len = c.end - c.start, r = (x) => +x.toFixed(3);
+        I.report('warning', 'timeline-after-clip', `gm.timeline: a tween at ${r(it.start)}s on ${gm.__selector(el) || 'an element'} never plays: its times count from the start of its clip (${r(c.start)}s), which lasts only ${r(len)}s${this.scope ? '' : ' (a timeline without a scope times each target in its own clip)'}.`, el, `Give the time inside that clip (${r(Math.max(0, it.start - c.start))} if you meant ${r(it.start)}s of the video), make the clip longer, or use gm.timeline(scope, { global: true }) for video times.`);
+      }
+    }
     _resolve() {
       this._build();
       if (this.resolved) return;
@@ -669,6 +689,26 @@
       // Tracks: one sorted list of segments per (target, property)
       const tracks = new Map();
       const sorted = this.items.slice().sort((a, b) => a.start - b.start || a.seq - b.seq);
+      // natural motion: an element the page itself hides (opacity 0 or visibility: hidden in its CSS) stays hidden until
+      // a from()/fromTo() whose start values would show it begins (a ring that pulses at 16 s is not on screen from 0 s).
+      // Entrances that start hidden keep showing their start values early, as always; immediateRender: true forces it.
+      const hiddenMemo = new Map();
+      const cssHidden = (el) => {
+        if (!hiddenMemo.has(el)) {
+          let h = false;
+          if (el instanceof Element && !el.hasAttribute('data-enter') && !(el.getAnimations && el.getAnimations().length)) {
+            const cs = getComputedStyle(el);
+            h = parseFloat(cs.opacity) <= 0.01 || cs.visibility === 'hidden';
+          }
+          hiddenMemo.set(el, h);
+        }
+        return hiddenMemo.get(el);
+      };
+      for (const it of sorted) {
+        if (!it.immediate || !it.irAuto || !it.natural0) continue;
+        const shows = ['opacity', 'autoAlpha'].some((k) => { const sp = it.props[k]; const n = sp && natNum(sp.from); return n != null && n > 0.05; });
+        if (shows && cssHidden(it.el)) it.immediate = false;
+      }
       for (const it of sorted) {
         let tm = tracks.get(it.el);
         if (!tm) { tm = { el: it.el, props: new Map(), tfBase: null, cache: new Map(), anchor: null }; tracks.set(it.el, tm); }
@@ -698,6 +738,18 @@
         tm.hasTF = [...tm.props.keys()].some((k) => k in TF || k === 'transformPerspective');
         tm.anchor = this.opts.global ? null : (this.scope || (el instanceof Element ? el : null));
         tm.inline = el instanceof Element ? {} : null;
+        // what the page had before any tween wrote (restored when the time goes back to before the first tween)
+        if (el instanceof Element) {
+          const o = el.__gmOrig || (el.__gmOrig = {});
+          for (const k of tm.props.keys()) {
+            if (k in o) continue;
+            if (k === 'autoAlpha') o[k] = [el.style.opacity, el.style.visibility];
+            else if (k === 'draw') o[k] = [el.style.strokeDasharray, el.style.strokeDashoffset, el.style.strokeOpacity];
+            else if (k.startsWith('attr:')) o[k] = el.getAttribute(k.slice(5));
+            else if (k === 'morph') o[k] = el.getAttribute('d');
+            else if (k === 'text' || k === 'textContent' || k === 'innerText') o[k] = el.textContent;
+          }
+        }
         for (const [k, segs] of tm.props) {
           let base = readBase(el, k, tm.tfBase);
           if (tm.inline && !(k in TF) && !k.startsWith('attr:') && !['draw', 'morph', 'text', 'textContent', 'innerText', 'autoAlpha', 'transformPerspective'].includes(k)) tm.inline[k] = el.style.getPropertyValue(kebab(k));
@@ -709,7 +761,8 @@
             let from, to;
             if (it.type === 'to') { from = prev; to = normalizeEnd(k, spec.to, prev); }
             else if (it.type === 'from') { from = normalizeEnd(k, spec.from, prev); to = prev; }
-            else { from = normalizeEnd(k, spec.from !== undefined ? spec.from : prev, prev); to = normalizeEnd(k, spec.to !== undefined ? spec.to : prev, from); }
+            // (fromTo: a property only in the start values is set there and held, not tweened toward the earlier value)
+            else { from = normalizeEnd(k, spec.from !== undefined ? spec.from : prev, prev); to = spec.to !== undefined ? normalizeEnd(k, spec.to, from) : from; }
             from = coerceFrom(k, from, to);
             sg.from = from; sg.to = to;
             if (k === 'morph') sg.interp = morphInterp(String(from || to), String(to && to.nodeType ? to.getAttribute('d') : to));
@@ -808,6 +861,8 @@
       return changed;
     }
   }
+  const ORIG = '\u0000orig';
+  const wrote = (tm, k) => tm.cache.has(k) && tm.cache.get(k) !== ORIG;
   function setCached(tm, key, val, fn) {
     if (tm.cache.get(key) === val) return false;
     tm.cache.set(key, val);
@@ -846,11 +901,27 @@
           else if (cso.transformBox === 'view-box' && /%/.test(String(vals.transformOrigin || el.style.transformOrigin || ''))) el.style.transformBox = 'fill-box';
         }
         if (setCached(tm, 'transform', s, (v) => { el.style.transform = v; })) changed = true;
+      } else if (wrote(tm, 'transform')) {
+        // back before every transform tween (a seek backwards): the element's own transform again
+        if (setCached(tm, 'transform', ORIG, () => { el.style.transform = el.__gmOwnTf || ''; })) changed = true;
       }
     }
+    const orig = el.__gmOrig || {};
     for (const k of Object.keys(vals)) {
       if (k in TF || k === 'transformPerspective') continue;
       let v = vals[k];
+      if (v === undefined && k in orig && wrote(tm, k)) {
+        // back before the first tween of this property: what the page had (pure function of the time, in any
+        // frame order; a camera that samples later times while loading must not leave end values behind)
+        const o = orig[k];
+        if (setCached(tm, k, ORIG, () => {
+          if (k === 'autoAlpha') { if (vals.opacity === undefined) el.style.opacity = o[0]; if (vals.visibility === undefined) el.style.visibility = o[1]; }
+          else if (k === 'draw') { el.style.strokeDasharray = o[0]; el.style.strokeDashoffset = o[1]; el.style.strokeOpacity = o[2]; }
+          else if (k.startsWith('attr:') || k === 'morph') { const a = k === 'morph' ? 'd' : k.slice(5); if (o == null) el.removeAttribute(a); else el.setAttribute(a, o); }
+          else el.textContent = o; // text, textContent, innerText
+        })) changed = true;
+        continue;
+      }
       if (k.startsWith('attr:')) {
         if (v === undefined) continue;
         if (setCached(tm, k, String(typeof v === 'number' ? r4(v) : v), (s) => el.setAttribute(k.slice(5), s))) changed = true;
@@ -898,7 +969,7 @@
       if (v === undefined) {
         // restore what the page had before
         const orig = tm.inline ? tm.inline[k] : '';
-        if (setCached(tm, k, '\u0000orig', () => { if (orig) el.style.setProperty(kebab(k), orig); else el.style.removeProperty(kebab(k)); })) changed = true;
+        if (setCached(tm, k, ORIG, () => { if (orig) el.style.setProperty(kebab(k), orig); else el.style.removeProperty(kebab(k)); })) changed = true;
         continue;
       }
       if (typeof v === 'number') v = UNITLESS.has(k) || k.startsWith('--') ? String(r4(v)) : r4(v) + 'px';
@@ -2119,7 +2190,7 @@
   // ---------------------------------------------------------------------------
   I.hooks.preinit.push(setupFit);
   I.hooks.init.push(() => { for (const c of cameras) if (c.world && c.shots.some((sh) => sh.fit === 'content' || sh.center === 'content')) { try { c._box('content', c._markers()); } catch (e) {} } });
-  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); for (const b of bursts) if (!b.canvas) setupBurst(b); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) tl._build(); });
+  I.hooks.init.push(() => { initDone = true; try { optimizeBlurs(); } catch (e) {} for (const tr of travels) if (!tr.done) setupTravel(tr); for (const b of bursts) if (!b.canvas) setupBurst(b); setupCameras(); setupMorphs(); setupScramble(); for (const tl of tlList) { tl._build(); try { tl._warnLate(); } catch (e) {} } });
   // A camera shot that only arrives after its scene has started to leave (or ended) is never seen at rest.
   I.hooks.init.push(() => {
     for (const cm of cameras) {

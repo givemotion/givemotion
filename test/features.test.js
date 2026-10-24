@@ -898,3 +898,41 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
 });
+
+// timeline and camera (r10)
+async function evalSeq(file, times, expr) {
+  const ctx = await openComposition(file, { mode: 'render' });
+  try { const out = []; for (const t of times) { await ctx.page.seek(t); out.push(await ctx.page.evaluate(expr)); } return out; } finally { await ctx.page.close(); await ctx.server.close(); }
+}
+
+test('timeline (r10): a CSS-hidden ring waits for its fromTo; from-only props hold; seeking back restores the page values; classic keeps start values early', { skip }, async () => {
+  const d = tmp();
+  const body = `<div id="s" data-duration="6"><i id="ring" style="position:absolute;width:20px;height:20px;opacity:0"></i><i id="dim" style="position:absolute;left:40px;width:20px;height:20px;opacity:0.6"></i><i id="pk" style="position:absolute;left:80px;width:20px;height:20px"></i><i id="fly" style="position:absolute;left:120px;width:20px;height:20px"></i></div>
+    <script>gm.timeline('#s').fromTo('#ring', { opacity: 0.9, scale: 0.8 }, { opacity: 0, scale: 2, duration: 0.8 }, 4)
+      .fromTo('#dim', { opacity: 0.6 }, { opacity: 0, duration: 1 }, 2).fromTo('#pk', { opacity: 0 }, { opacity: 1, duration: 0.2 }, 2)
+      .to('#pk', { y: 100, duration: 0.4 }, 3).set('#pk', { autoAlpha: 0 }, 3.5)
+      .set('#fly', { autoAlpha: 0 }, 0).fromTo('#fly', { autoAlpha: 1, x: -100 }, { x: 0, duration: 0.5 }, 4);</script>`;
+  const expr = `['ring', 'dim', 'pk', 'fly'].map((id) => { const cs = getComputedStyle(document.getElementById(id)); return [+(+cs.opacity).toFixed(2), Math.round(new DOMMatrix(cs.transform).f)]; })`;
+  const f = join(d, 'a.html');
+  writeFileSync(f, page(body, 'data-width="320" data-height="180" data-fps="30" data-duration="6"'));
+  // forward, then back to 2.1 s and 1 s (the transform and autoAlpha written at 4-5 s must not stay behind)
+  const [, at425, at21, at1] = await evalSeq(f, [0, 4.25, 2.1, 1], expr);
+  assert.deepEqual(at1, [[0, 0], [0.6, 0], [0, 0], [0, 0]], 'at 1 s: ring hidden (its CSS), dim at its start, pk hidden by its fromTo, fly hidden by its set');
+  assert.equal(at21[2][1], 0, 'pk not moved down before its .to at 3 s');
+  assert.equal(at425[3][0], 1, 'fromTo with autoAlpha only in the start values holds it (not a fade back to 0)');
+  assert.ok(at425[0][0] > 0.3, 'ring pulses at 4.25 s');
+  // classic: the fromTo start values show from the clip start, as before
+  const g = join(d, 'b.html');
+  writeFileSync(g, page(body, 'data-width="320" data-height="180" data-fps="30" data-duration="6" data-motion="classic"'));
+  const [c1] = await evalSeq(g, [1], expr);
+  assert.equal(c1[0][0], 0.9, 'classic: ring shows its fromTo start values early');
+});
+
+test('timeline (r10): a tween timed after its clip ends is reported (unscoped timeline on a late clip)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="18"><h1 id="pay" data-start="15" data-duration="3">Payoff</h1></div>
+    <script>gm.timeline().fromTo('#pay', { opacity: 0 }, { opacity: 1, duration: 0.5 }, 15.05);</script>`, 'data-width="320" data-height="180" data-fps="30" data-duration="18"'));
+  const r = await check(f, { quiet: true, from: 14, to: 18 });
+  const w = r.issues.find((i) => i.code === 'timeline-after-clip');
+  assert.ok(w && /15\.05s/.test(w.message) && /0\.05/.test(w.fix), JSON.stringify(r.issues.map((i) => i.code)));
+});

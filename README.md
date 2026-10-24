@@ -88,10 +88,39 @@ thing without surprises elsewhere.
 
 ## How it compares
 
-Here is how motionwright compares with **HyperFrames** (by HeyGen), another open tool that turns HTML into video.
-Both render in Chrome, encode with ffmpeg, give the same video every time, and come with instructions
-for AI agents. Here is where they differ, so you can pick the right one. Checked in October 2026 from each
-project's own docs and command-line help; tell us if something changed.
+Three tools turn code into video: **motionwright**, **HyperFrames** (by HeyGen) and **Remotion**. All three
+render in Chrome and encode with ffmpeg. Here is where they differ, so you can pick the right one. Checked in October
+2026; tell us if something changed.
+
+| | motionwright | HyperFrames | Remotion |
+|---|---|---|---|
+| License | MIT, free for everyone | Apache 2.0, free for everyone | Free for individuals, non-profits and companies of up to 3 people; bigger companies need a paid license¹ |
+| You write | HTML, CSS, JavaScript (React optional) | HTML, CSS, JavaScript | React |
+
+¹ From Remotion's [`LICENSE.md`](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md); prices are on its website.
+
+**Tested with AI agents (October 2026).** Fresh Claude Opus agents made the same 9 briefs (promo, explainer,
+data story, UI demo, whiteboard, code explainer, logo sting, year recap, vertical short), twice each, once with
+motionwright and once with Remotion 4.0.538. 27 blind AI judges scored the 36 videos, 4 at a time per brief.
+
+| | motionwright | Remotion |
+|---|---|---|
+| Judges' overall score (1-10) | **7.2** | 6.8 |
+| Briefs won | 5 of 9 | 4 of 9 |
+| Render time for all 18 videos (4 CPUs, no GPU) | **547 s** | 1102 s |
+| Same animation in both tools, default settings | **14.6 s** | 27.1 s |
+| Code the agent wrote per video (median) | **240 lines** | 617 lines |
+
+motionwright rendered every video faster (about 2× overall) and needed far less code, because the camera, beat
+detection and hand-drawn shapes are built in (the Remotion agents wrote their own). The quality edge is small
+and mostly fewer visible mistakes; Remotion won the year recap, explainer, whiteboard and promo briefs. These are AI
+judges looking at frames, on one machine. Method, every score and the limits:
+[the write-up](docs/experiments/2026-10-vs-remotion.md); the speed test is in
+[`benchmarks/vs-remotion`](benchmarks/vs-remotion) so you can run it yourself. motionwright contains no code from
+Remotion, and the test used Remotion only as a user does. We are not affiliated with Remotion.
+
+The next table compares motionwright with **HyperFrames** in more detail, from each project's own docs and
+command-line help.
 
 | | motionwright | HyperFrames |
 |---|---|---|
@@ -144,6 +173,9 @@ already look right instead of inventing everything each time.
 
 **Is there a free, open-source way to turn code into video?** Yes. motionwright (MIT) and HyperFrames (Apache 2.0) are both free for any
 use, including big companies. See [How it compares](#how-it-compares).
+
+**Is it a free alternative to Remotion?** It does the same job (code in, video out) with HTML instead of React, under
+MIT for everyone. In our test it rendered about 2× faster; see [How it compares](#how-it-compares).
 
 **Can Claude Code make videos?** Yes. Run `npx motionwright init` (or `npx motionwright skill` in an existing
 project) and ask Claude Code for a video. It also works with Cursor, Codex and other agents that read an
@@ -290,4 +322,4 @@ their own licenses. The example music and images were made for this project and 
 handwriting font is under the SIL Open Font License (`src/runtime/fonts/Caveat-OFL.txt`).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
-HyperFrames, but no code from them.
+Remotion and HyperFrames, but no code from them. Remotion and HyperFrames are trademarks of their owners.

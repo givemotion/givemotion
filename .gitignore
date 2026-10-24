@@ -13,3 +13,4 @@ benchmarks/vs-hyperframes/mw/
 benchmarks/vs-hyperframes/hf/
 bench/agents/runs/
 .mw-parts/
+__pycache__/

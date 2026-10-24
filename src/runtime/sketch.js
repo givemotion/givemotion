@@ -264,6 +264,61 @@
     });
   }
 
+  // A quick pen loop around boxes [{x, y, w, h}]: a smooth closed curve around all of them (the convex hull of the
+  // boxes, each grown by pad with round corners, so it never cuts through one), drawn like a hand circling a group:
+  // it starts a little inside, wobbles slowly outward and runs on past its start. pad is in the boxes' units.
+  function convexHull(P) {
+    const pts = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (pts.length < 3) return pts;
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], hi = [];
+    for (const q of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = pts.length - 1; i >= 0; i--) { const q = pts[i]; while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+    return lo.slice(0, -1).concat(hi.slice(0, -1));
+  }
+  function loopPath(boxes, pad, o) {
+    o = opts(o);
+    const ring = [];
+    for (const b of boxes) {
+      if (!(b.w >= 0 && b.h >= 0)) continue;
+      // corner circles a little inside each corner: the loop clears the corners by pad and the sides by a bit more,
+      // so it reads as a loop, not a box
+      const e = Math.max(0, Math.min(b.w / 2, b.h / 2, 0.2 * Math.min(b.w, b.h), 1.5 * pad)), rc = e * Math.SQRT2 + pad;
+      for (const [cx, cy] of [[b.x + e, b.y + e], [b.x + b.w - e, b.y + e], [b.x + b.w - e, b.y + b.h - e], [b.x + e, b.y + b.h - e]])
+        for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; ring.push([cx + Math.cos(a) * rc, cy + Math.sin(a) * rc]); }
+    }
+    const H = convexHull(ring);
+    if (H.length < 3) return '';
+    const cum = [0];
+    for (let i = 1; i <= H.length; i++) cum.push(cum[i - 1] + Math.hypot(H[i % H.length][0] - H[i - 1][0], H[i % H.length][1] - H[i - 1][1]));
+    const per = cum[H.length];
+    let area = 0;
+    for (let i = 0; i < H.length; i++) { const a = H[i], b = H[(i + 1) % H.length]; area += a[0] * b[1] - b[0] * a[1]; }
+    const out = area > 0 ? 1 : -1;
+    // a point on the hull, and how far a hand would bow out there: long straight runs bulge a little (a loop, not a
+    // polygon), nothing at the corners
+    const at = (s) => {
+      const L = (((s % 1) + 1) % 1) * per;
+      let i = 1; while (i < H.length && cum[i] < L) i++;
+      const a = H[i - 1], b = H[i % H.length], sl = cum[i] - cum[i - 1], f = (L - cum[i - 1]) / Math.max(1e-9, sl);
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, Math.sin(Math.PI * f) * Math.max(0, sl - 2 * pad) * 0.04];
+    };
+    return passes(o, (R, p) => {
+      const k = o.roughness, s0 = R(), over = 0.1 + R() * 0.15;
+      const steps = Math.max(16, Math.min(160, Math.round((per * (1 + over)) / (26 * px()))));
+      const ph1 = R() * 6.28, ph2 = R() * 6.28, f1 = 1 + R(), f2 = 3 + R() * 2, d = 0.004;
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps, s = s0 + (1 + over) * t, q = at(s), q0 = at(s - d), q1 = at(s + d);
+        const tx = q1[0] - q0[0], ty = q1[1] - q0[1], tl = Math.hypot(tx, ty) || 1, nx = (out * ty) / tl, ny = (-out * tx) / tl;
+        // a slow wobble (outward on average) and a slight spiral, so where the end overlaps the start the strokes part
+        const w = pad * (0.1 + k * (0.1 * Math.sin(ph1 + t * f1 * 6.28) + 0.05 * Math.sin(ph2 + t * f2 * 6.28)) + (t - 0.5) * 0.22 * k * (p % 2 ? -1 : 1));
+        pts.push([q[0] + nx * (w + q[2]), q[1] + ny * (w + q[2])]);
+      }
+      return smooth(pts);
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // data-sketch: turn plain SVG shapes into hand-drawn ones
   // ---------------------------------------------------------------------------
@@ -439,6 +494,8 @@
     marks.push({ el, kind: 'border', svg, seed: (el.id || 'b') + ':' + marks.length, opts: parseOpts(el, {}) });
   }
   function buildMark(m) {
+    // (a sketched shape was replaced by its group)
+    if (!m.el.isConnected && replaced.get(m.el)) m.el = replaced.get(m.el);
     const el = m.el;
     if (!el.isConnected) return false;
     // Built once while the page loads (the same for every worker). Things in clips that are not on screen yet are
@@ -471,6 +528,9 @@
       el.appendChild(m.svg);
       return true;
     }
+    // A circle around something that is not a run of text (a group, a card, an image, an SVG <g> or shape): a loop
+    // that hugs its box instead of an ellipse that would cut its corners
+    if (m.kind === 'circle' && !textLike(el)) return buildLoopMark(m);
     // Text marks live inside the element, so they move, fade and hide with it. Line boxes are measured relative to the
     // element's own box (entrance moves and camera zoom scale all of them alike).
     const B = el.getBoundingClientRect(), k = el.offsetWidth ? B.width / el.offsetWidth : 1;
@@ -498,6 +558,44 @@
     m.p = m.svg.firstChild;
     if (cs.position === 'static') el.style.position = 'relative';
     el.appendChild(m.svg);
+    m.base = gm.timing(el).start;
+    m.svg.style.visibility = 'hidden';
+    return true;
+  }
+  // only text and inline elements inside (a heading, a span, a paragraph), nothing that is a box of its own
+  function textLike(el) {
+    if (el instanceof SVGElement || !el.textContent.trim() || el.querySelector('img,svg,canvas,video,picture,iframe,object')) return false;
+    for (const e of el.querySelectorAll('*')) { const ds = getComputedStyle(e).display; if (!/^(inline|contents|none)/.test(ds)) return false; }
+    return true;
+  }
+  function buildLoopMark(m) {
+    const el = m.el, pv = (el.getAttribute('data-sketch-mark-padding') || '').trim().split(/[\s,]+/).map(parseFloat).filter((x) => isFinite(x));
+    const pad = (pv.length ? pv[0] : 20) * px();
+    let box, host;
+    if (el instanceof SVGElement) {
+      // in the shape's own user space: inside a <g> / <svg>, next to any other shape (moved by its transform attribute)
+      let b; try { b = el.getBBox(); } catch (e) { return false; }
+      if (!b.width && !b.height) return false;
+      box = { x: b.x, y: b.y, w: b.width, h: b.height };
+      if (!/^(g|svg)$/i.test(el.tagName)) {
+        const tm = el.transform && el.transform.baseVal && el.transform.baseVal.consolidate();
+        if (tm) { const M = tm.matrix, c = [[b.x, b.y], [b.x + b.width, b.y], [b.x, b.y + b.height], [b.x + b.width, b.y + b.height]].map(([x, y]) => [M.a * x + M.c * y + M.e, M.b * x + M.d * y + M.f]); const xs = c.map((q) => q[0]), ys = c.map((q) => q[1]); box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+        host = el.parentNode;
+      } else host = el;
+    } else {
+      const w = el.offsetWidth, h = el.offsetHeight;
+      if (!w || !h) return false;
+      const cs = getComputedStyle(el);
+      // the svg's 0,0 is the padding box corner
+      box = { x: -(parseFloat(cs.borderLeftWidth) || 0), y: -(parseFloat(cs.borderTopWidth) || 0), w, h };
+      if (cs.position === 'static') el.style.position = 'relative';
+      host = el;
+    }
+    const color = el.getAttribute('data-sketch-mark-color') || '#e03131';
+    const d = loopPath([box], pad, { roughness: 1, passes: 1, seed: m.seed });
+    m.svg.innerHTML = `<path d="${d}" fill="none" stroke="${color}" stroke-width="${(5 * px()).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>`;
+    m.p = m.svg.firstChild;
+    if (host === el) el.appendChild(m.svg); else host.insertBefore(m.svg, el.nextSibling);
     m.base = gm.timing(el).start;
     m.svg.style.visibility = 'hidden';
     return true;
@@ -1027,6 +1125,90 @@
   I.hooks.post.push((T) => runJobs(T, true));
   I.hooks.post.push(updateConnectors);
 
+  // ---------------------------------------------------------------------------
+  // gm.sketch.loop(targets, { padding, passes, roughness, seed, color, width, draw, in, behind, id, class }): a
+  // hand-drawn loop around a group of elements (or {x, y, w, h} boxes in the space's coordinates). Measured once while
+  // the page loads, at the moment it starts drawing (so things that are still entering are where they will be).
+  // ---------------------------------------------------------------------------
+  const loops = [];
+  let loopsBuilt = false;
+  function loopAround(targets, o = {}) {
+    const L = { targets: Array.isArray(targets) ? targets : [targets], o, seed: o.seed ?? 'loop' + loops.length };
+    loops.push(L);
+    if (loopsBuilt) buildLoop(L, false);
+    return { el: () => L.path || null, progress: (t) => (L.progressAt ? L.progressAt(t) : L.path ? 1 : 0), __gmLoop: L };
+  }
+  function loopDraw(L) {
+    const dr = L.o.draw;
+    if (dr == null || dr === false) return null;
+    const at = Array.isArray(dr) ? +dr[0] : typeof dr === 'object' ? +dr.at || 0 : +dr || 0;
+    const dur = Array.isArray(dr) ? +(dr[1] ?? 1) : typeof dr === 'object' ? +(dr.duration ?? 1) : 1;
+    const ease = I.easing ? I.easing(Array.isArray(dr) ? dr[2] || 'in-out-cubic' : (dr && dr.ease) || 'in-out-cubic') : (q) => q;
+    return { at, dur, ease };
+  }
+  function buildLoop(L, probe) {
+    const o = L.o, els = [], boxes0 = [];
+    for (const t of L.targets) {
+      if (typeof t === 'string') { try { els.push(...document.querySelectorAll(t)); } catch (e) { I.report('error', 'loop-no-target', `gm.sketch.loop: "${t}" is not a valid selector.`, null); } }
+      else if (t && t.nodeType === 1) els.push(elOf(t));
+      else if (t && typeof t === 'object' && 'x' in t) boxes0.push({ x: +t.x || 0, y: +t.y || 0, w: +t.w || 0, h: +t.h || 0 });
+    }
+    let space = o.in ? elOf(o.in) : null;
+    if (!space && els.length) { space = commonParent(els[0], els[0]); for (const e of els) while (space !== document.body && !space.contains(e)) space = space.parentElement; }
+    if (!els.length && !boxes0.length) { if (L.dead) return; L.dead = true; I.report('error', 'loop-no-target', `gm.sketch.loop: ${JSON.stringify(L.targets.map(String))} matched nothing.`, null, "Give selectors or elements to circle, e.g. gm.sketch.loop(['#a', '#b', '#c'], { draw: [5, 1] })."); return; }
+    space = space || document.body;
+    const dr = loopDraw(L), base = o.global ? 0 : gm.timing(space === document.body ? els[0] || space : space).start;
+    // measured where things are when the loop starts drawing
+    if (probe && I.probe) I.probe(base + (dr ? dr.at : 0));
+    const boxes = boxes0.slice(), rr = (x) => Math.round(x * 100) / 100;
+    for (const e of els) {
+      const hidden = [];
+      if (!e.getClientRects().length) for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+      try { const r = rectIn(e, space); if (r && (r.w || r.h)) boxes.push({ x: rr(r.x), y: rr(r.y), w: rr(r.w), h: rr(r.h) }); } finally { for (const a of hidden) a.setAttribute('data-gm-hidden', ''); }
+    }
+    const pad = (o.padding ?? 24) * px();
+    const d = loopPath(boxes, pad, { roughness: o.roughness ?? 1, passes: o.passes ?? 2, seed: L.seed });
+    if (L.path) { L.path.setAttribute('d', d); return; }
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'gm-sketch-loop' + (o.class ? ' ' + o.class : ''));
+    if (o.id) svg.id = o.id;
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none';
+    const pe = document.createElementNS(SVGNS, 'path');
+    pe.setAttribute('d', d);
+    pe.setAttribute('fill', 'none');
+    pe.style.stroke = o.color || '#e03131';
+    pe.style.strokeWidth = (o.width ?? 5) * px() + 'px';
+    pe.style.strokeLinecap = 'round'; pe.style.strokeLinejoin = 'round';
+    svg.appendChild(pe);
+    if (space !== document.body && getComputedStyle(space).position === 'static') space.style.position = 'relative';
+    if (o.behind) space.insertBefore(svg, space.firstChild); else space.appendChild(svg);
+    L.svg = svg; L.path = pe;
+    if (dr) {
+      pe.setAttribute('pathLength', '1');
+      L.progressAt = (T) => Math.max(0, Math.min(1, dr.ease(Math.max(0, Math.min(1, (T - base - dr.at) / Math.max(1e-6, dr.dur))))));
+    }
+  }
+  function updateLoops(T) {
+    let changed = false;
+    for (const L of loops) {
+      if (!L.progressAt) continue;
+      const p = L.progressAt(T), dash = p >= 1 ? 'none' : `${p.toFixed(4)} 2`, vis = p <= 0 ? 'hidden' : '';
+      if (dash !== L.lastDash || vis !== L.lastVis) { L.path.style.strokeDasharray = dash; L.svg.style.visibility = vis; L.lastDash = dash; L.lastVis = vis; changed = true; }
+    }
+    return changed;
+  }
+  // Drawn first where things are while the page loads (before cameras measure the world's content, so a shot at
+  // 'content' includes the loop), then measured again after every other step of loading, at the moment it starts
+  // drawing (timelines and cameras are built then, so probing that moment shows the page as rendered).
+  I.hooks.init.unshift(() => { for (const L of loops) if (!L.svg) { try { buildLoop(L, false); } catch (e) { I.pageError(e); } } });
+  I.hooks.init.push(() => I.hooks.init.push(() => {
+    if (!loops.length) { loopsBuilt = true; return; }
+    for (const L of loops) if (!L.dead) { try { buildLoop(L, true); } catch (e) { I.pageError(e); } }
+    if (I.probe) I.probe(0);
+    loopsBuilt = true;
+  }));
+  I.hooks.seek.push(updateLoops);
+
   gm.rect = rectIn;
   gm.connect = connect;
   // Without a seed, the shape's own numbers are the seed: the same call gives the same drawing in every frame and
@@ -1047,6 +1229,7 @@
     path: seeded((d, o) => path(d, o), 1),
     arrow: seeded((x1, y1, x2, y2, o) => arrow(x1, y1, x2, y2, { ...o, raw: o || {} }), 4),
     hachure: seeded((shape, o) => hachure(shape, o), 1),
+    loop: loopAround,
     underline: (x1, y1, x2, y2, o) => { if (y2 != null && typeof y2 === 'object') { o = y2; y2 = undefined; } return seeded((a, b, c, e, oo) => underline(a, b, c, e, { ...oo, raw: oo || {} }), 4)(x1, y1, x2, y2 ?? y1, o); },
     apply: setupSketch,
   };

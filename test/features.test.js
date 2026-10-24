@@ -808,3 +808,93 @@ test('natural camera: follow trails a moving element and settles on it (lag: 0 a
   assert.equal(fa.length, 90);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
 });
+
+// --- motion blur (auto by default in natural motion) ---
+import { autoBlurPlan, resolveMotionBlur, AUTO_BLUR } from '../src/render.js';
+import { imageLength } from '../src/ffmpeg.js';
+
+test('motion blur: auto plan is one capture for slow frames, more samples for faster ones, capped; flag values', () => {
+  assert.equal(autoBlurPlan(0), null);
+  assert.equal(autoBlurPlan(AUTO_BLUR.min - 0.01), null);
+  const a = autoBlurPlan(AUTO_BLUR.min), b = autoBlurPlan(40), c = autoBlurPlan(400);
+  assert.equal(a.n, 2);
+  assert.ok(b.n >= a.n && c.n >= b.n && c.n <= AUTO_BLUR.maxN);
+  assert.equal(a.shutter, 0.5);
+  assert.ok(c.shutter < 0.5 && (400 * c.shutter) / c.n <= AUTO_BLUR.maxGap + 1e-9); // very fast: shorter shutter, no wide gaps
+  assert.equal(autoBlurPlan(40, 0), null);
+  assert.deepEqual(resolveMotionBlur(undefined), { mode: 'auto', samples: 1 });
+  assert.equal(resolveMotionBlur(undefined, { motion: 'classic' }).mode, 'off');
+  assert.equal(resolveMotionBlur('auto', { motion: 'classic' }).mode, 'auto');
+  assert.equal(resolveMotionBlur('off').mode, 'off');
+  assert.equal(resolveMotionBlur(false).mode, 'off');
+  assert.equal(resolveMotionBlur('0').mode, 'off');
+  assert.deepEqual(resolveMotionBlur('8'), { mode: 'fixed', samples: 8 });
+  assert.equal(resolveMotionBlur(undefined, { transparent: true }).mode, 'off');
+  assert.throws(() => resolveMotionBlur('lots'), /Bad --motion-blur/);
+});
+
+test('motion blur: the image splitter finds whole JPEG and PNG images in a stream', () => {
+  const d = tmp();
+  for (const f of ['a.jpg', 'a.png']) execFileSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=64x48:rate=1:duration=1', '-frames:v', '1', join(d, f)]);
+  for (const [f, png] of [['a.jpg', false], ['a.png', true]]) {
+    const b = readFileSync(join(d, f));
+    assert.equal(imageLength(b, png), b.length);
+    assert.equal(imageLength(Buffer.concat([b, b.subarray(0, 10)]), png), b.length);
+    assert.equal(imageLength(b.subarray(0, b.length - 1), png), 0);
+  }
+});
+
+// a fast box (crosses the frame in under a second), a slow box and a static label; a typed line
+const blurPage = (attrs = '') => page(`<section data-duration="1.4" style="position:absolute;inset:0">
+  <div id="fast" style="position:absolute;left:0;top:60px;width:80px;height:80px;background:#fff"></div>
+  <div id="slow" style="position:absolute;left:100px;top:200px;width:60px;height:60px;background:#6cf"></div>
+  <div style="position:absolute;right:30px;top:40px;width:120px;height:40px;background:#f80"></div>
+  <p data-type="40" style="position:absolute;left:20px;bottom:10px;margin:0;font-size:22px">typing is not motion, it should not blur</p>
+</section>
+<script>gm.timeline().fromTo('#fast', { x: 0 }, { x: 540, duration: 0.6, ease: 'none' }, 0.3).fromTo('#slow', { x: 0 }, { x: 60, duration: 1.4, ease: 'none' }, 0);</script>`, `data-width="640" data-height="360" data-fps="30" ${attrs}`);
+
+/** one row of one video frame as gray bytes: w pixels from (x, y) */
+function grayFrame(video, n, w, x, y) {
+  return execFileSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-i', video, '-vf', `select=eq(n\\,${n}),crop=${w}:2:${x}:${y},format=gray`, '-frames:v', '1', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 24 }).subarray(0, w);
+}
+
+test('motion blur: auto blurs only the frames where something moves fast, the same with 1 and 3 workers; a static box stays sharp', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, blurPage());
+  const a = join(d, 'a.mp4'), b = join(d, 'b.mp4'), o = join(d, 'off.mp4');
+  const sa = await render(f, { output: a, workers: 1, cache: false, ...quiet });
+  const sb = await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  const so = await render(f, { output: o, motionBlur: 'off', cache: false, ...quiet });
+  assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
+  assert.equal(sa.motionBlur.mode, 'auto');
+  // the fast box moves 30 px/frame (x1080/360 = 90 px/frame at 1080p) for 0.6 s: those ~18 frames (+1 on each side), nothing else
+  assert.ok(sa.motionBlur.blurred >= 16 && sa.motionBlur.blurred <= 22, `blurred ${sa.motionBlur.blurred}`);
+  assert.equal(so.motionBlur.mode, 'off');
+  // frame 18 (t=0.6): the fast box's edges are a ramp (several gray levels), without blur a hard edge
+  const row = (v) => { const g = grayFrame(v, 18, 640, 0, 100); return [...g]; };
+  const levels = (px) => px.filter((x) => x > 40 && x < 215).length;
+  const la = levels(row(a)), lo = levels(row(o));
+  assert.ok(la >= lo + 6, `edge pixels between the box and the background: blurred ${la}, sharp ${lo}`);
+  // the static orange box keeps its hard edge in the blurred frame
+  const sa2 = [...grayFrame(a, 18, 200, 440, 60)], so2 = [...grayFrame(o, 18, 200, 440, 60)];
+  const mid = (px) => px.filter((x) => x > 30 && x < 130).length;
+  assert.ok(mid(sa2) <= mid(so2) + 1 && Math.max(...sa2.map((x, i) => Math.abs(x - so2[i]))) <= 16, `static edge: ${mid(sa2)} vs ${mid(so2)}`);
+});
+
+test('motion blur: data-motion="classic" turns it off (same video as --motion-blur off); a re-rendered part equals the full render', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), fc = join(d, 'c.html');
+  writeFileSync(f, blurPage());
+  writeFileSync(fc, blurPage('data-motion="classic"'));
+  const off = join(d, 'off.mp4'), cl = join(d, 'classic.mp4');
+  await render(f, { output: off, motionBlur: 'off', cache: false, ...quiet });
+  const sc = await render(fc, { output: cl, cache: false, ...quiet });
+  assert.equal(sc.motionBlur.mode, 'off');
+  assert.ok(readFileSync(off).equals(readFileSync(cl)));
+  // parts: render once with the cache, re-render the middle part only; must equal a render without the cache
+  const full = join(d, 'full.mp4'), part = join(d, 'part.mp4');
+  await render(f, { output: full, cache: false, workers: 2, ...quiet });
+  await render(f, { output: part, workers: 1, ...quiet });
+  const s2 = await render(f, { output: part, redo: '0.5s-0.9s', ...quiet });
+  assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
+  assert.ok(readFileSync(part).equals(readFileSync(full)));
+});

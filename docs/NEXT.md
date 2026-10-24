@@ -23,6 +23,10 @@ second. Do not reformat files you are not changing.
 - **N2** labels that stay with their shapes: `data-anchor="#server bottom 12"` (HTML and SVG text, follows timeline/travel/
   camera, chains), `data-sketch-mark-padding`, `mw.path.travel(el, mw.connect(...))` rides a live arrow. Not yet tried by
   a fresh agent round: the next hand-drawn round should check that makers use it and that moving a part is one edit.
+- **N1** round 8, all 9 briefs x 2 runs, 2 judges each: 7.1 average, no video under 6 (`docs/experiments/2026-10-r8.md`).
+  ~20 fixes from the friction logs and judge notes: code-window marks, `zoom-through`, `mw.burst` layering in camera
+  worlds, a frame-start tween glitch, `fromTo` + keyframes, pop-in `fit`, many `check` false positives (SVG text,
+  occluded lines, fades/scrims), new `camera-late`, `ghost-overlap`, `data-pulse`, beat `data-cuts`, shot `overview`.
 - Also: tests no longer hang, camera shots at elements that appear later frame correctly, `empty-frame` and
   `text-over-line` checks, script error lines map to the file you wrote.
 
@@ -40,11 +44,21 @@ experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modu
 - **Coordinate first:** a history rewrite changes every commit id. Do it when no other session has open branches, tell
   Leo before the force-push, and have every session re-clone afterwards. Check forks and open PRs on GitHub too.
 
-## N1. A full agent round over all briefs (measure the engine as a whole)
-Round 2 and 3 only covered some briefs, one run each. Run `round.js setup r8 --briefs all --runs 2` (18 makers; ~2.5M
-tokens), judge with 2-3 judges per brief, and compare with round 2 (`docs/experiments/2026-10-round2.md`). The friction
-logs are the main output: fix the engine first, then docs.
-- Files: `bench/agents/` (maybe tune briefs), new `docs/experiments/<date>-r8.md`.
+## N6. Open items from round 8 (each one came up in 2+ friction logs or judge notes)
+- **Live line chart** (both data-story makers wrote ~150 lines): a chart block or `mw.chart.line` whose line head is an
+  element the camera can follow, `pointAt(i)` / the value at a time, an axis that rescales to the max so far, callouts
+  pinned to points, pauses at chosen points. Files: `blocks/line-chart.html` or `src/runtime/motion.js`.
+- **`mw.connect` labels**: choose the side and the position along the arrow (`label: { at: 0.3, side: 'left' }`), and
+  attach points other than side midpoints (`fromAt`/`toAt`). Files: `src/runtime/sketch.js`.
+- **Cursor block**: `times` in video time or beats, hidden until its first move (and after its last), works inside a
+  camera world. Files: `blocks/cursor.html`.
+- **Morph** between two different shapes or texts reads as a muddy crossfade: fade the old one out faster, or scale
+  the pair to a shared box first. Files: `src/runtime/motion.js` (morphs).
+- **Ride / fly helpers**: one object riding another along a route (package on the robot, then the truck), and a
+  same-scene "fly from #a to #b" (`mw.fly(el, { from: '#slot' })`).
+- **Balance check**: judges marked layouts that leave most of the frame empty or crowd the top half (5 notes); a
+  warning when the content's bounding box covers little of the frame for long. Files: `src/check.js`.
+- Run a shorter round (3-4 briefs, 2 runs) after these to see whether the "errors" score (6.9, the lowest) moves.
 
 ## N3. Partial re-render inside one long scene (first version done; follow-ups)
 Done: inside a top-level clip, "late" elements get their own print plus the time T before which they cannot change a

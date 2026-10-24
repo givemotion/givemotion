@@ -1,9 +1,10 @@
 <!-- block:
 description: A clean browser window frame. Shows an image (image=…) or any HTML you put between the tags. Optional slow scroll.
-params: url, image (path), width (px at 1080p; scales with the short side, default 1500), height (default 860), scroll (pixels to scroll the page over the clip, default 0), theme (dark|light)
+params: url, image (path), width (px at 1080p; scales with the short side, default 1500), height (default 860), scroll (pixels to scroll the page over the clip, default 0), theme (dark|light); to match a brand palette (each defaults to today's look): dots (none | one color for all three | three colors "#e5484d,#f5a524,#30a46c"), bar (the top bar's color), field (the address field's color), text (the address text color), url-size (px at 1080p, default 24), lock (on|off, default on)
 usage: <gm-include src="blocks/browser-window.html" url="example.com/pricing" image="assets/site.png" scroll="600" data-duration="5"></gm-include>
+  brand: <gm-include src="blocks/browser-window.html" theme="light" url="acme.com" dots="none" bar="#f4efe6" field="#ffffff" text="#3d2c1e" url-size="28" lock="off"></gm-include>
 -->
-<div class="gmb-browser gmb-browser--{{theme|dark}}" style="--w:{{width|1500}};--h:{{height|860}}" data-scroll="{{scroll|0}}" data-enter="rise 0.9">
+<div class="gmb-browser gmb-browser--{{theme|dark}}" style="--w:{{width|1500}};--h:{{height|860}}" data-scroll="{{scroll|0}}" data-dots="{{dots}}" data-bar="{{bar}}" data-field="{{field}}" data-text="{{text}}" data-url-size="{{url-size}}" data-lock="{{lock|on}}" data-enter="rise 0.9">
   <div class="gmb-browser__bar"><i></i><i></i><i></i><div class="gmb-browser__url"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z"/></svg>{{url|example.com}}</div></div>
   <div class="gmb-browser__view"><div class="gmb-browser__page"><img class="gmb-browser__img" src="{{image}}" alt="">{{content}}</div></div>
 </div>
@@ -12,6 +13,17 @@ usage: <gm-include src="blocks/browser-window.html" url="example.com/pricing" im
   const root = document.currentScript.previousElementSibling;
   const img = root.querySelector('.gmb-browser__img');
   if (!img.getAttribute('src')) img.remove();
+  // brand palette: only what is given changes (the defaults are the stylesheet below)
+  const ds = root.dataset, bar = root.querySelector('.gmb-browser__bar'), url = root.querySelector('.gmb-browser__url');
+  const dots = (ds.dots || '').trim();
+  if (/^(none|off|no|false|0)$/i.test(dots)) bar.querySelectorAll(':scope > i').forEach((i) => i.remove());
+  else if (dots) { const c = dots.split(/\s*[,;]\s*|\s+(?![^(]*\))/).filter(Boolean); bar.querySelectorAll(':scope > i').forEach((i, k) => { i.style.background = c[Math.min(k, c.length - 1)]; }); }
+  if (ds.bar) bar.style.background = ds.bar;
+  if (ds.field) url.style.background = ds.field;
+  if (ds.text) url.style.color = ds.text;
+  const us = parseFloat(ds.urlSize);
+  if (us > 0) { url.style.fontSize = `calc(var(--px)*${us})`; url.style.height = `calc(var(--px)*${Math.max(40, us * 1.65)})`; if (us * 1.65 + 26 > 66) bar.style.height = `calc(var(--px)*${us * 1.65 + 26})`; const sv = url.querySelector('svg'); if (sv) sv.style.width = sv.style.height = `calc(var(--px)*${us * 0.75})`; }
+  if (/^(off|no|none|false|0)$/i.test((ds.lock || '').trim())) { const sv = url.querySelector('svg'); if (sv) sv.remove(); }
   const px = parseFloat(root.dataset.scroll) || 0;
   if (px) {
     const page = root.querySelector('.gmb-browser__page');

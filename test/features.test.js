@@ -1005,3 +1005,27 @@ test('gm.sketch.loop circles a group without cutting its labels, draws on, and d
   assert.equal(fa.length, 60);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
 });
+
+test('blocks: cursor aims at a point inside its target (@x,y and aim=); browser-window takes brand colors, no dots, no lock, a bigger URL', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2" style="position:absolute;inset:0">
+    <div id="t" style="position:absolute;left:100px;top:100px;width:200px;height:40px;background:#eee"></div>
+    <div id="u" style="position:absolute;left:100px;top:200px;width:200px;height:40px;background:#eee"></div>
+    <gm-include src="${ROOT}/blocks/cursor.html" points="#t@25%,50%" times="0"></gm-include>
+    <gm-include src="${ROOT}/blocks/cursor.html" points="#u" aim="30,0%" times="0" ring="#e5484d"></gm-include>
+    <gm-include src="${ROOT}/blocks/browser-window.html" url="acme.com" width="600" height="200" dots="none" bar="rgb(10, 20, 30)" text="rgb(200, 100, 0)" url-size="36" lock="off"></gm-include>
+  </section>`));
+  const v = await evalAt(f, 0.5, `(() => {
+    const c = [...document.querySelectorAll('.gmb-cursor')].map((e) => e.style.translate.split(' ').map(parseFloat));
+    const b = document.querySelector('.gmb-browser'), url = b.querySelector('.gmb-browser__url');
+    return { c, ring: getComputedStyle(document.querySelectorAll('.gmb-cursor__ring')[1]).borderTopColor, dots: b.querySelectorAll('.gmb-browser__bar > i').length, lock: !!url.querySelector('svg'),
+      bar: getComputedStyle(b.querySelector('.gmb-browser__bar')).backgroundColor, text: getComputedStyle(url).color, size: parseFloat(getComputedStyle(url).fontSize) };
+  })()`);
+  const px = 360 / 1080;
+  assert.deepEqual(v.c[0].map(Math.round), [150, 120], '25% across, half down');
+  assert.deepEqual(v.c[1].map((x) => Math.round(x * 10) / 10), [Math.round((100 + 30 * px) * 10) / 10, 200], '30 px (at 1080p) in from the left, top edge');
+  assert.equal(v.ring, 'rgb(229, 72, 77)');
+  assert.equal(v.dots, 0); assert.equal(v.lock, false);
+  assert.equal(v.bar, 'rgb(10, 20, 30)'); assert.equal(v.text, 'rgb(200, 100, 0)');
+  assert.ok(Math.abs(v.size - 36 * px) < 0.1, 'url size ' + v.size);
+});

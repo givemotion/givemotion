@@ -27,12 +27,15 @@ Contents
 - Layering: `.scene` is its own layer. Background blocks (`gradient-bg`, `grid-bg`) always sit behind the scene's content. Full-frame blocks (`title-card`, `end-card`, `quote`, `logo-reveal`, `word-pop`, `captions`, `callout`, `cursor`) cover the scene themselves; other blocks are normal boxes you place with flex/grid.
 - A background under a whole sequence: put the background element (or a `gradient-bg`) outside the `data-sequence`, before it, with no timing: elements without timing are always there.
 - In tests, agents who built their own visuals scored higher than ones who assembled stock blocks. Use blocks for the parts that are fiddly to build (captions, code-window, cursor, lottie, backgrounds) and restyle them to the video's look.
+- `browser-window` follows a brand palette: `dots="none"` (or one color, or three `"#e5484d,#f5a524,#30a46c"`), `bar` (top bar color), `field` (address field), `text` (address text), `url-size` (px at 1080p, default 24), `lock="off"`, plus `theme="light"`.
 - `code-window`: every line is `.gm-line[data-line="N"]` (aim a camera at it or animate it with a timeline); wrap a part of the code in `⟦ ⟧` to mark it (it becomes `.gm-mark[data-mark="1"]`); `highlight`, `focus` (dims the other lines), `gutter`, `grow`, `typing`, `size`. Scaled down, its text gets small: zoom the camera in rather than shrinking the window.
 
 ## Cursor demos
 
 The `cursor` block aims at real elements: `points="1700,980 #email #submit! .menu li:nth-child(3)!"` (selector or x,y; `!` = click) at `times="0.4 1.6 3"` (when it arrives at each point: seconds into its clip, or `times="video: 12.5 13.4"` / `"beats: 16 18"` / `"bars: 4 4.5"` for video times, which do not drift when a transition or `data-cut-align` moves the scene start).
 - Add `show="auto"` so it fades in just before its first move and out after its last point (otherwise it sits there from the start of the scene).
+- A selector aims a little below the middle of its element. When the middle is the wrong spot (a tag or icon there, or the hand would cover the text), say where: `#slot-thu@30%,55%` (30% across, 55% down its box) or `#row@40,50%` (40 px in from its left edge, at 1080p, zoomed with it); the `!` goes last (`#slot-thu@30%,55%!`). `aim="20%,50%"` sets it for every selector without its own `@`. It keeps tracking the element live, through camera zoom.
+- `ring="#e5484d"` colors the click ripple (default: a dark ring with a light halo, readable on light and dark UIs; `ring="light"` = the white one).
 - It follows elements while they move, presses them, and sets `data-gm-hover` / `data-gm-pressed` on them so you can style hover and press.
 - With `gm.camera`, put it inside the world (x,y in world px; it zooms with the world, like a zoomed screen recording) or after the world in the scene (x,y in screen px; it keeps its size); either way selectors land on their element through any zoom, and no wrapper size is needed.
 - `cursor-target` warns when a selector matches nothing.

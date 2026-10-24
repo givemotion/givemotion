@@ -318,7 +318,9 @@
       } else {
         fp.setAttribute('d', hachure(pts, { gap: o.gap ?? Math.max(9, sw * 3.2), angle: o.angle ?? -41, cross: mode === 'cross' || mode === 'cross-hatch', seed: seed + 'f', roughness: 0.5 * so.roughness }));
         // a pale fill would fade away as thin lines: the same hue, deeper (pastel yellow → a real yellow)
-        const hatchColor = lightness(fillColor) > 0.82 && CSS.supports('color', `oklch(from ${fillColor} l c h)`) ? `oklch(from ${fillColor} min(l, 0.8) max(c, 0.14) h)` : fillColor;
+        // a pale fill hatched on paper would vanish: deepen it in the same hue; a white/grey one (no hue) to grey, not pink
+        const rgb = mw.color && mw.color.parse(fillColor), gray = rgb && Math.max(rgb[0], rgb[1], rgb[2]) - Math.min(rgb[0], rgb[1], rgb[2]) < 16;
+        const hatchColor = lightness(fillColor) > 0.82 && CSS.supports('color', `oklch(from ${fillColor} l c h)`) ? (gray ? `oklch(from ${fillColor} min(l, 0.84) 0 h)` : `oklch(from ${fillColor} min(l, 0.8) max(c, 0.14) h)`) : fillColor;
         fp.setAttribute('style', `fill:none;stroke:${hatchColor};stroke-width:${Math.max(2, sw * 0.9)}px;stroke-linecap:round`);
       }
       fp.setAttribute('data-mw-sketch-fill', mode);

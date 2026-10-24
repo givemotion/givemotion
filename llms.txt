@@ -2,11 +2,30 @@
 
 > Make videos with AI, free and open source (MIT). A free code-to-video engine built for AI coding agents (Claude Code, Cursor, Codex): the agent writes one HTML/CSS/JS page, checks it (`check`), looks at key frames (`snapshot`) and renders MP4/WebM/ProRes/GIF. Free for any use, including companies. Needs Node 20+, ffmpeg and Chrome.
 
-Install in a project: `npx givemotion init my-video` (starter video + agent instructions) or `npx givemotion skill` (instructions only). Then ask the agent for a video.
+Install in a project: `npx givemotion init my-video` (starter video + the agent skill pack) or `npx givemotion skill` (skill pack only: `.claude/skills/givemotion/`, `.agents/skills/givemotion/`, and a section in `AGENTS.md`). As a Claude Code plugin: `/plugin marketplace add leonardogrig/givemotion`, then `/plugin install givemotion@givemotion`. With the skills CLI: `npx skills add leonardogrig/givemotion`. Then ask the agent for a video.
 
-- [Agent reference (SKILL.md)](skills/givemotion/SKILL.md): composition format, timing attributes, motion presets, JS API, media, blocks, checks. Read this first.
+Core loop: plan a shot list → write HTML → `npx givemotion check file.html` → `npx givemotion snapshot file.html` (look at snapshots/sheet.png) → `npx givemotion render file.html -o out/video.mp4`.
+
+## Agent skill (read SKILL.md first, the rest on demand)
+
+- [SKILL.md](skills/givemotion/SKILL.md): the loop, composition format, timing model, quality rules, built-in motion, presets, blocks, and which reference to read when.
+- [motion-design.md](skills/givemotion/references/motion-design.md): motion design principles with numbers (timing, easing, camera grammar, continuity) and what blind judges punished.
+- [styles.md](skills/givemotion/references/styles.md): eight named looks (palette tokens, fonts, background, motion personality).
+- [timeline.md](skills/givemotion/references/timeline.md): full `gm.timeline` / `gm.fly` API, sequences, cuts, cut-align, the morph transition.
+- [camera.md](skills/givemotion/references/camera.md): `gm.camera` over a world, shot options, parallax, path travel, one object riding another.
+- [charts.md](skills/givemotion/references/charts.md): live line charts (`gm.chart.line`), chart blocks, counters.
+- [diagrams.md](skills/givemotion/references/diagrams.md): arrows (`gm.connect`), hand-drawn (`data-sketch`), `data-anchor` labels, shapes and path morphs.
+- [media-audio.md](skills/givemotion/references/media-audio.md): video, audio, beats, `data-pulse`, `gm.audio`, captions, fonts.
+- [data-templates.md](skills/givemotion/references/data-templates.md): `--data`, `{{data.…}}`, `<gm-include>`, blocks, the cursor block.
+- [javascript.md](skills/givemotion/references/javascript.md): `gm.onFrame` and helpers, particle bursts, seekable JS rules, canvas, Lottie.
+- [output.md](skills/givemotion/references/output.md): render options, the parts cache, render speed, transparent overlays, bundle and `<gm-player>`, React.
+- [review.md](skills/givemotion/references/review.md): snapshot/inspect/check recipes, reading a sheet, `analyze` for reference videos.
+- [check-codes.md](skills/givemotion/references/check-codes.md): every `check` code and how to fix it, `data-check`.
+- [react.md](skills/givemotion/references/react.md): compositions as React components (`givemotion/react`).
+- [genres/](skills/givemotion/references/genres/): explainer, data story, promo, UI demo, code explainer, logo sting, vertical short, whiteboard, year recap.
+
+## More
+
 - [README](README.md): overview, commands, performance, how it works.
 - [Blocks](blocks/): copyable HTML building blocks; each file's header lists params and usage.
 - [Examples](examples/): complete compositions.
-
-Core loop: write HTML → `npx givemotion check file.html` → `npx givemotion snapshot file.html` (look at snapshots/sheet.png) → `npx givemotion render file.html -o out/video.mp4`.

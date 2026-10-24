@@ -1,5 +1,7 @@
 # givemotion with React (JSX)
 
+Purpose: writing a composition as a React component (`givemotion/react`): the API, an example, and the rules.
+
 A composition can be a React component in a `.jsx` (or `.tsx`) file. The engine is the same as for HTML:
 everything in SKILL.md (clips, sequences, transitions, `data-enter`, `data-camera`, `data-morph`, `gm.timeline`,
 audio, check, snapshot, render) works, because React just renders normal HTML elements with those attributes.

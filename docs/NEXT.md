@@ -48,10 +48,8 @@ experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modu
 - **Live line chart** (both data-story makers wrote ~150 lines): a chart block or `mw.chart.line` whose line head is an
   element the camera can follow, `pointAt(i)` / the value at a time, an axis that rescales to the max so far, callouts
   pinned to points, pauses at chosen points. Files: `blocks/line-chart.html` or `src/runtime/motion.js`.
-- **`mw.connect` labels**: choose the side and the position along the arrow (`label: { at: 0.3, side: 'left' }`), and
-  attach points other than side midpoints (`fromAt`/`toAt`). Files: `src/runtime/sketch.js`.
-- **Cursor block**: `times` in video time or beats, hidden until its first move (and after its last), works inside a
-  camera world. Files: `blocks/cursor.html`.
+- Done: **`mw.connect` labels**: `label: { at, side, offset }` placed on the geometric line, box clears the line; `from: 'top 0.25'`, corners, `fromAt`/`toAt` (`src/runtime/sketch.js`).
+- Done: **Cursor block**: `times="video: …"`/`"beats: …"`/`"bars: …"`, `show="auto"`, lands through any camera zoom with no wrapper size (`blocks/cursor.html`).
 - **Morph** between two different shapes or texts reads as a muddy crossfade: fade the old one out faster, or scale
   the pair to a shared box first. Files: `src/runtime/motion.js` (morphs).
 - **Ride / fly helpers**: one object riding another along a route (package on the robot, then the truck), and a

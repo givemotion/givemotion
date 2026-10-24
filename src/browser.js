@@ -181,6 +181,17 @@ export class FramePage {
             e.message = base + ` (${file} line ${n + 1})`;
           }
           const l = lines[n]; if (l && l.trim()) e.message += `: ${l.trim().slice(0, 140)}`;
+          // The served page has <mw-include> files expanded, so its line numbers can be ahead of the file you wrote:
+          // find the same line in the file itself.
+          if (l && l.trim() && /\.html?$/i.test(file)) {
+            const k = lines.slice(0, n).filter((x) => x.trim() === l.trim()).length;
+            fetch(url.split('?')[0] + '?source=1').then((r) => (r.ok ? r.text() : null)).then((src) => {
+              if (!src) return;
+              const hits = []; src.split('\n').forEach((x, i) => { if (x.trim() === l.trim()) hits.push(i); });
+              const at = hits[Math.min(k, hits.length - 1)];
+              e.message = e.message.replace(` (${file} line ${n + 1})`, at != null ? ` (${file} line ${at + 1})` : ` (in a file included into ${file})`);
+            }).catch(() => {});
+          }
           if (id && /^(top|name|status|parent|self|length|origin|history|location|frames|event|screen|close|open|print|stop|find|focus|blur)$/.test(id[1])) e.message += ` ("${id[1]}" is a built-in browser name: rename the variable, or wrap your script in { … })`;
         }).catch(() => {});
       }

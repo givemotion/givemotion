@@ -224,6 +224,8 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       if (!file || !existsSync(file) || !statSync(file).isFile()) return send(res, 404, 'text/plain', 'not found: ' + path);
       const ext = extname(file).toLowerCase();
       if (ext === '.html' || ext === '.htm') {
+        // the file as written (error lines are mapped back to it)
+        if (u.searchParams.has('source')) return send(res, 200, 'text/plain; charset=utf-8', readFileSync(file, 'utf8'), { 'Cache-Control': 'no-store' });
         let html = readFileSync(file, 'utf8');
         html = expandIncludes(html, dirname(file), root);
         html = applyData(html, data);

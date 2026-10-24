@@ -376,7 +376,11 @@
       const kids = [...container.children].filter((c) => !SKIP_TAGS.has(c.tagName));
       // data-cuts="0 2.13 4.27": when each child starts (e.g. on music beats); durations follow from them.
       const cutsAttr = container.getAttribute('data-cuts');
-      const cuts = cutsAttr ? cutsAttr.trim().split(/[\s,]+/).map((x) => parseTime(x, container, 'data-cuts')).filter((x) => x != null) : null;
+      // ("beats: 0 4 8 12" / "bars: 0 1 2 4": on the <html data-bpm> beat grid)
+      const unit = cutsAttr && /^\s*(beats?|bars?)\s*:/i.exec(cutsAttr);
+      const cuts = !cutsAttr ? null : unit
+        ? cutsAttr.slice(unit[0].length).trim().split(/[\s,]+/).filter(Boolean).map((x) => { const n = parseFloat(x); if (!isFinite(n)) { report('error', 'bad-time', `data-cuts: "${x}" is not a number of ${unit[1]}.`, container); return null; } const g = beatGrid(); return /^bar/i.test(unit[1]) ? g.barOffset + n * g.perBar * g.period : g.offset + n * g.period; }).filter((x) => x != null)
+        : cutsAttr.trim().split(/[\s,]+/).map((x) => parseTime(x, container, 'data-cuts')).filter((x) => x != null);
       if (cuts && cuts.length) {
         const map = new Map(), trs = [];
         let end = 0;

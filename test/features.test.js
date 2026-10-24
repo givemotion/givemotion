@@ -270,3 +270,15 @@ test('data-anchor keeps labels next to moving shapes (camera, chains, SVG text);
   assert.equal(fa.length, 60);
   assert.deepEqual(fa.filter((x) => !readFileSync(join(a, x)).equals(readFileSync(join(b, x)))), []);
 });
+
+test('data-pulse scales on the beat grid and sets --beat; data-cuts can be written in beats', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<main data-sequence data-cuts="beats: 0 3"><section class="scene" id="a"><b id="p" data-pulse="beat 0.1" style="display:block">X</b></section><section class="scene" id="b" data-duration="1"></section></main>`,
+    'data-width="640" data-height="360" data-fps="30" data-bpm="120" data-beat-offset="0.1"'));
+  const at = (t) => evalAt(f, t, `JSON.stringify([document.getElementById('p').style.scale, document.getElementById('p').style.getPropertyValue('--beat'), mw.timing('#b').start])`).then(JSON.parse);
+  const [s1, b1, start] = await at(0.6);
+  assert.equal(start, 1.6); // beat 3 = 0.1 + 3 * 0.5
+  assert.equal(+s1, 1.1); assert.equal(+b1, 1);
+  const [s2] = await at(0.7);
+  assert.ok(+s2 > 1 && +s2 < 1.1);
+});

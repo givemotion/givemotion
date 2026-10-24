@@ -1358,6 +1358,37 @@
     return changed;
   }
 
+  // ---------------------------------------------------------------------------
+  // data-pulse="[beat|bar|half|<n beats>] [amount] [decay]": scales up on the <html data-bpm> beat grid and falls back
+  // (default: every beat, 0.06, 0.25 s). Also sets --beat (1 on the beat → 0) on the element, for your own CSS.
+  // ---------------------------------------------------------------------------
+  let pulses = null;
+  function updatePulses(T) {
+    if (!pulses) {
+      pulses = [...document.querySelectorAll('[data-pulse]')].map((el) => {
+        const tk = (el.getAttribute('data-pulse') || '').trim().split(/\s+/).filter(Boolean);
+        let every = 1;
+        if (tk[0] && /^[a-z]/i.test(tk[0])) { const w = tk.shift().toLowerCase(); every = w.startsWith('bar') ? 'bar' : w.startsWith('half') ? 0.5 : 1; }
+        else if (tk.length === 3) every = parseFloat(tk.shift()) || 1;
+        return { el, every, amount: tk[0] != null ? parseFloat(tk[0]) : 0.06, decay: tk[1] != null ? parseFloat(tk[1]) : 0.25, last: null };
+      });
+      if (pulses.length) pulses.grid = { b0: mw.beat(0), period: mw.beat(1) - mw.beat(0), bar0: mw.bar(0), barLen: mw.bar(1) - mw.bar(0) };
+    }
+    if (!pulses.length) return false;
+    const g = pulses.grid;
+    let changed = false;
+    for (const p of pulses) {
+      const len = p.every === 'bar' ? g.barLen : g.period * p.every, o = p.every === 'bar' ? g.bar0 : g.b0;
+      const dt = T - o - Math.floor((T - o) / len + 1e-9) * len;
+      const v = T < o - 1e-9 ? 0 : Math.pow(Math.max(0, 1 - dt / Math.max(0.01, p.decay)), 2);
+      const key = Math.round(v * 1000);
+      if (key === p.last) continue;
+      p.last = key; changed = true;
+      p.el.style.setProperty('--beat', r4(v));
+      if (p.amount) p.el.style.scale = String(r4(1 + p.amount * v));
+    }
+    return changed;
+  }
   function updateCameras(T) { let ch = false; for (const c of cameras) if (c._apply(T)) ch = true; return ch; }
 
   // ---------------------------------------------------------------------------
@@ -1548,6 +1579,7 @@
   I.hooks.rebuild.push(() => { setupCameras(); setupMorphs(); setupScramble(); });
   I.hooks.post.push(updateCameras);
   I.hooks.post.push(updateMorphs);
+  I.hooks.post.push(updatePulses);
   I.hooks.seek.push((T) => {
     let changed = updateScramble(T);
     if (animImgs.length && updateAnimatedImages(T)) changed = true;

@@ -391,17 +391,15 @@ export async function render(input, opts = {}) {
       // (warm up on frame a-1), so any split between workers and any re-rendered part gives the same bytes.
       const captureAuto = async (a, b, writer) => {
         let q0 = Date.now();
-        // every range on a freshly loaded page: Chrome keeps some paint state (raster scales of moving layers) from frame to
-        // frame, so this is what makes a range the same bytes whichever worker renders it, after whatever it rendered before
-        if (prevFrame >= -1) { const q1 = Date.now(); await reopen(page); prof.reopen = (prof.reopen || 0) + Date.now() - q1; }
+        // every range starts the same way, whichever worker renders it and whatever this page rendered before: on the frame
+        // before (the first samples of frame a come before a), with Chrome's paint state from earlier frames dropped
         last = null;
-        // warm up on the frame before (on frame 1 for the start): the paint caches then do not depend on what this
-        // page rendered before
-        await page.seek((a > 0 ? a - 1 : 1) / fps);
-        // (a page that went stateful on frame 1 cannot step back to 0: fresh page, warm up on 0)
-        if (a === 0 && (await page.evaluate('gm.__stateful()'))) { await reopen(page); await page.seek(0); }
-        await page.capture(captureFormat, jpegQ);
-        await page.capture(captureFormat, jpegQ); // a fresh page may still be painting parts of the first frame
+        // (a page whose state depends on the frames it ran, e.g. timers, cannot step back: a fresh page for it)
+        if (prevFrame >= -1 && (await page.evaluate('gm.__stateful()'))) { const q1 = Date.now(); await reopen(page); prof.reopen = (prof.reopen || 0) + Date.now() - q1; }
+        await page.seek(Math.max(0, a - 1) / fps);
+        const q1 = Date.now();
+        await page.resetPaint();
+        prof.reset = (prof.reset || 0) + Date.now() - q1;
         const blenders = new Map();
         let chain = Promise.resolve();
         const put = (f, img) => {

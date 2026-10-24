@@ -43,6 +43,7 @@ Already have a project? `npx motionwright skill` adds just the agent instruction
 
 - Product launch videos and app promos (with a cursor that really clicks the right button)
 - Explainers with a camera that moves over a map, a diagram or a whole UI
+- Hand-drawn whiteboard (Excalidraw-style) explainers: sketchy shapes and arrows that draw themselves on, handwriting
 - Animated charts and data stories, from your own JSON data
 - Vertical shorts for TikTok, Reels and YouTube Shorts, with word-by-word captions
 - Code explainers for developer channels
@@ -279,7 +280,8 @@ motionwright itself has **zero required npm dependencies**.
 ## License
 
 MIT. Use it, change it, fork it, sell what you make with it. Chrome and ffmpeg are installed separately under
-their own licenses. The example music and images were made for this project and are MIT too.
+their own licenses. The example music and images were made for this project and are MIT too. The bundled Caveat
+handwriting font is under the SIL Open Font License (`src/runtime/fonts/Caveat-OFL.txt`).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
 another framework and HyperFrames, but no code from them.

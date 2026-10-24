@@ -1008,7 +1008,13 @@
       let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
       for (const e of els) {
         let q;
-        if (e.getClientRects().length) { const c = e.getBoundingClientRect(); q = { l: (c.left - M.ox) / M.k, t: (c.top - M.oy) / M.k, r: (c.right - M.ox) / M.k, b: (c.bottom - M.oy) / M.k }; }
+        if (e.getClientRects().length) {
+          const c = e.getBoundingClientRect(); q = { l: (c.left - M.ox) / M.k, t: (c.top - M.oy) / M.k, r: (c.right - M.ox) / M.k, b: (c.bottom - M.oy) / M.k };
+          // scaled far down right now (waiting to pop in, or popping): frame its full size around where it is, so the
+          // shot does not zoom in on a dot and then drift while the element grows
+          const lw = e.offsetWidth, lh = e.offsetHeight;
+          if (lw && lh && (q.r - q.l) * (q.b - q.t) < 0.5 * lw * lh) { const cx = (q.l + q.r) / 2, cy = (q.t + q.b) / 2; q = { l: cx - lw / 2, t: cy - lh / 2, r: cx + lw / 2, b: cy + lh / 2 }; }
+        }
         else q = hiddenBox(e, M); // not on screen yet (a later clip): frame where it will be, not the corner of the screen
         if (!q) continue;
         l = Math.min(l, q.l); t = Math.min(t, q.t); r = Math.max(r, q.r); b = Math.max(b, q.b);

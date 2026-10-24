@@ -1259,6 +1259,16 @@
       if (!isFinite(from) || !isFinite(to)) { report('error', 'bad-count', 'data-count needs numbers: "1250" or "0 1250".', el); continue; }
       const decAttr = el.getAttribute('data-count-decimals');
       const decimals = decAttr != null ? parseInt(decAttr, 10) : Math.max(dec(from), dec(to));
+      const group = el.getAttribute('data-count-group') !== 'false';
+      // natural motion: digits all as wide (tabular) unless the page chose otherwise, so the number does not wobble
+      if (naturalMotion() && getComputedStyle(el).fontVariantNumeric === 'normal') el.style.fontVariantNumeric = 'tabular-nums';
+      // data-count-fixed: every digit in a cell as wide as the font's widest digit (works with any font), and the box
+      // reserved for the longest number from the start (the digits sit right-aligned in it, the units digit never moves)
+      let fixed = null;
+      if (el.hasAttribute('data-count-fixed') && el.getAttribute('data-count-fixed') !== 'false') {
+        const a = fmtNumber(from, decimals, group), b = fmtNumber(to, decimals, group);
+        fixed = b.length >= a.length ? b : a;
+      }
       counters.push({
         el, from, to, decimals,
         dur: parseTime(el.getAttribute('data-count-duration'), el, 'data-count-duration') ?? 1.6,
@@ -1266,7 +1276,7 @@
         ease: easing(el.getAttribute('data-count-ease') || 'out-expo'),
         prefix: el.getAttribute('data-count-prefix') || '',
         suffix: el.getAttribute('data-count-suffix') || '',
-        group: el.getAttribute('data-count-group') !== 'false',
+        group, fixed,
         last: null,
       });
     }
@@ -1297,6 +1307,22 @@
     if (group) { const [i, f] = s.split('.'); s = i.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (f ? '.' + f : ''); }
     return (neg ? '\u2212' : '') + s;
   }
+  function fixedCount(c, num) {
+    const el = c.el, pat = c.fixed, pad = pat.length - num.length;
+    el.textContent = '';
+    if (c.prefix) el.appendChild(document.createTextNode(c.prefix));
+    const box = document.createElement('span');
+    box.className = 'gm-num';
+    for (let i = 0; i < Math.max(pat.length, num.length); i++) {
+      const j = i - Math.max(0, pad), ghost = j < 0, ch = ghost ? pat[i] : num[j];
+      const cell = document.createElement('span');
+      if (/\d/.test(ch)) { cell.className = ghost ? 'gm-dg gm-ghost' : 'gm-dg'; const d = document.createElement('span'); d.textContent = ch; cell.appendChild(d); }
+      else { if (ghost) cell.className = 'gm-ghost'; cell.textContent = ch; }
+      box.appendChild(cell);
+    }
+    el.appendChild(box);
+    if (c.suffix) el.appendChild(document.createTextNode(c.suffix));
+  }
   function updateCounters(T) {
     let changed = false;
     for (const c of counters) {
@@ -1304,7 +1330,7 @@
       const p = c.dur > 0 ? Math.min(1, Math.max(0, lt / c.dur)) : 1;
       const v = c.from + (c.to - c.from) * c.ease(p);
       const txt = c.prefix + fmtNumber(v, c.decimals, c.group) + c.suffix;
-      if (txt !== c.last) { c.el.textContent = txt; c.last = txt; changed = true; }
+      if (txt !== c.last) { if (c.fixed) fixedCount(c, fmtNumber(v, c.decimals, c.group)); else c.el.textContent = txt; c.last = txt; changed = true; }
     }
     for (const ty of typers) {
       const lt = mapT(ty.el, T) - clipStartOf(ty.el) - ty.delay;

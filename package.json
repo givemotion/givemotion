@@ -30,7 +30,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "test": "node --test --test-concurrency=1 test/unit.test.js test/e2e.test.js test/features.test.js",
     "bench": "node src/cli.js bench"
   },
   "keywords": [

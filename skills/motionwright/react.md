@@ -39,7 +39,7 @@ export default function Video({ data }) {                  // data = --data / --
 
 | | |
 |---|---|
-| `<Sequence transition="fade 0.6" gap={0.2}>` | Children play one after another (same as `data-sequence`). |
+| `<Sequence transition="fade 0.6" gap={0.2} cuts={[0, 2.13, 4.27]}>` | Children play one after another (same as `data-sequence`); `cuts` = when each child starts. |
 | `<Scene duration={3} start? transition? camera? enter? exit?>` | Full-frame clip (`class="scene"`). Props map to the `data-*` attributes. |
 | `<Clip start={1} duration={2} as="span">` | Any element that exists only for that time, relative to its parent clip. Also `loop` `freeze` `speed`. |
 | `useTime()` | Seconds since the nearest Clip/Scene started (re-renders every frame). `useFrame()`, `useGlobalTime()`. |

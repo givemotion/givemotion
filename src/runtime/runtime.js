@@ -356,8 +356,10 @@
     return { name, dur, ease: toks.find(isEasingName) || null };
   }
 
+  let transitionList = [];
   function buildTimeline() {
     morphPairs = [];
+    transitionList = [];
     const els = [...document.querySelectorAll('[data-start],[data-duration],[data-end],[data-sequence] > *')].filter(isClipEl);
     const info = new Map();
     for (const el of els) info.set(el, null);
@@ -372,6 +374,29 @@
       const tr = parseTransition(container.getAttribute('data-transition'));
       const gap = parseTime(container.getAttribute('data-gap'), container, 'data-gap') || 0;
       const kids = [...container.children].filter((c) => !SKIP_TAGS.has(c.tagName));
+      // data-cuts="0 2.13 4.27": when each child starts (e.g. on music beats); durations follow from them.
+      const cutsAttr = container.getAttribute('data-cuts');
+      const cuts = cutsAttr ? cutsAttr.trim().split(/[\s,]+/).map((x) => parseTime(x, container, 'data-cuts')).filter((x) => x != null) : null;
+      if (cuts && cuts.length) {
+        const map = new Map(), trs = [];
+        let end = 0;
+        kids.forEach((k, i) => {
+          const own = i > 0 ? parseTransition(k.getAttribute('data-transition')) : null;
+          const t = i > 0 ? (own || tr) : null;
+          trs.push(t);
+          const start = cuts[i] != null ? cuts[i] : end;
+          const nextT = i + 1 < kids.length ? (parseTransition(kids[i + 1].getAttribute('data-transition')) || tr) : null;
+          let d;
+          if (cuts[i + 1] != null) d = cuts[i + 1] - start + (nextT ? nextT.dur : 0);
+          else d = parseTime(k.getAttribute('data-duration'), k, 'data-duration') ?? 3;
+          if (cuts[i] == null && i < kids.length) report('warning', 'cuts-short', `data-cuts has ${cuts.length} times for ${kids.length} children; the rest follow one after another.`, container);
+          map.set(k, { start, dur: d, index: i, count: kids.length });
+          end = start + d;
+        });
+        const res = { map, length: end, tr, trs };
+        seqCache.set(container, res);
+        return res;
+      }
       let cursor = 0;
       const map = new Map();
       const trs = [];
@@ -475,6 +500,8 @@
         const ez = t.ease || def.ease;
         const tail = `${t.dur}s${ez ? ' ' + ez : ''}`;
         if (def.morph) morphPairs.push({ from: kids[i - 1], to: k, dur: t.dur, ease: ez || 'in-out-cubic' });
+        const kc = clipOf.get(k);
+        if (kc) transitionList.push({ name: t.name, start: round(kc.start), end: round(kc.start + t.dur) });
         if (def.enter && !k.hasAttribute('data-enter')) k.setAttribute('data-enter', `${def.enter} ${tail}`);
         const prev = kids[i - 1];
         if (prev && def.exit && !prev.hasAttribute('data-exit')) prev.setAttribute('data-exit', `${def.exit} ${tail}`);
@@ -1183,7 +1210,7 @@
       mutated = true;
       if (r.type === 'childList') {
         for (const n of r.addedNodes) if (n.nodeType === 1 && (n.matches(CLIP_SEL) || n.querySelector(CLIP_SEL) || (n.parentElement && n.parentElement.hasAttribute('data-sequence')))) timelineDirty = true;
-      } else if (r.type === 'attributes' && /^data-(start|duration|end|sequence|transition|gap)$/.test(r.attributeName)) timelineDirty = true;
+      } else if (r.type === 'attributes' && /^data-(start|duration|end|sequence|transition|gap|cuts)$/.test(r.attributeName)) timelineDirty = true;
     }
   }
   const mo = new MutationObserver(handleRecords);
@@ -1399,6 +1426,7 @@
       width: comp.width, height: comp.height, fps: comp.fps, duration: comp.duration, background: comp.background,
       frames: Math.max(1, Math.round(comp.duration * comp.fps)),
       clips: clips.map((c) => ({ selector: selectorOf(c.el), start: round(c.start), end: round(isFinite(c.end) ? c.end : comp.duration) })),
+      transitions: transitionList.slice(),
       media: media(),
       usesRAF: usedRAF, frameCallbacks: frameFns.length,
       issues: issues.slice(),

@@ -73,8 +73,10 @@ const CMD_HELP = {
   still: 'motionwright still [file.html] -t <seconds> | --frame <n> -o frame.png [--transparent] [--json]',
   snapshot: `motionwright snapshot [file.html] [options]
   -o <dir>          Where to write (default: snapshots/ next to the HTML file)
-  --times 1,2.5,4   Exact moments (seconds) instead of automatic ones
-  --every 0.5       One frame every N seconds
+  --times 1,2.5,4   Exact moments (seconds, or frames like 45f) instead of automatic ones
+  --every 0.5       One frame every N seconds (or --every 1f for every frame)
+  --from 3.2 --to 3.8   Only this part (with --every: a frame-by-frame strip of a move)
+  --transitions     Start, middle and end of every scene transition
   --max 12          Max automatic moments (default 12; one per scene when settled)
   --sheet-only      Only write sheet.png
   --cols 3          Columns in the sheet
@@ -89,7 +91,7 @@ const CMD_HELP = {
   Exit code 1 when there are errors. Warnings do not fail.`,
   bundle: 'motionwright bundle [file.html] [-o dir] [--data f.json] [--props \'{…}\'] [--json]\n  Writes a standalone page (runtime inlined, blocks expanded, assets copied), mw-player.js and player.html.\n  Embed: <script src="mw-player.js"></script> <mw-player src="index.html" controls autoplay loop muted></mw-player>',
   audio: 'motionwright audio music.mp3 [--json] [--fps 30]\n  Prints tempo (BPM), beat times, downbeats (bar starts), big hits and loudness per second, so you can plan cuts on the beat.',
-  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), media, issues.',
+  inspect: 'motionwright inspect [file.html]\n  Prints JSON: width, height, fps, duration, frames, clips (selector, start, end), transitions, media, issues.\n  --at 12.3 [--el "#logo"]   Where elements are at that moment: screen box, opacity, transform, visible.',
   dev: 'motionwright dev [file.html] [--port 4400] [--open] [--data f.json] [--props \'{…}\']',
   init: 'motionwright init [dir] [--force]',
   add: 'motionwright add <block> [more…] [--dir blocks]',
@@ -97,7 +99,7 @@ const CMD_HELP = {
   bench: 'motionwright bench [file.html] [--workers n] [--json]',
 };
 
-const BOOLS = ['json', 'force', 'transparent', 'muted', 'fast', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
+const BOOLS = ['json', 'force', 'transparent', 'muted', 'fast', 'transitions', 'hardware', 'quiet', 'reuse', 'open', 'sheetOnly', 'help', 'version', 'lossless', 'verbose', 'yes'];
 
 async function main() {
   const argv = process.argv.slice(2);
@@ -185,20 +187,26 @@ async function cmdStill(args) {
     const r = await stills(inputOf(args), [t], { ...opts, format: fmt, transparent: args.transparent });
     mkdirSync(dirname(out), { recursive: true });
     writeFileSync(out, r.buffers[0]);
-    if (args.json) console.log(JSON.stringify({ output: out, time: t }));
-    else console.error(`wrote ${shortPath(out)} (t=${t}s)`);
+    const problems = [...(r.info.issues || []).filter((i) => i.severity === 'error'), ...(r.errors || [])];
+    if (args.json) console.log(JSON.stringify({ output: out, time: t, problems }));
+    else {
+      console.error(`wrote ${shortPath(out)} (t=${t}s)`);
+      if (problems.length) console.error(`⚠ the page has ${problems.length} problem${problems.length > 1 ? 's' : ''} (run check for details): ${problems.slice(0, 3).map((p) => p.message).join(' | ')}`);
+    }
   } catch (e) { fail(e, args); }
 }
 
 async function cmdSnapshot(args) {
   const { snapshot } = await import('./check.js');
   try {
-    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times, every: args.every, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, cols: args.cols ? +args.cols : undefined });
+    const progress = args.json ? null : (i, n) => { if (n > 8 && (i === 1 || i % 10 === 0 || i === n)) process.stderr.write(`  frame ${i}/${n}\n`); };
+    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times, every: args.every, from: args.from, to: args.to, transitions: args.transitions, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, cols: args.cols ? +args.cols : undefined, onProgress: progress });
     if (args.json) console.log(JSON.stringify(r, null, 2));
     else {
       console.log(`sheet: ${shortPath(r.sheet)}`);
       console.log(`times: ${r.times.map((t) => t.toFixed(2) + 's').join(', ')}`);
-      if (r.files.length) console.log(`frames: ${shortPath(dirname(r.files[0]))}/ (${r.files.length} PNGs)`);
+      if (r.files.length) console.log(`frames (${r.files.length}): ${r.files.map((f) => shortPath(f)).slice(0, 6).join(', ')}${r.files.length > 6 ? ', …' : ''}`);
+      if (r.problems && r.problems.length) console.log(`⚠ the page has ${r.problems.length} problem${r.problems.length > 1 ? 's' : ''} (run check for details): ${r.problems.slice(0, 3).map((p) => p.message).join(' | ')}`);
     }
   } catch (e) { fail(e, args); }
 }
@@ -215,6 +223,23 @@ async function cmdCheck(args) {
 
 async function cmdInspect(args) {
   const { inspect } = await import('./api.js');
+  if (args.at != null) {
+    // Where elements are at one moment: rect on screen, opacity, transform, visible or not.
+    const { openComposition } = await import('./render.js');
+    const ctx = await openComposition(inputOf(args), { ...commonOpts(args), mode: 'render' });
+    try {
+      await ctx.page.seek(+args.at);
+      const sel = args.el || args.selector || '[data-start],[data-duration],[data-morph],h1,h2,h3';
+      const r = await ctx.page.evaluate(`(() => [...document.querySelectorAll(${JSON.stringify(sel)})].slice(0, 40).map((e) => {
+        const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
+        let op = 1, shown = true; for (let c = e; c && c.nodeType === 1; c = c.parentElement) { const s2 = getComputedStyle(c); op *= +s2.opacity; if (s2.display === 'none' || s2.visibility === 'hidden') shown = false; }
+        const r1 = (x) => Math.round(x * 10) / 10;
+        return { selector: mw.__selector(e), visible: shown && op > 0.01 && b.right > 0 && b.bottom > 0 && b.left < mw.width && b.top < mw.height, x: r1(b.left), y: r1(b.top), width: r1(b.width), height: r1(b.height), opacity: Math.round(op * 1000) / 1000, transform: cs.transform, translate: cs.translate, scale: cs.scale, rotate: cs.rotate, text: (e.textContent || '').trim().slice(0, 40) };
+      }))()`);
+      console.log(JSON.stringify({ time: +args.at, elements: r }, null, 2));
+    } catch (e) { fail(e, args); } finally { await ctx.page.close(); await ctx.server.close(); }
+    return;
+  }
   try {
     const info = await inspect(inputOf(args), commonOpts(args));
     console.log(JSON.stringify(info, null, 2));

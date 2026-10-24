@@ -1044,13 +1044,25 @@
       const cs = getComputedStyle(el);
       const fs0 = parseFloat(cs.fontSize);
       const maxAttr = parseFloat(el.getAttribute('data-fit-max'));
-      const over = () => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+      const boxW = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      // natural width of the content on one line, at the current font size
+      const natural = () => {
+        const sv = [el.style.width, el.style.whiteSpace, el.style.display];
+        el.style.width = 'max-content'; el.style.whiteSpace = 'nowrap'; if (cs.display === 'inline') el.style.display = 'inline-block';
+        const w = el.getBoundingClientRect().width / (el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1);
+        [el.style.width, el.style.whiteSpace, el.style.display] = sv;
+        return w - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      };
       if (mode === 'grow' || mode === 'fill') {
-        const ws = el.style.whiteSpace; el.style.whiteSpace = 'nowrap';
-        let lo = fs0 * 0.1, hi = isFinite(maxAttr) ? maxAttr * PX() : fs0 * 6;
-        for (let i = 0; i < 18; i++) { const mid = (lo + hi) / 2; el.style.fontSize = mid + 'px'; if (over()) hi = mid; else lo = mid; }
-        el.style.fontSize = lo + 'px'; el.style.whiteSpace = ws || 'nowrap';
+        if (!(boxW > 0)) { I.report('warning', 'fit-no-width', 'data-fit="grow" needs a box with a width.', el); continue; }
+        let fs = fs0;
+        for (let i = 0; i < 4; i++) { const w = natural(); if (!(w > 0)) break; fs = fs * (boxW / w); el.style.fontSize = fs + 'px'; }
+        if (isFinite(maxAttr)) el.style.fontSize = Math.min(fs, maxAttr * PX()) + 'px';
+        el.style.whiteSpace = 'nowrap';
       } else {
+        // shrink until it fits: width always; height only when the box has a fixed height
+        const fixedH = el.style.height || (cs.height !== 'auto' && el.parentElement && getComputedStyle(el.parentElement).display !== 'flex' && el.scrollHeight > el.clientHeight + 0.25 * fs0);
+        const over = () => el.scrollWidth > el.clientWidth + 1 || (fixedH && el.scrollHeight > el.clientHeight + 0.25 * parseFloat(el.style.fontSize || fs0));
         if (!over()) continue;
         let lo = fs0 * 0.15, hi = fs0;
         for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; el.style.fontSize = mid + 'px'; if (over()) hi = mid; else lo = mid; }

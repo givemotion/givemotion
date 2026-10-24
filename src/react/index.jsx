@@ -59,9 +59,9 @@ export function Scene(props) {
   return <Clip {...props} className={cls} />;
 }
 /** Children play one after another. transition="fade 0.6" overlaps them; gap="0.2" adds space. */
-export function Sequence({ transition, gap, children, as = 'div', ...p }) {
+export function Sequence({ transition, gap, cuts, children, as = 'div', ...p }) {
   const Tag = as;
-  return <Tag data-sequence="" {...(transition ? { 'data-transition': transition } : {})} {...(gap != null ? { 'data-gap': String(gap) } : {})} {...p}>{children}</Tag>;
+  return <Tag data-sequence="" {...(transition ? { 'data-transition': transition } : {})} {...(gap != null ? { 'data-gap': String(gap) } : {})} {...(cuts ? { 'data-cuts': [].concat(cuts).join(' ') } : {})} {...p}>{children}</Tag>;
 }
 /**
  * Build a seekable GSAP-style timeline once, scoped to the returned ref's element.

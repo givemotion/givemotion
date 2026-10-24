@@ -285,6 +285,8 @@ function keyTimes(info, max = 12) {
     const d = c.end - c.start;
     // ~85% through the clip: entrances are done, exits/transitions have not started yet
     add(c.start + Math.max(Math.min(d * 0.85, d - 0.75), Math.min(d * 0.5, 1)));
+    // long clips (one long scene driven by code) also get evenly spaced moments
+    if (d > 4.5) { const n = Math.min(6, Math.floor(d / 2.2)); for (let k = 1; k <= n; k++) add(c.start + (d * k) / (n + 1)); }
   }
   add(Math.min(0.5, dur / 2));
   add(lastT);
@@ -424,15 +426,28 @@ export async function snapshot(input, opts = {}) {
     const fps = info.fps;
     const lastT = Math.max(0, info.duration - 1 / fps);
     let times;
-    if (opts.times) times = String(opts.times).split(',').map((s) => parseFloat(s)).filter((x) => isFinite(x));
-    else if (opts.every) { times = []; for (let t = 0; t <= lastT + 1e-9; t += parseFloat(opts.every)) times.push(t); }
-    else times = keyTimes(info, opts.max || 12);
+    const sec = (v) => { const s0 = String(v).trim(); return /f$/.test(s0) ? parseFloat(s0) / fps : parseFloat(s0); };
+    const from = opts.from != null ? sec(opts.from) : 0, to = opts.to != null ? Math.min(lastT, sec(opts.to)) : lastT;
+    if (opts.times) times = String(opts.times).split(',').map(sec).filter((x) => isFinite(x));
+    else if (opts.every) { times = []; const st = Math.max(1 / fps, sec(opts.every)); for (let t = from; t <= to + 1e-9; t += st) times.push(t); }
+    else if (opts.transitions) {
+      // start, middle and end of every scene transition, plus each scene's first frame
+      times = [];
+      for (const c of info.clips) { times.push(c.start, c.start + 1 / fps); }
+      for (const tr of info.transitions || []) times.push(tr.start, (tr.start + tr.end) / 2, tr.end);
+      times = times.filter((t) => t >= from && t <= to);
+    }
+    else times = keyTimes(info, opts.max || 12).filter((t) => t >= from && t <= to);
+    times = [...new Set(times.map((t) => Math.round(t * fps) / fps))].sort((a, b) => a - b);
+    if (times.length > 120) throw new Error(`That is ${times.length} frames; use a shorter range (--from/--to) or a bigger --every.`);
     times = times.map((t) => Math.round(Math.min(lastT, Math.max(0, t)) * fps) / fps);
     const dir = resolve(opts.output || join(dirname(ctx.file), 'snapshots'));
     mkdirSync(dir, { recursive: true });
     const files = [];
     const thumbs = [];
+    let n = 0;
     for (const t of times) {
+      if (opts.onProgress) opts.onProgress(++n, times.length);
       await ctx.page.seek(t);
       const png = await ctx.page.capture('png');
       const f = join(dir, `t${t.toFixed(2).replace('.', '_')}s.png`);
@@ -456,7 +471,8 @@ export async function snapshot(input, opts = {}) {
     </style></head><body><header>${escapeHtml(basename(ctx.file))} · ${info.width}x${info.height} · ${info.fps}fps · ${info.duration.toFixed(2)}s</header><div class="g">${thumbs.map((x) => `<figure><img src="data:image/${x.mime};base64,${x.data}"><figcaption><b>${x.t.toFixed(2)}s</b><span>frame ${x.frame}${x.scene ? ' · ' + escapeHtml(x.scene) : ''}</span></figcaption></figure>`).join('')}</div></body></html>`;
     const png = await renderHtmlToPng(ctx.page, html, sheetW, sheetH);
     writeFileSync(sheet, png);
-    return { sheet, files, times, info: summarizeInfo(info), errors: ctx.page.errors };
+    const problems = [...info.issues.filter((i) => i.severity === 'error'), ...ctx.page.errors];
+    return { sheet, files, times, info: summarizeInfo(info), errors: ctx.page.errors, problems };
   } finally {
     await ctx.page.close();
     await ctx.server.close();

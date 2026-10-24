@@ -1,35 +1,139 @@
-# motionwright
+# motionwright: make videos with AI, free and open source
 
-**HTML in, video out.** A fast, deterministic video renderer built for AI agents.
+**Ask your AI for a video. Get an MP4.** motionwright is a free, open-source (MIT) video engine made for AI
+coding agents like Claude Code, Cursor and Codex. Your agent writes the video, checks it, looks at it, fixes
+it and renders it. No license fees, no seats, no per-render costs, and you can fork it and make it your own.
 
-Write a web page with normal HTML, CSS and JavaScript. motionwright plays it on a virtual clock, captures every frame from headless Chrome, and encodes an MP4 (or WebM, ProRes, GIF, PNG frames). The same input always gives the same pixels.
+If you are looking for a **free code-to-video alternative**, a way to **make videos with Claude Code**, or an
+**AI motion graphics tool you can run in your own project**, this is it.
 
-```bash
-npx motionwright init my-video        # a starter video + the AI skill file
-npx motionwright dev my-video         # live preview: scrub, play, frame-step
-npx motionwright render my-video -o out/video.mp4
-```
+<p>
+  <img src="docs/media/data-story.gif" width="49%" alt="Data story made by an AI agent with motionwright: the camera rides a growing line chart">
+  <img src="docs/media/code-explainer.gif" width="49%" alt="Code explainer made by an AI agent with motionwright: retry with back-off drawn as a timeline">
+</p>
+<p>
+  <img src="docs/media/vertical-short.gif" width="24%" alt="Vertical short for social media made by an AI agent with motionwright, with captions synced to the voice">
+</p>
 
-MIT licensed. No company license, no per-render fees, no seat limits.
+*All three were made by a Claude agent from a one-paragraph brief, using only this project's docs.
+They are in [`examples/`](examples).*
 
 ---
 
-## Why
+## Try it in 1 minute
 
-AI agents are very good at HTML and CSS. motionwright lets them use exactly that for video, and gives them the tools to check their own work:
+In your project folder:
 
-- **No new language.** A composition is one HTML file. CSS `@keyframes`, transitions, the Web Animations API, `setTimeout`, `requestAnimationFrame`, canvas, WebGL, GSAP, Lottie: all of it is seeked frame by frame.
-- **Timing with attributes.** `data-start`, `data-duration`, `data-sequence`, `data-cuts="0 2.1 4.3"`, and 27 scene transitions including `morph` (shared elements fly from one scene into the next), `push`, `whip`, `zoom-through`, `flip`, `clock`.
-- **Motion with attributes.** `data-enter="mask-up"`, `data-exit="fade"`, `data-split="words"` + `data-stagger="0.06"`, `data-camera="push 1.1, float"`, `data-fit="grow"`, `data-scramble`, `data-count`, `data-type`, `data-loop` / `data-freeze` / `data-speed`.
-- **Choreography in code when you need it.** A built-in GSAP-style timeline (`mw.timeline().from('h1 .mw-word', {y: 80, stagger: .05})`) where every value is computed from the time, a camera that frames and follows elements (`mw.camera('#world').shot(2, {follow: '#pkg', zoom: 1.6})`), motion along paths with stops, shape and path morphs, springs, noise.
-- **Music that drives the edit.** `npx motionwright audio music.mp3` prints the tempo, beats and bar starts; `mw.audio()` gives loudness, frequency bands and a beat pulse for any frame. Volume curves, ducking under voice-over, soundtrack export.
-- **React too, if you want it.** Write `video.jsx` with `motionwright/react` (`<Scene>`, `<Sequence>`, `useTime()`); same engine, same commands. We tested both with blind judges: plain HTML scored as well or better, so it stays the default ([experiment](docs/experiments/2026-10-format-test.md)).
-- **Plays anywhere.** `motionwright bundle` makes a standalone page, and `<mw-player>` embeds it in any site or app with controls and sound.
-- **Eyes for the agent.** `check` finds text that is cut off, off-screen, overlapping, too small or low-contrast, plus broken assets and script errors, each with a fix. It compares frames, so moving, fading or hidden text does not cause false alarms. `snapshot` makes one contact-sheet image of every scene (or a frame-by-frame strip of one move) so the agent can *look* at its video, and `inspect --at 3.2 --el "#logo"` says where anything is at any moment.
-- **Fast.** Chrome's frame-by-frame `beginFrame` capture (where available), parallel browsers, frames that did not change are reused, encoding overlaps capture. See [Performance](#performance).
-- **Deterministic.** Virtual time, seeded `Math.random`, frame-exact video decoding. Renders with one worker or many are bit-identical.
+```bash
+npx motionwright init my-video
+```
 
-## A composition
+This creates a starter video and installs the instructions your agent needs. Then just ask your agent:
+
+> "Make a 20-second launch video for our app. Use our logo and colors, and put music under it."
+
+The agent writes the video, runs the checks, looks at the frames, fixes what is wrong, and renders
+`out/video.mp4`. You can watch and scrub it live with `npx motionwright dev my-video`.
+
+Already have a project? `npx motionwright skill` adds just the agent instructions.
+
+**You need:** Node.js 20+ and ffmpeg. Chrome is downloaded for you (`npx motionwright install`).
+
+## What you can make
+
+- Product launch videos and app promos (with a cursor that really clicks the right button)
+- Explainers with a camera that moves over a map, a diagram or a whole UI
+- Animated charts and data stories, from your own JSON data
+- Vertical shorts for TikTok, Reels and YouTube Shorts, with word-by-word captions
+- Code explainers for developer channels
+- Logo stings, title cards, lower thirds, end cards
+- Many personalized videos from one template (a different name, number or logo in each)
+- Transparent overlays to drop into Premiere, DaVinci Resolve or Final Cut
+
+## Why it works so well with AI
+
+Most video tools were made for people. AI agents work differently, so we built this one around how they
+actually behave, and we tested it with real agents instead of guessing.
+
+**1. It uses what AI already knows best: web pages.**
+A video is one HTML file with normal CSS and JavaScript. Models have seen billions of web pages, so they
+write them well. We tested this: 12 Claude agents made the same 4 videos in plain HTML, in HTML with ready-made
+blocks, and in React. Blind AI judges ranked **plain HTML first in 6 of 8 cases** (React scored a little lower;
+details in [the experiment](docs/experiments/2026-10-format-test.md)). React still works if you want it.
+
+**2. The agent can check its own work.** An agent cannot watch a video, so the engine does it for them:
+- `check` finds text that is cut off, off screen, covered, overlapping, too small or hard to read, plus
+  broken files and script errors, and says how to fix each one. It knows the difference between text that is
+  *moving* past the edge and text that is *stuck* there.
+- It also flags pacing: long stretches where nothing happens, or an empty first frame.
+- It prints a "motion strip", a one-line picture of the video's rhythm.
+- `snapshot` makes one image with the key moments of every scene, so the agent can *look* at its video.
+
+**3. It is built from what agents struggled with.** We give fresh agents only the docs and a real brief, read
+their notes on what got in their way, and fix the engine, not just the instructions. Three rounds so far,
+dozens of fixes ([what changed](docs/experiments/)).
+
+**4. Motion design, not slides.** The engine has the tools that make video feel like real animation:
+a camera that follows and frames things, motion along paths, shape morphs, shared elements that fly from one
+scene into the next, more than 25 scene transitions, kinetic type, particle bursts, and edits that land on the music's beats.
+
+**5. Same input, same video, every time.** Rendering is exact and repeatable, so an agent can change one
+thing without surprises elsewhere.
+
+## How it compares
+
+| | motionwright | another framework |
+|---|---|---|
+| Price | Free for everyone (MIT) | Free for individuals and teams of up to 3; bigger companies pay (from $25 per person per month, or $0.01 per render with a $100/month minimum)¹ |
+| You write | HTML, CSS, JavaScript (React optional) | React |
+| Instructions for AI agents | Yes, installed with one command | Yes (another framework Agent Skills) |
+| Agent checks its own video (cut-off or covered text, pacing, broken files) and sees key frames | Yes (`check`, `snapshot`, `inspect`) | Not built in |
+| Fork and change anything | Yes, any use | Source is available; using it inside a company still needs a license |
+| Audio, video clips, transitions, captions, still frames, data-driven videos, parallel rendering, an embeddable player | Yes | Yes |
+| Cloud rendering service | No (render anywhere you run Node) | Yes (another framework Lambda) |
+
+¹ From another framework's [license FAQ](https://www.other.dev/docs/license/faq), October 2026. another framework is a great
+project and inspired this one; motionwright shares the idea, not the code.
+
+## Make your own version (fork it)
+
+MIT means you can take this and build on it, even sell what you make with it. One idea we like: **a fork
+focused on one style.** For example a "whiteboard" edition, a "tech launch" edition, or your company's brand
+edition:
+
+1. Fork the repo.
+2. Add blocks in [`blocks/`](blocks) for your style: your title cards, your charts, your transitions, your colors.
+3. Add a short style guide to the agent instructions ([`skills/motionwright/SKILL.md`](skills/motionwright/SKILL.md)):
+   which blocks to use, which colors, which fonts, what to avoid.
+
+Agents then make videos in that style much faster and more consistently, because they start from pieces that
+already look right instead of inventing everything each time.
+
+## Questions people ask
+
+**Is there a free alternative to another framework?** Yes. motionwright is free for any use, including big companies,
+under the MIT license.
+
+**Can Claude Code make videos?** Yes. Run `npx motionwright init` (or `npx motionwright skill` in an existing
+project) and ask Claude Code for a video. It also works with Cursor, Codex and other agents that read an
+`AGENTS.md` file.
+
+**Do I need to know how to code?** No. You talk to your agent; the agent writes the code. If you do know HTML
+and CSS, you can open the file and change anything.
+
+**Can I use it for client work or commercially?** Yes, for free. MIT license.
+
+**Can I put my own music, voice-over, logos and videos in?** Yes. Audio tracks with volume curves and ducking
+under a voice, video clips, images, fonts, and captions from a word-timed file or an `.srt`.
+
+**How fast is it?** Fast on a normal computer, faster with more cores and a GPU. It renders with several browsers
+at once and skips frames that did not change. See [Performance](#performance).
+
+---
+
+## For developers
+
+### A composition
 
 ```html
 <!doctype html>
@@ -43,7 +147,7 @@ AI agents are very good at HTML and CSS. motionwright lets them use exactly that
 </head>
 <body>
   <main data-sequence data-transition="fade 0.6">
-    <section class="scene" data-duration="3">
+    <section class="scene" data-duration="3" data-camera="push 1.1">
       <h1 data-enter="rise">Hello</h1>
     </section>
     <section class="scene" data-duration="4">
@@ -55,67 +159,38 @@ AI agents are very good at HTML and CSS. motionwright lets them use exactly that
 </html>
 ```
 
-That's it: no imports, no build step. The runtime is injected for you.
+No imports and no build step: the runtime is added for you. Everything that moves on a web page is played
+on a virtual clock and captured frame by frame: CSS animations, transitions, the Web Animations API, timers,
+`requestAnimationFrame`, canvas, WebGL, GSAP, Lottie. There is also a built-in GSAP-style timeline
+(`mw.timeline()`), a camera (`mw.camera()`), path travel, shape morphs, particle bursts and music analysis
+(`mw.audio()`, `mw.beat(n)`).
 
-The full reference is one page: [`skills/motionwright/SKILL.md`](skills/motionwright/SKILL.md). It is written for AI agents and is also the best doc for humans.
+The full reference is one page written for agents (and good for humans too):
+[`skills/motionwright/SKILL.md`](skills/motionwright/SKILL.md).
 
-## For AI agents
-
-`npx motionwright init` (or `npx motionwright skill` in an existing folder) installs the skill at `.claude/skills/motionwright/SKILL.md` and a short `AGENTS.md`. The loop the skill teaches:
-
-1. write the HTML
-2. `npx motionwright check video.html` → fix every error (each comes with a fix)
-3. `npx motionwright snapshot video.html` → look at `snapshots/sheet.png`
-4. `npx motionwright render video.html -o out/video.mp4`
-
-Every command takes `--json`.
-
-## Commands
+### Commands
 
 | Command | What it does |
 |---|---|
-| `init [dir]` | New project: starter video, skill file, AGENTS.md |
-| `dev [file]` | Preview studio with timeline, scrubbing, frame stepping, audio, live reload |
-| `render [file] -o out.mp4` | Render to `.mp4` `.webm` `.mov` `.gif` or a folder of PNGs |
+| `init [dir]` | New project: starter video, agent instructions, AGENTS.md |
+| `skill` | Add the agent instructions to an existing project |
+| `dev [file]` | Live preview with a timeline, scrubbing, frame stepping and sound |
+| `render [file] -o out.mp4` | Render to `.mp4` `.webm` `.mov` `.gif`, a folder of PNGs, or just the soundtrack (`.mp3`) |
 | `still [file] -t 2.5 -o f.png` | One exact frame |
-| `snapshot [file]` | Key moment of every scene as PNGs + one `sheet.png` |
-| `check [file]` | Errors, layout and contrast problems, with fixes |
-| `inspect [file]` | Timeline as JSON; `--at 3.2 --el "#logo"` for where elements are at a moment |
+| `check [file]` | Problems with fixes, plus the motion strip |
+| `snapshot [file]` | Key moments of every scene in one image |
+| `inspect [file]` | Timeline as JSON; `--at 3.2 --el "#logo"` says where anything is at any moment |
 | `audio <file>` | Tempo, beats, bar starts and big hits of a song |
 | `analyze <video.mp4>` | Report on any video (a reference, or your render): shots and cuts, transitions, camera, pacing, colors, cuts on the beat, contact sheets. `--compare ref.mp4` lists how yours differs |
 | `bundle [file] -o dir` | Standalone page + `<mw-player>` to embed the video in any site |
-| `blocks` / `add <name>` | Ready-made, editable blocks |
-| `install` / `doctor` | Get Chrome / check the setup |
-| `bench [file]` | Measure speed on your machine |
+| `blocks` / `add <name>` | Ready-made blocks you can copy and edit |
+| `install` / `doctor` / `bench` | Get Chrome, check your setup, measure speed |
 
-Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout), `--frames 2s-5s`, `--transparent` (ProRes 4444 or VP9 alpha), `--motion-blur 8`, `--codec h265|av1`, `--hardware`, `--workers`, `--muted`, `--data file.json`, `--props '{…}'`. `-o sound.mp3` exports only the soundtrack.
+Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout),
+`--frames 2s-5s`, `--transparent`, `--motion-blur 8`, `--codec h265|av1`, `--hardware`, `--workers`,
+`--muted`, `--data file.json`, `--props '{…}'`. Every command takes `--json`.
 
-## Blocks
-
-Plain-HTML building blocks you copy into your project and edit freely (`npx motionwright add <name>`):
-
-title-card · lower-third · captions (word-by-word, from JSON or SRT) · code-window (syntax highlighting + typing) · bar-chart · line-chart · stat · checklist · steps · browser-window · phone · cursor (aims at real elements, hovers, clicks) · callout · compare (before/after) · quote · word-pop · logo-reveal · end-card · gradient-bg · grid-bg · lottie (After Effects animations, frame-exact)
-
-```html
-<mw-include src="blocks/lower-third.html" name="Ada Lovelace" role="Mathematician" data-start="1" data-duration="4"></mw-include>
-```
-
-## Examples
-
-| Example | Shows |
-|---|---|
-| [`examples/product-promo`](examples/product-promo) | 22 s launch video: transitions, a fake product UI being built, cursor clicks, counters, music |
-| [`examples/data-story`](examples/data-story) | Data story where every number and chart shape comes from `data.json` (try `--data examples/data-story/other.json`): a camera that rides the line, bars, a gauge |
-| [`examples/vertical-short`](examples/vertical-short) | 9:16 short: kinetic type synced to word-timed captions, cuts on the music's beats |
-| [`examples/code-explainer`](examples/code-explainer) | Code that types itself, a camera that zooms into one line, and the idea drawn as a timeline |
-| [`examples/generative`](examples/generative) | 1,400 canvas particles drawn as a pure function of time |
-| [`examples/personalized`](examples/personalized) | One template, many videos (`--props`) |
-
-```bash
-npx motionwright render examples/product-promo/index.html -o out/promo.mp4
-```
-
-## Programmatic API
+### Programmatic API
 
 ```js
 import { render, check, snapshot, still, inspect } from 'motionwright';
@@ -125,52 +200,53 @@ const report = await check('video.html');           // { ok, errors, warnings, i
 const { sheet } = await snapshot('video.html');     // path to the contact sheet
 ```
 
-## Performance
+### Blocks
 
-Measured on a small cloud VM (2 vCPU, no GPU), 1080p30, 300 frames:
+Plain-HTML building blocks you copy into your project and edit freely (`npx motionwright add <name>`):
+title-card, lower-third, captions, code-window, bar-chart, line-chart, stat, checklist, steps, browser-window,
+phone, cursor, callout, compare, quote, word-pop, logo-reveal, end-card, gradient-bg, grid-bg, lottie.
+
+### Performance
+
+Measured on a small cloud machine (2 CPUs, no GPU), 1080p at 30 fps, 300 frames:
 
 | | Time |
 |---|---|
-| Naive loop: one browser, PNG screenshots, no frame reuse | 32.7 s |
-| motionwright, 1 worker | 15.0 s (2.2× faster) |
-| motionwright, auto workers | 13.3 s (2.5× faster) |
+| Simple approach: one browser, PNG screenshots, no frame reuse | 32.7 s |
+| motionwright, 1 worker | 15.0 s |
+| motionwright, auto workers | 13.3 s |
 
-Same GSAP animation rendered by motionwright and HyperFrames on that machine: 22.2 s vs 36.8–40.0 s at the same quality. Method, caveats and the script to re-run it: [`benchmarks/vs-hyperframes`](benchmarks/vs-hyperframes). Run `npx motionwright bench` on your own hardware; more cores and a GPU help a lot.
+The same GSAP animation in motionwright and HyperFrames on that machine: 22.2 s vs 36.8 to 40.0 s
+([method and script](benchmarks/vs-hyperframes)). Pages with many full-screen effects are slower on machines
+without a GPU. Run `npx motionwright bench` on your own computer.
 
-Where the speed comes from:
+Where the speed comes from: Chrome's frame-by-frame capture (`beginFrame`, on Linux and Windows), several
+browsers rendering parts of the video at once, reusing frames that did not change, and encoding while capturing.
 
-1. **beginFrame capture.** On Linux and Windows, motionwright drives `chrome-headless-shell` with `HeadlessExperimental.beginFrame`: Chrome produces exactly one frame when asked, with no waiting for timers or vsync. (macOS uses fast screenshots.)
-2. **Parallel browsers** render contiguous chunks; segments are joined without re-encoding.
-3. **Static frame reuse.** The runtime knows when nothing on the page changed (no active animation, no clip change, no script) and the engine reuses the previous frame.
-4. **Encoding overlaps capture**, with a fast but exact sRGB → BT.709 conversion.
-5. **Cheap backgrounds.** Built-in blocks avoid expensive full-frame filters (e.g. gradient blobs are drawn small on a canvas and scaled up).
-
-## How it works
+### How it works
 
 ```
-HTML ──► local server (injects runtime, expands <mw-include>, {{data}}, serves video frames)
+HTML ──► local server (adds the runtime, expands blocks and {{data}}, serves video frames)
            │
            ▼
- headless Chrome × N  ── runtime: virtual clock, clips, seek all animations to t
-           │  beginFrame / screenshot (JPEG or PNG)
+ headless Chrome × N  ── runtime: virtual clock, seeks every animation to the exact time
+           │  capture each frame
            ▼
-      ffmpeg × N (segments) ──► concat + audio mix ──► out.mp4
+      ffmpeg × N (segments) ──► join + audio mix ──► out.mp4
 ```
 
-- Every `CSSAnimation`, `CSSTransition` and Web Animation is paused and set to the right time for each frame. Animations start at the start of their clip, so `animation-delay` means "after this element appears".
-- `setTimeout`, `setInterval`, `requestAnimationFrame`, `Date` and `performance.now` run on virtual time. Code that relies on `requestAnimationFrame` history is fast-forwarded frame by frame so parallel workers match a single worker exactly.
-- `<video>` is decoded by ffmpeg into exact frames and shown through the element itself, so your CSS still applies. Audio from `<audio>` and `<video>` is mixed by ffmpeg.
-
-## Requirements
+### Requirements
 
 - Node.js 20+
-- ffmpeg on your PATH (`brew install ffmpeg`, `sudo apt install ffmpeg`, `winget install ffmpeg`) or `MOTIONWRIGHT_FFMPEG=/path/to/ffmpeg`
-- Chrome: `npx motionwright install` downloads `chrome-headless-shell` (Chrome for Testing). It also finds an existing Chrome, or use `MOTIONWRIGHT_CHROME=/path`.
+- ffmpeg on your PATH (`brew install ffmpeg`, `sudo apt install ffmpeg`, `winget install ffmpeg`)
+- Chrome: `npx motionwright install` downloads it, or it finds the one you have
 
-motionwright itself has **zero npm dependencies**.
+motionwright itself has **zero required npm dependencies**.
 
 ## License
 
-MIT. motionwright does not bundle Chrome or ffmpeg; they are downloaded or installed separately under their own licenses. Example music and images in this repo were generated for it and are MIT too. Fonts are not bundled: use your own, or ones from your system.
+MIT. Use it, change it, fork it, sell what you make with it. Chrome and ffmpeg are installed separately under
+their own licenses. The example music and images were made for this project and are MIT too.
 
-This project was written from scratch. It shares the idea of "render a web page into a video" with tools like another framework and HyperFrames, but no code from them.
+This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
+another framework and HyperFrames, but no code from them.

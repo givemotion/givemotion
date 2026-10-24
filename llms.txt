@@ -1,6 +1,8 @@
 # motionwright
 
-> HTML in, video out. A deterministic renderer that turns an HTML/CSS/JS page into MP4/WebM/ProRes/GIF, built for AI agents. MIT licensed, zero dependencies (needs Chrome + ffmpeg).
+> Make videos with AI, free and open source (MIT). An alternative to other video frameworks built for AI coding agents (Claude Code, Cursor, Codex): the agent writes one HTML/CSS/JS page, checks it (`check`), looks at key frames (`snapshot`) and renders MP4/WebM/ProRes/GIF. Free for any use, including companies. Needs Node 20+, ffmpeg and Chrome.
+
+Install in a project: `npx motionwright init my-video` (starter video + agent instructions) or `npx motionwright skill` (instructions only). Then ask the agent for a video.
 
 - [Agent reference (SKILL.md)](skills/motionwright/SKILL.md): composition format, timing attributes, motion presets, JS API, media, blocks, checks. Read this first.
 - [README](README.md): overview, commands, performance, how it works.

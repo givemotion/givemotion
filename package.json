@@ -1,7 +1,7 @@
 {
   "name": "motionwright",
   "version": "0.1.0",
-  "description": "HTML in, video out. A fast, deterministic video renderer built for AI agents: write HTML + CSS, get MP4.",
+  "description": "Make videos with AI, free and open source (MIT). An alternative to other video frameworks built for AI agents like Claude Code, Cursor and Codex: the agent writes HTML/CSS, checks and previews its own video, and renders MP4.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -44,7 +44,25 @@
     "render",
     "mp4",
     "ffmpeg",
-    "headless-chrome"
+    "headless-chrome",
+    "other-alternative",
+    "other",
+    "ai-video",
+    "ai-agents",
+    "claude-code",
+    "cursor",
+    "codex",
+    "agent-skills",
+    "motion-design",
+    "video-generation",
+    "programmatic-video",
+    "explainer-video",
+    "social-video",
+    "captions",
+    "data-visualization",
+    "open-source",
+    "free",
+    "mit"
   ],
   "optionalDependencies": {
     "esbuild": "^0.28.2",

@@ -45,9 +45,7 @@ experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modu
   Leo before the force-push, and have every session re-clone afterwards. Check forks and open PRs on GitHub too.
 
 ## N6. Open items from round 8 (each one came up in 2+ friction logs or judge notes)
-- **Live line chart** (both data-story makers wrote ~150 lines): a chart block or `mw.chart.line` whose line head is an
-  element the camera can follow, `pointAt(i)` / the value at a time, an axis that rescales to the max so far, callouts
-  pinned to points, pauses at chosen points. Files: `blocks/line-chart.html` or `src/runtime/motion.js`.
+- ~~Live line chart~~ done (`task/live-chart`): `mw.chart.line` in `src/runtime/chart.js` (head element, `data-point` callouts, `data-chart-text`, holds, segment colors, `rescale`, `overview`, `timeOf`/`valueAt`/`pointAt`); `line-chart` block built on it; SKILL recipe. Not yet tried by a fresh data-story maker.
 - **`mw.connect` labels**: choose the side and the position along the arrow (`label: { at: 0.3, side: 'left' }`), and
   attach points other than side midpoints (`fromAt`/`toAt`). Files: `src/runtime/sketch.js`.
 - **Cursor block**: `times` in video time or beats, hidden until its first move (and after its last), works inside a

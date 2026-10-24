@@ -23,7 +23,7 @@ const MIME = {
 };
 
 export function readRuntime() {
-  return { js: ['runtime.js', 'motion.js', 'sketch.js', 'audio.js'].filter((f) => existsSync(join(RUNTIME_DIR, f))).map((f) => readFileSync(join(RUNTIME_DIR, f), 'utf8')).join('\n;\n'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
+  return { js: ['runtime.js', 'motion.js', 'sketch.js', 'audio.js', 'chart.js'].filter((f) => existsSync(join(RUNTIME_DIR, f))).map((f) => readFileSync(join(RUNTIME_DIR, f), 'utf8')).join('\n;\n'), css: readFileSync(join(RUNTIME_DIR, 'preset.css'), 'utf8') };
 }
 
 /** Expand <mw-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */

@@ -812,7 +812,8 @@
             if (m.name === 'draw' && tg.querySelector && (tg.matches('[data-mw-sketch-fill="solid"]') || tg.querySelector('[data-mw-sketch-fill="solid"]'))) kf = [{ ...kf[0], fillOpacity: 0 }, { offset: 0.6, fillOpacity: 0 }, { ...kf[1], fillOpacity: 1 }];
             // reveals (clip, scale, dash) are also fully hidden before they start, not just clipped to a sliver
             if (kf && HIDDEN_AT_START.has(m.name)) kf = [{ ...kf[0], visibility: 'hidden' }, ...kf.slice(1)];
-            if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
+            // (el.__mwEnterAt: a chart callout enters when the line reaches its point, its delay counts from there)
+            if (kf) addOwn(tg, kf, { duration: m.dur * 1000, delay: (m.delay + extra + (el.__mwEnterAt || 0)) * 1000, easing: cssEasing(m.ease), fill: 'backwards' }, cStart);
           }
         }
         if (ex) {

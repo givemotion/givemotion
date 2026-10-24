@@ -1,7 +1,7 @@
 {
   "name": "motionwright",
   "version": "0.1.0",
-  "description": "Make videos with AI, free and open source (MIT). An alternative to other video frameworks built for AI agents like Claude Code, Cursor and Codex: the agent writes HTML/CSS, checks and previews its own video, and renders MP4.",
+  "description": "Make videos with AI, free and open source (MIT). A code-to-video engine built for AI agents like Claude Code, Cursor and Codex: the agent writes HTML/CSS, checks and previews its own video, and renders MP4.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -45,8 +45,6 @@
     "mp4",
     "ffmpeg",
     "headless-chrome",
-    "other-alternative",
-    "other",
     "ai-video",
     "ai-agents",
     "claude-code",

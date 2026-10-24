@@ -79,7 +79,7 @@
 - morph inside camera-transformed / onFrame layers → now live-measured (post hook) — document.
 
 ## from race-R
-- [bug] mw.random('a12') with string seed → same value; AIs expect framework-style random(seed) → number in [0,1). Make mw.random(seed) return a number (hash strings), add mw.rng(seed) for a generator.
+- [bug] mw.random('a12') with string seed → same value; AIs expect a random(seed) → number in [0,1). Make mw.random(seed) return a number (hash strings), add mw.rng(seed) for a generator.
 - checker ignores masks/clip-path (visible area).
 
 ## from promo-H

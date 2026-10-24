@@ -4,7 +4,7 @@
 coding agents like Claude Code, Cursor and Codex. Your agent writes the video, checks it, looks at it, fixes
 it and renders it. No license fees, no seats, no per-render costs, and you can fork it and make it your own.
 
-If you are looking for a **free code-to-video alternative**, a way to **make videos with Claude Code**, or an
+If you are looking for a **free, open-source way to make videos with code**, to **make videos with Claude Code**, or an
 **AI motion graphics tool you can run in your own project**, this is it.
 
 <p>
@@ -83,34 +83,32 @@ thing without surprises elsewhere.
 
 ## How it compares
 
-Three open tools turn code into video: **motionwright**, **HyperFrames** (by HeyGen) and **another framework**.
-All three render in Chrome, encode with ffmpeg, give the same video every time, and come with instructions
+Here is how motionwright compares with **HyperFrames** (by HeyGen), another open tool that turns HTML into video.
+Both render in Chrome, encode with ffmpeg, give the same video every time, and come with instructions
 for AI agents. Here is where they differ, so you can pick the right one. Checked in October 2026 from each
 project's own docs and command-line help; tell us if something changed.
 
-| | motionwright | HyperFrames | another framework |
-|---|---|---|---|
-| Made by | Independent open-source project | HeyGen | another framework (a company) |
-| License and price | MIT. Free for everyone, including companies | Apache 2.0. Free for everyone, including companies | Free for individuals and teams of up to 3. Bigger companies pay: $25 per person per month, or $0.01 per render with a $100 per month minimum¹ |
-| You write | HTML, CSS, JavaScript (React optional) | HTML, CSS, JavaScript | React |
-| Instructions for AI agents | Yes, one command (`npx motionwright skill`) | Yes, many skills (Claude Code, Codex, Cursor, Gemini CLI and more) | Yes, Agent Skills (Claude Code, Codex, Cursor and more) |
-| Agent checks its own video | Yes: cut-off, covered, overlapping, tiny and low-contrast text, broken files, script errors with line numbers, pacing (long still parts, empty first frame) | Yes: lint, script errors, layout overflow, motion, WCAG contrast | No built-in checks² |
-| Agent sees key frames | Yes: one picture with the key moments of every scene, or a frame-by-frame strip of one move; `analyze` reports the cuts, pacing, camera and colors of any video and compares it with a reference | Yes: key frames, a review set around every cut, side by side with a reference video | Renders single frames (`still`) |
-| Music beats | Tempo, beats, bar starts, big hits | Beats, hits, loudness, silence | Audio data helpers |
-| Output | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3 | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR | MP4, WebM, ProRes, GIF, image sequences, audio |
-| Rendering in the cloud | No (renders wherever Node runs) | AWS Lambda, Google Cloud Run, HeyGen's cloud | AWS Lambda, Google Cloud Run |
-| Visual editor | Browser preview (scrub, frame-step, sound) | Desktop app (macOS, Linux) and browser preview | another framework Studio (browser) |
-| Built-in AI extras | None | Text to speech, transcription, background removal | Transcription with Whisper (package) |
-| Usage data sent home | None | Anonymous usage data, on by default (can be turned off) | Not checked |
+| | motionwright | HyperFrames |
+|---|---|---|
+| Made by | Independent open-source project | HeyGen |
+| License and price | MIT. Free for everyone, including companies | Apache 2.0. Free for everyone, including companies |
+| You write | HTML, CSS, JavaScript (React optional) | HTML, CSS, JavaScript |
+| Instructions for AI agents | Yes, one command (`npx motionwright skill`) | Yes, many skills (Claude Code, Codex, Cursor, Gemini CLI and more) |
+| Agent checks its own video | Yes: cut-off, covered, overlapping, tiny and low-contrast text, broken files, script errors with line numbers, pacing (long still parts, empty first frame) | Yes: lint, script errors, layout overflow, motion, WCAG contrast |
+| Agent sees key frames | Yes: one picture with the key moments of every scene, or a frame-by-frame strip of one move; `analyze` reports the cuts, pacing, camera and colors of any video and compares it with a reference | Yes: key frames, a review set around every cut, side by side with a reference video |
+| Music beats | Tempo, beats, bar starts, big hits | Beats, hits, loudness, silence |
+| Output | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3 | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR |
+| Rendering in the cloud | No (renders wherever Node runs) | AWS Lambda, Google Cloud Run, HeyGen's cloud |
+| Visual editor | Browser preview (scrub, frame-step, sound) | Desktop app (macOS, Linux) and browser preview |
+| Built-in AI extras | None | Text to speech, transcription, background removal |
+| Usage data sent home | None | Anonymous usage data, on by default (can be turned off) |
 
-¹ another framework's [license FAQ](https://www.other.dev/docs/license/faq).
-² another framework's [Agent Skills page](https://www.other.dev/docs/ai/skills) lists none; the agent can preview in Studio and render stills.
 HyperFrames facts are from its [docs](https://hyperframes.heygen.com) and the help of `hyperframes` 0.8.191 on npm.
 
 **Speed.** In our one test (the same GSAP animation, 10 s at 1080p, on a small cloud machine with 2 CPUs and no
 GPU), motionwright rendered it in 22.2 s and HyperFrames in 36.8 to 40.0 s at the same quality. That is one
 animation on one machine; HyperFrames has a GPU capture path we could not test there. The script is in
-[`benchmarks/vs-hyperframes`](benchmarks/vs-hyperframes) so you can run it yourself. We have not benchmarked another framework yet.
+[`benchmarks/vs-hyperframes`](benchmarks/vs-hyperframes) so you can run it yourself.
 
 **Pick motionwright if** you want something small and fully free to fork (MIT, no npm dependencies, sends no data),
 checks that also look at pacing, and motion-design tools built in (a camera that follows and frames things, path
@@ -121,10 +119,7 @@ render slowly on machines without a GPU.
 **Pick HyperFrames if** you want the biggest feature set right now: cloud rendering, a desktop app, voice and
 transcription tools, HDR and HLS output, and a large community backed by HeyGen.
 
-**Pick another framework if** you already work in React, want the longest-running of the three, with a large community, and fit its
-free tier or are happy to pay for a company license.
-
-another framework and HyperFrames are great projects and inspired parts of this one. motionwright shares the idea, not the code.
+HyperFrames and the other code-to-video tools are great projects and inspired parts of this one. motionwright shares the idea, not the code.
 
 ## Make your own version (fork it)
 
@@ -142,7 +137,7 @@ already look right instead of inventing everything each time.
 
 ## Questions people ask
 
-**Is there a free alternative to another framework?** Yes. motionwright (MIT) and HyperFrames (Apache 2.0) are both free for any
+**Is there a free, open-source way to turn code into video?** Yes. motionwright (MIT) and HyperFrames (Apache 2.0) are both free for any
 use, including big companies. See [How it compares](#how-it-compares).
 
 **Can Claude Code make videos?** Yes. Run `npx motionwright init` (or `npx motionwright skill` in an existing
@@ -284,4 +279,4 @@ their own licenses. The example music and images were made for this project and 
 handwriting font is under the SIL Open Font License (`src/runtime/fonts/Caveat-OFL.txt`).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
-another framework and HyperFrames, but no code from them.
+HyperFrames, but no code from them.

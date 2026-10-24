@@ -10,11 +10,11 @@ second. Do not reformat files you are not changing.
 ## Done in the October 2026 session (for context)
 
 - **Test harness** `bench/agents/` (briefs, maker/judge prompts, friction template, `round.js setup/render/sheets/add/pack/results`,
-  frozen engine per round, `--maker other` for comparison runs). How to run a round: `bench/agents/README.md`.
+  frozen engine per round). How to run a round: `bench/agents/README.md`.
 - **T2** round-3 examples vs the old ones: 7.9 vs 3.7 (`docs/experiments/2026-10-t2-examples.md`).
 - **T3** hand-drawn: `data-sketch`, `mw.sketch`, `data-sketch-mark`, Caveat font, `write`, `mw.connect`, `mw.rect`,
   `fit: 'content'`, many check fixes. Three agent rounds; the last one beat the no-tools baseline on every judge
-  (7.6 vs 6.7) and the another framework versions were behind both (`docs/experiments/2026-10-t3-hand-drawn.md`).
+  (7.6 vs 6.7) and the versions made with another framework were behind both (`docs/experiments/2026-10-t3-hand-drawn.md`).
 - **T4** renders keep fixed parts with fingerprints; only changed parts re-render, byte-identical to a full render.
 - **T5** `motionwright analyze` (cuts, transitions, camera, pacing, palette, beat sync, sheets, `--compare`).
 - **T6** `mw.connect`, `mw.rect`, `data-safe-zone` / `unsafe-zone`, `mw.log`, `hideBefore`, `snapshot --grid`, `captions` command.
@@ -31,18 +31,6 @@ second. Do not reformat files you are not changing.
   `text-over-line` checks, script error lines map to the file you wrote.
 
 ---
-
-## N0. Remove every another framework mention, also from git history (Leo's request; do it later, as one coordinated step)
-So the project carries no implications later. Today the name appears in 16 files and 4 commit messages:
-CLAUDE.md, README.md, llms.txt, package.json (keywords), bench/agents/README.md, bench/agents/round.js
-(`--maker other`), bench/agents/prompts/maker-other.md, bench/agents/other-scaffold/,
-docs/NEXT.md, docs/experiments/2026-10-format-test-backlog.md, 2026-10-t3-hand-drawn.md, experiments/README.md and
-experiments/data/*t3-hand-drawn* (run `grep -ril other . --exclude-dir=node_modules`).
-- Rewrite the files (keep the findings, drop the name: "another framework", or remove the comparison runs and the
-  scaffold), then rewrite history (`git filter-repo` with `--replace-text` and `--replace-message`, or delete the paths
-  from history) and force-push every branch.
-- **Coordinate first:** a history rewrite changes every commit id. Do it when no other session has open branches, tell
-  Leo before the force-push, and have every session re-clone afterwards. Check forks and open PRs on GitHub too.
 
 ## N6. Open items from round 8 (each one came up in 2+ friction logs or judge notes)
 - ~~Live line chart~~ done (`task/live-chart`): `mw.chart.line` in `src/runtime/chart.js` (head element, `data-point` callouts, `data-chart-text`, holds, segment colors, `rescale`, `overview`, `timeOf`/`valueAt`/`pointAt`); `line-chart` block built on it; SKILL recipe. Not yet tried by a fresh data-story maker.

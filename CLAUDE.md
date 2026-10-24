@@ -6,15 +6,15 @@ It is written for Claude Code sessions that continue this work. Keep it short an
 ## The goal (from Leo, the owner)
 
 - We are building an **engine**: an open-source (MIT) library that turns HTML + CSS (+ JS) into video.
-  An alternative to other video frameworks, but better: AI-first, faster, cheaper, with no license problems.
+  An alternative to the existing code-to-video frameworks, but better: AI-first, faster, cheaper, with no license problems.
 - It is for **any** animation and any person. Not tied to any one company.
 - The users are **AI agents** (mostly Claude Opus) writing compositions. Humans read the output, AIs write the input.
   So the API should be what models already know best (HTML, CSS, GSAP-style tweens), forgiving, and self-checking.
 - **Quality is key.** Videos should look like real motion design (camera moves, shapes, kinetic type,
   things that flow from scene to scene), not like slides or a website template.
 - **Speed matters.** As fast as possible to render.
-- It must have **everything another framework has** (audio, video, sequences, transitions, player, still, data/props,
-  parallel render, etc.), plus more. Learn from another framework's docs and features only; **never copy their code**
+- It must have **everything the established video frameworks have** (audio, video, sequences, transitions, player, still, data/props,
+  parallel render, etc.), plus more. Learn from other frameworks' docs and features only; **never copy their code**
   (or any other framework's code). Write everything fresh.
 
 ## How to handle feedback

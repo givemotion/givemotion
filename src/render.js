@@ -265,8 +265,16 @@ export async function render(input, opts = {}) {
     }
     const todoFrames = ranges.reduce((s, r) => s + r.b - r.a, 0);
     const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames), Math.max(1, todoFrames)));
-    // Give each worker a run of neighbouring frames (fewer warm-ups, same balance as before).
-    const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
+    const auto = blur.mode === 'auto';
+    // Auto blur: frames are not equally expensive, so workers take ranges from one queue (most work first) instead of
+    // fixed runs; a single range (--frames, png) is cut into 1 s pieces for that. Every range starts with its own warm-up.
+    if (auto && !useParts && todoFrames) {
+      const { a: f0r, b: f1r, file } = ranges[0];
+      ranges = [];
+      for (let a = f0r, i = 0; a < f1r; a += fps, i++) ranges.push({ a, b: Math.min(f1r, a + fps), file: file ? join(tmp, `seg${String(i).padStart(4, '0')}.${plan.segExt}`) : null });
+    }
+    // Otherwise give each worker a run of neighbouring frames (fewer warm-ups, same balance as before).
+    const groups = auto ? Array.from({ length: Math.min(workers, ranges.length) }, () => []) : splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
       log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : blur.mode === 'auto' ? ', motion blur auto' : ''}${hardware ? ', GPU encoder' : ''}]`);
@@ -277,17 +285,39 @@ export async function render(input, opts = {}) {
     }
 
     if (process.env.GIVEMOTION_PROFILE) log(`  setup ${Date.now() - t0}ms`);
+    const setDurations = Object.keys(media.durations).length ? `(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()` : null;
+    const reopen = async (page) => { await page.open(ctx.url, ctx.config); if (setDurations) await page.evaluate(setDurations); };
+    // Auto blur: how far things move at every frame to render, measured on the first page while the others start
+    // (seeks and box reads, no captures; about 0.3 ms a frame)
+    const steps = new Map(); // f -> px moved on screen from frame f-1 to f
+    const probing = auto && todoFrames ? (async () => {
+      const q0 = Date.now();
+      if (setDurations) await ctx.page.evaluate(setDurations);
+      const need = new Set();
+      for (const r of ranges) for (let f = r.a - 1; f <= r.b; f++) need.add(f);
+      const frames = [...need].sort((x, y) => x - y);
+      for (let i = 0; i < frames.length;) {
+        let j = i + 1;
+        while (j < frames.length && frames[j] === frames[j - 1] + 1) j++;
+        const run = frames.slice(i, j);
+        const d = await ctx.page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(run.map((f) => Math.max(0, f / fps)))}, ${shutter})`, { timeoutMs: Math.max(60000, run.length * 1000) });
+        run.slice(1).forEach((f, k) => steps.set(f, d[k]));
+        i = j;
+      }
+      // pages driven by requestAnimationFrame or timers cannot seek back: start this one again
+      if (await ctx.page.evaluate('gm.__stateful()')) await reopen(ctx.page);
+      blurStats.probeMs = Date.now() - q0;
+    })() : null;
     // Start other workers in parallel
     const extra = todoFrames ? await Promise.all(Array.from({ length: nWorkers - 1 }, () => newWorker(ctx, opts))) : [];
     pages.push(...extra);
-    if (Object.keys(media.durations).length) {
-      await Promise.all(pages.map((p) => p.evaluate(`(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()`)));
-    }
+    if (probing) await probing;
+    if (setDurations) await Promise.all(pages.map((p) => p.evaluate(setDurations)));
+    const framePlan = (f) => autoBlurPlan(Math.max(steps.get(f) || 0, steps.get(f + 1) || 0) / blurStats.ref, shutter);
+    const queue = auto ? ranges.map((r) => { let cost = 1; for (let f = r.a; f < r.b; f++) { const pl = framePlan(f); cost += pl ? pl.n : 1; } return { ...r, cost }; }).sort((x, y) => y.cost - x.cost || x.a - y.a) : null;
 
     let done = 0, reused = 0;
     let lastLog = 0;
-    const setDurations = Object.keys(media.durations).length ? `(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()` : null;
-    const reopen = async (page) => { await page.open(ctx.url, ctx.config); if (setDurations) await page.evaluate(setDurations); };
     const progress = () => {
       const now = Date.now();
       if (now - lastLog < 1000 && done < todoFrames) return;
@@ -308,19 +338,13 @@ export async function render(input, opts = {}) {
       // a finished part's encoder keeps working while the next part is captured (the encoder pipeline stays full)
       const ending = [], open = [];
       const framePath = (f) => (out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`));
-      // Auto motion blur for frames a..b-1: first ask the page how fast things move at each frame (seeks and box reads,
-      // no captures), then capture each frame once, or 2-8 times across the shutter when something moves fast, and
-      // average those samples (openBlender). Frames reach the writer in order. The decision and the sample times depend
-      // only on the time, and every range starts the same way (probe, then warm up on frame a-1), so any split between
-      // workers and any re-rendered part gives the same bytes.
+      // Auto motion blur for frames a..b-1: capture each frame once, or 2-4 times across the shutter when something moves
+      // fast (framePlan, from the motion measured before), and average those samples (openBlender). Frames reach the
+      // writer in order. The decision and the sample times depend only on the time, and every range starts the same way
+      // (warm up on frame a-1), so any split between workers and any re-rendered part gives the same bytes.
       const captureAuto = async (a, b, writer) => {
         let q0 = Date.now();
-        const times = [];
-        for (let f = a - 1; f <= b; f++) times.push(Math.max(0, f / fps));
-        const moved = await page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(times)}, ${shutter})`);
-        // pages driven by requestAnimationFrame or timers cannot seek back: start them again
-        if (await page.evaluate('gm.__stateful()')) await reopen(page);
-        blurStats.probeMs += Date.now() - q0;
+        if (prevFrame >= a && (await page.evaluate('gm.__stateful()'))) await reopen(page);
         last = null;
         if (a > 0) { await page.seek((a - 1) / fps); await page.capture(captureFormat, jpegQ); }
         const blenders = new Map();
@@ -331,8 +355,7 @@ export async function render(input, opts = {}) {
         };
         try {
           for (let f = a; f < b; f++) {
-            const speed = Math.max(moved[f - a], moved[f - a + 1]) / blurStats.ref;
-            const pl = autoBlurPlan(speed, shutter);
+            const pl = framePlan(f);
             const n = pl ? pl.n : 1;
             const bufs = [];
             for (let s = 0; s < n; s++) {
@@ -367,8 +390,12 @@ export async function render(input, opts = {}) {
           throw e;
         }
       };
+      const next = auto ? () => queue.shift() : ((i) => () => group[i++])(0);
+      let frames = 0;
       try {
-      for (const { a, b, file } of group) {
+      for (let r; (r = next());) {
+        const { a, b, file } = r;
+        frames += b - a;
         const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
         const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
         try {
@@ -414,7 +441,7 @@ export async function render(input, opts = {}) {
         await Promise.allSettled(ending);
         throw e;
       }
-      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${group.reduce((s, g) => s + g.b - g.a, 0)} frames`);
+      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${frames} frames`);
     }));
     const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);
@@ -422,7 +449,7 @@ export async function render(input, opts = {}) {
     pages.length = 0;
     if (format !== 'png') {
       mkdirSync(dirname(out), { recursive: true });
-      const segments = parts ? parts.list.map((p) => p.file) : groups.flat().map((r) => r.file);
+      const segments = parts ? parts.list.map((p) => p.file) : (auto ? ranges : groups.flat()).map((r) => r.file);
       await finalize({ segments, listFile: join(tmp, 'list.txt'), out, format, duration: nFrames / fps, audio: media.audio.map((a) => ({ ...a, start: a.start - f0 / fps, end: a.end - f0 / fps })).filter((a) => a.end > 0).map((a) => (a.start < 0 ? { ...a, from: a.from + -a.start * a.rate, start: 0 } : a)), fps, plan, transparent });
       if (parts && keepParts) {
         writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));

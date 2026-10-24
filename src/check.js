@@ -281,7 +281,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     if (op <= 0.3) continue;
     const ctm = sh.getScreenCTM && sh.getScreenCTM();
     if (!ctm || parseFloat(cs.strokeWidth) * Math.hypot(ctm.a, ctm.b) < 1.5 * PX) continue;
-    strokes.push({ sh, b, inv: ctm.inverse() });
+    // (an SVGPoint, not a DOMPoint: Chrome before ~136, e.g. the headless shell 132, throws on a DOMPoint here)
+    const svg = sh.ownerSVGElement;
+    strokes.push({ sh, b, inv: ctm.inverse(), pt: svg && svg.createSVGPoint ? svg.createSVGPoint() : null });
   }
   // Is the stroke covered at this point by something opaque drawn above it (a panel, a filled shape)?
   // (hit testing skips pointer-events:none, so a stroke that is not found counts as visible)
@@ -313,7 +315,9 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       const ny = Math.min(8, Math.max(3, Math.ceil((tu.bottom - tu.top) / (4 * PX))));
       for (let iy = 0; iy < ny && !hit; iy++) for (let ix = 0; ix < 7 && !hit; ix++) {
         const x = tu.left + (tu.right - tu.left) * (ix + 0.5) / 7, y = tu.top + (tu.bottom - tu.top) * (iy + 0.5) / ny;
-        const pt = new DOMPoint(x, y).matrixTransform(st.inv);
+        const p = new DOMPoint(x, y).matrixTransform(st.inv);
+        let pt = p;
+        if (st.pt) { st.pt.x = p.x; st.pt.y = p.y; pt = st.pt; }
         try { if (st.sh.isPointInStroke(pt) && !coveredAt(x, y, st.sh)) hit = st.sh; } catch (e) {}
       }
       if (hit) break;

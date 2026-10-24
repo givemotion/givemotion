@@ -19,9 +19,13 @@ MIT licensed. No company license, no per-render fees, no seat limits.
 AI agents are very good at HTML and CSS. motionwright lets them use exactly that for video, and gives them the tools to check their own work:
 
 - **No new language.** A composition is one HTML file. CSS `@keyframes`, transitions, the Web Animations API, `setTimeout`, `requestAnimationFrame`, canvas, WebGL, GSAP, Lottie: all of it is seeked frame by frame.
-- **Timing with attributes.** `data-start`, `data-duration`, `data-sequence`, `data-transition="slide-left 0.6"`. No timeline editor, no React.
-- **Motion with attributes.** `data-enter="rise"`, `data-exit="fade"`, `data-split="words"` + `data-stagger="0.06"`, `data-count="0 1250"`, `data-type="30"`.
-- **Eyes for the agent.** `check` finds text that is cut off, off-screen, overlapping, too small or low-contrast, plus broken assets and script errors, each with a fix. `snapshot` makes one contact-sheet image of every scene so the agent can *look* at its video.
+- **Timing with attributes.** `data-start`, `data-duration`, `data-sequence`, `data-cuts="0 2.1 4.3"`, and 27 scene transitions including `morph` (shared elements fly from one scene into the next), `push`, `whip`, `zoom-through`, `flip`, `clock`.
+- **Motion with attributes.** `data-enter="mask-up"`, `data-exit="fade"`, `data-split="words"` + `data-stagger="0.06"`, `data-camera="push 1.1, float"`, `data-fit="grow"`, `data-scramble`, `data-count`, `data-type`, `data-loop` / `data-freeze` / `data-speed`.
+- **Choreography in code when you need it.** A built-in GSAP-style timeline (`mw.timeline().from('.word', {y: 80, stagger: .05})`) where every value is computed from the time, a camera that frames and follows elements (`mw.camera('#world').shot(2, {follow: '#pkg', zoom: 1.6})`), motion along paths with stops, shape and path morphs, springs, noise.
+- **Music that drives the edit.** `npx motionwright audio music.mp3` prints the tempo, beats and bar starts; `mw.audio()` gives loudness, frequency bands and a beat pulse for any frame. Volume curves, ducking under voice-over, soundtrack export.
+- **React too, if you want it.** Write `video.jsx` with `motionwright/react` (`<Scene>`, `<Sequence>`, `useTime()`); same engine, same commands. We tested both with blind judges: plain HTML scored as well or better, so it stays the default ([experiment](docs/experiments/2026-10-format-test.md)).
+- **Plays anywhere.** `motionwright bundle` makes a standalone page, and `<mw-player>` embeds it in any site or app with controls and sound.
+- **Eyes for the agent.** `check` finds text that is cut off, off-screen, overlapping, too small or low-contrast, plus broken assets and script errors, each with a fix. It compares frames, so moving, fading or hidden text does not cause false alarms. `snapshot` makes one contact-sheet image of every scene (or a frame-by-frame strip of one move) so the agent can *look* at its video, and `inspect --at 3.2 --el "#logo"` says where anything is at any moment.
 - **Fast.** Chrome's frame-by-frame `beginFrame` capture (where available), parallel browsers, frames that did not change are reused, encoding overlaps capture. See [Performance](#performance).
 - **Deterministic.** Virtual time, seeded `Math.random`, frame-exact video decoding. Renders with one worker or many are bit-identical.
 
@@ -76,18 +80,20 @@ Every command takes `--json`.
 | `still [file] -t 2.5 -o f.png` | One exact frame |
 | `snapshot [file]` | Key moment of every scene as PNGs + one `sheet.png` |
 | `check [file]` | Errors, layout and contrast problems, with fixes |
-| `inspect [file]` | Timeline as JSON |
+| `inspect [file]` | Timeline as JSON; `--at 3.2 --el "#logo"` for where elements are at a moment |
+| `audio <file>` | Tempo, beats, bar starts and big hits of a song |
+| `bundle [file] -o dir` | Standalone page + `<mw-player>` to embed the video in any site |
 | `blocks` / `add <name>` | Ready-made, editable blocks |
 | `install` / `doctor` | Get Chrome / check the setup |
 | `bench [file]` | Measure speed on your machine |
 
-Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout), `--frames 2s-5s`, `--transparent` (ProRes 4444 or VP9 alpha), `--motion-blur 8`, `--codec h265|av1`, `--hardware`, `--workers`, `--data file.json`, `--props '{…}'`.
+Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout), `--frames 2s-5s`, `--transparent` (ProRes 4444 or VP9 alpha), `--motion-blur 8`, `--codec h265|av1`, `--hardware`, `--workers`, `--muted`, `--data file.json`, `--props '{…}'`. `-o sound.mp3` exports only the soundtrack.
 
 ## Blocks
 
-Twenty plain-HTML building blocks you copy into your project and edit freely (`npx motionwright add <name>`):
+Plain-HTML building blocks you copy into your project and edit freely (`npx motionwright add <name>`):
 
-title-card · lower-third · captions (word-by-word, from JSON or SRT) · code-window (syntax highlighting + typing) · bar-chart · line-chart · stat · checklist · steps · browser-window · phone · cursor (moves and clicks) · callout · compare (before/after) · quote · word-pop · logo-reveal · end-card · gradient-bg · grid-bg
+title-card · lower-third · captions (word-by-word, from JSON or SRT) · code-window (syntax highlighting + typing) · bar-chart · line-chart · stat · checklist · steps · browser-window · phone · cursor (aims at real elements, hovers, clicks) · callout · compare (before/after) · quote · word-pop · logo-reveal · end-card · gradient-bg · grid-bg · lottie (After Effects animations, frame-exact)
 
 ```html
 <mw-include src="blocks/lower-third.html" name="Ada Lovelace" role="Mathematician" data-start="1" data-duration="4"></mw-include>

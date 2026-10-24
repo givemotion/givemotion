@@ -15,13 +15,15 @@
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const charts = [];
 
+  // --chart-line has its default on :root with no specificity, so a value set anywhere above the chart (:root, the
+  // scene, the chart itself) is inherited normally, and var(--chart-line) inside the chart still resolves without one.
   const CSS = `
-.gm-chart{--chart-line:#5eead4}
+:where(:root){--chart-line:#5eead4}
 .gm-chart-svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .gm-chart-line,.gm-chart-seg{fill:none;stroke:var(--chart-line);stroke-width:calc(var(--px,1px)*7);stroke-linecap:round;stroke-linejoin:round}
 .gm-chart-area-stop{stop-color:var(--chart-line)}
 .gm-chart-grid line{stroke:currentColor;stroke-opacity:.13;stroke-width:calc(var(--px,1px)*2)}
-.gm-chart-base{stroke:currentColor;stroke-opacity:.32;stroke-width:calc(var(--px,1px)*2.5)}
+.gm-chart-base,.gm-chart-axis{stroke:currentColor;stroke-opacity:.32;stroke-width:calc(var(--px,1px)*2.5)}
 .gm-chart-tick{position:absolute;font-size:calc(var(--px,1px)*32);font-weight:600;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums;color:color-mix(in srgb,currentColor 58%,transparent)}
 .gm-chart-label{position:absolute;font-size:calc(var(--px,1px)*34);font-weight:700;line-height:1;white-space:nowrap;color:color-mix(in srgb,currentColor 42%,transparent)}
 .gm-chart-label[data-reached]{color:currentColor}
@@ -88,7 +90,12 @@
       this.labels = list(opts.labels).map((x) => String(x).trim());
       const dec = opts.decimals ?? Math.min(2, Math.max(0, ...this.vals.map((v) => { const s = String(v); return s.includes('.') && !/e/i.test(s) ? s.split('.')[1].length : 0; })));
       this.format = typeof opts.format === 'function' ? opts.format : (v) => (opts.prefix || '') + fmtNumber(v, dec) + (opts.suffix || '');
-      this.tickFormat = (v) => (opts.prefix || '') + compact(v) + (opts.suffix || '');
+      // axis labels: compact (10k, 1.5M) by default, 'full' = the same format as the value, or a function
+      const tf = opts.tickFormat;
+      this.tickFormat = typeof tf === 'function' ? (v) => String(tf(v))
+        : /^(full|value|format)$/i.test(String(tf || '')) ? (v) => this.format(v)
+        : (v) => (opts.prefix || '') + compact(v) + (opts.suffix || '');
+      if (tf != null && typeof tf !== 'function' && !/^(full|value|format|compact|k)$/i.test(String(tf))) I.report('warning', 'chart-bad-option', `gm.chart.line: tickFormat "${tf}" is not a function, 'compact' or 'full'.`, el, "Use tickFormat: v => v / 1000 + 'k', 'compact' (10k, 1.5M; the default) or 'full' (12,500, the same format as the value).");
       this.curve();
       // segment colors: the segment that ends at point i
       this.colors = new Array(n).fill(null);
@@ -255,6 +262,8 @@
       this.dots = this.vals.map((_, i) => { const d = div('gm-chart-dot', frag); d.setAttribute('data-i', i); if (this.colors[i]) d.style.borderColor = this.colors[i]; if (o.dots === false) d.style.display = 'none'; return d; });
       this.head = div('gm-chart-head', frag);
       if (o.head === false) this.head.style.display = 'none';
+      // headSize: px at 1080p like the other sizes (the head is centered on the tip from its real size either way)
+      if (o.headSize != null && +o.headSize > 0) this.head.style.width = this.head.style.height = `calc(var(--px,1px)*${+o.headSize})`;
       el.insertBefore(frag, el.firstChild);
       // callouts and riders: <div data-point="2 top 30">, <div data-point="head right 24">
       this.points = [];
@@ -305,7 +314,21 @@
         this.W0 = W; this.wStyle = el.style.width;
         if (this.ov && !this.ov.width) this.ov.width = Math.round(I.comp.width * 0.9);
         this.grad.setAttribute('y1', r2(pt)); this.grad.setAttribute('y2', r2(H - pb));
+        // axis: 'none' draws no tick labels, grid lines or base line; grid / base turn the lines on or off on their own
+        this.showGrid = o.grid != null ? o.grid !== false && o.grid !== 'false' : axis !== 'none';
+        this.showBase = o.base != null ? o.base !== false && o.base !== 'false' : axis !== 'none' || this.showGrid;
+        if (!this.showBase) this.base.style.display = 'none';
+        // axisLine: true adds the vertical axis line (on the side of the tick labels; made only when asked for)
+        if (o.axisLine && o.axisLine !== 'false') {
+          this.axisLine = document.createElementNS(SVGNS, 'line');
+          this.axisLine.setAttribute('class', 'gm-chart-axis');
+          this.base.after(this.axisLine);
+        }
         this.makeTicks();
+        this.makeIntro();
+        // the head and the dots sit centered on their point whatever size CSS gives them (measured once)
+        this.center(this.head);
+        for (const d of this.dots) this.center(d);
         // labels: every k-th one when they would touch
         if (this.labelEls.length) {
           const minW = this.ov ? Math.min(W, this.ov.width) : W;
@@ -317,6 +340,38 @@
         this.bindTexts();
         return this.g;
       } finally { for (const a of hidden) a.setAttribute('data-gm-hidden', ''); }
+    }
+    center(e) {
+      if (!e || e.style.display === 'none') return;
+      const cs = getComputedStyle(e), f = (k) => parseFloat(cs[k]) || 0;
+      let w = f('width'), h = f('height');
+      if (cs.boxSizing !== 'border-box') { w += f('paddingLeft') + f('paddingRight') + f('borderLeftWidth') + f('borderRightWidth'); h += f('paddingTop') + f('paddingBottom') + f('borderTopWidth') + f('borderBottomWidth'); }
+      if (!(w > 0 && h > 0)) return;
+      if (Math.abs(f('marginLeft') + w / 2) > 0.01) e.style.marginLeft = -w / 2 + 'px';
+      if (Math.abs(f('marginTop') + h / 2) > 0.01) e.style.marginTop = -h / 2 + 'px';
+    }
+    // axisIntro: the base line and then each grid line draw on from the left, bottom to top, and their labels fade in;
+    // the x labels appear as the base line passes them. axisIntro: 0.8 (seconds, from the chart's start) or
+    // { duration: 0.8, at: 0.2, ease: 'out-cubic' }
+    makeIntro() {
+      const o = this.opts, a = o.axisIntro;
+      this.intro = null;
+      if (a == null || a === false || a === 0 || a === 'false') return;
+      const ob = typeof a === 'object' ? a : { duration: a === true ? 0.8 : a };
+      const dur = I.parseTime(ob.duration, this.el, 'gm.chart.line axisIntro') ?? 0.8, at = I.parseTime(ob.at, this.el, 'gm.chart.line axisIntro.at') ?? 0;
+      if (!(dur > 0)) return;
+      // slots: the base line first, then the ticks shown when the intro ends, lowest first
+      const end = at + dur, [lo, hi] = this.range(end);
+      const shown = this.ticks.filter((tk) => { const f = (tk.v - lo) / (hi - lo); return f >= -1e-4 && f <= 1.0001; }).sort((x, y) => x.v - y.v);
+      const k = 1 + shown.length, run = k > 1 ? dur * 0.6 : dur, gap = k > 1 ? (dur - run) / (k - 1) : 0;
+      this.intro = { at, run, gap, last: k - 1, ease: gm.easing(ob.ease || 'out-cubic') };
+      this.ticks.forEach((tk) => { tk.slot = shown.indexOf(tk); if (tk.slot < 0) tk.slot = k - 1; else tk.slot += 1; });
+    }
+    // how far slot j of the intro has drawn at time t (1 = done, or no intro)
+    introAt(t, j) {
+      const it = this.intro;
+      if (!it) return 1;
+      return r2(it.ease(clamp((t - it.at - j * it.gap) / it.run)) * 1000) / 1000;
     }
     // the plot box at time t (it only changes during the overview)
     // (extra: room the overview leaves on the right for labels that ride the head)
@@ -330,23 +385,34 @@
     X(p, g = this.g) { return g.l + (p * (g.r - g.l)) / Math.max(1, this.n - 1); }
     // grid values: fixed nice steps, or (rescaling) every 1-2-5 value that fits, fading in and out as the axis grows
     makeTicks() {
-      const v = this.vals, lo = this.range(0)[0];
+      const v = this.vals, lo = this.range(0)[0], o = this.opts;
       const vals = [];
-      if (!this.opts.rescale) {
+      // ticks: [0, 10000, 20000] (exact values) or 10000 (a step from the bottom of the axis); these include the bottom
+      const tl = Array.isArray(o.ticks) || (typeof o.ticks === 'string' && o.ticks.includes(',')) ? list(o.ticks).map(Number).filter((x) => isFinite(x)) : null;
+      const step = !tl && o.ticks != null && o.ticks !== '' && o.ticks !== 'auto' ? +o.ticks : 0;
+      if (o.ticks != null && o.ticks !== '' && o.ticks !== 'auto' && !(tl && tl.length) && !(step > 0)) I.report('warning', 'chart-bad-option', `gm.chart.line: ticks ${JSON.stringify(o.ticks)} is not a list of values or a step.`, this.el, 'Use ticks: [0, 10000, 20000] (the values to label) or ticks: 10000 (one every 10,000 from the bottom of the axis).');
+      if (tl && tl.length) vals.push(...tl);
+      else if (step > 0) {
+        const top = o.rescale ? (Math.max(...v) - lo) * 1.5 + lo : this.range(0)[1];
+        for (let x = Math.ceil(lo / step - 1e-9) * step, c = 0; x <= top + step * 1e-6 && c < 500; x += step, c++) vals.push(Math.round(x / step) * step);
+      } else if (!o.rescale) {
         const [a, b] = this.range(0), step = niceStep(b - a, 4);
         for (let x = Math.ceil(a / step) * step; x <= b + 1e-9; x += step) if (Math.abs(x - lo) > step * 0.01) vals.push(Math.round(x / step) * step);
       } else {
         const top = (Math.max(...v) - lo) * 1.5 + lo, small = Math.max(1e-9, (Math.max(...v.map(Math.abs)) || 1) / 1e4);
         for (let e = Math.floor(Math.log10(small)); Math.pow(10, e) <= top * 2; e++) for (const m of [1, 2, 5]) { const x = m * Math.pow(10, e); if (x > lo && x <= top * 1.2) vals.push(x); }
       }
+      const span = Math.abs(this.range(0)[1] - lo) || 1;
       this.ticks = vals.map((x) => {
-        const line = document.createElementNS(SVGNS, 'line');
-        this.gridG.appendChild(line);
+        // no grid line where the base line already is (unless the base is hidden), and none at all with grid: false
+        const onBase = Math.abs(x - lo) < span * 1e-6;
+        const line = this.showGrid && !(onBase && this.showBase) ? document.createElementNS(SVGNS, 'line') : null;
+        if (line) this.gridG.appendChild(line);
         const lab = document.createElement('div');
         lab.className = 'gm-chart-tick';
         lab.textContent = this.tickFormat(x);
         this.tickBox.appendChild(lab);
-        return { v: x, line, lab };
+        return { v: x, line, lab, onBase };
       });
       if (this.opts.axis === 'none' || this.opts.axis === false) this.tickBox.style.display = 'none';
     }
@@ -361,6 +427,40 @@
       if (!isFinite(k) || k < 0 || k >= this.n) return null;
       const time = t ?? this.reach[k], p = this.point(k, time);
       return p && { ...p, value: this.vals[k], label: this.labels[k] ?? '', time: this.reach[k] };
+    }
+    // the chart's own clip time now (for the helpers below when no t is given)
+    now() { return I.mapT(this.el, I.now) - I.clipStartOf(this.el); }
+    // room the overview leaves on the right for what rides on the right of the head
+    extraRoom(t) {
+      let extra = 0;
+      const P = PX();
+      if (this.ov && t > this.ov.at) for (const q of this.points) if (q.i < 0 && /right/.test(q.side) && q.el.offsetParent) extra = Math.max(extra, (q.gap + 12) * P * (q.side === 'right' ? 1 : 0.72) + q.el.offsetWidth);
+      return extra;
+    }
+    // layout offset of the chart inside another element (camera transforms are not counted: world px)
+    offsetIn(rel) {
+      const r = typeof rel === 'string' ? document.querySelector(rel) : rel;
+      if (!r || r === this.el) return [0, 0];
+      const abs = (e) => { let x = 0, y = 0; for (let a = e; a; a = a.offsetParent) { x += a.offsetLeft; y += a.offsetTop; } return [x, y]; };
+      let x = 0, y = 0, a = this.el;
+      for (; a && a !== r; a = a.offsetParent) { x += a.offsetLeft; y += a.offsetTop; }
+      if (a === r) return [x, y];
+      const p = abs(this.el), q = abs(r);
+      return [p[0] - q[0], p[1] - q[1]];
+    }
+    // where any (point, value) is drawn at time t: { x, y } in the chart's px (or in the px of `rel`, e.g. '#world')
+    toPx(i, v, t, rel) {
+      if (!this.geom()) return null;
+      t = t ?? this.now();
+      const k = typeof i === 'number' ? i : this.index(i);
+      const g = this.box(t, this.extraRoom(t)), [lo, hi] = this.range(t), off = rel ? this.offsetIn(rel) : [0, 0];
+      return { x: r2(this.X(k, g) + off[0]), y: r2(g.b - ((v - lo) / (hi - lo)) * (g.b - g.t) + off[1]) };
+    }
+    // the tip of the line at time t (default: now), on the smooth curve it draws: { x, y, value, progress, label }
+    headAt(t, rel) {
+      t = t ?? this.now();
+      const p = this.progress(t), v = this.valueAtIndex(p), xy = this.toPx(p, v, t, rel);
+      return xy && { ...xy, value: v, progress: p, label: this.labels[Math.round(p)] ?? '' };
     }
 
     // ---------------------------------------------------------------------------
@@ -384,9 +484,7 @@
         const s = tx.kind === 'label' ? this.labelAt(t) : tx.kind === 'change' ? this.changeAt(t) : this.format(hv);
         if (tx.el.textContent !== s) { tx.el.textContent = s; changed = true; }
       }
-      let extra = 0;
-      if (this.ov && t > this.ov.at) for (const q of this.points) if (q.i < 0 && /right/.test(q.side) && q.el.offsetParent) extra = Math.max(extra, (q.gap + 12) * P * (q.side === 'right' ? 1 : 0.72) + q.el.offsetWidth);
-      const g = this.box(t, extra);
+      const g = this.box(t, this.extraRoom(t));
       const Y = (v) => g.b - ((v - lo) / (hi - lo)) * (g.b - g.t);
       const pt = (x, v) => r2(x) + ',' + r2(Y(v));
       // the line up to p: whole segments, then the first part of the current one (de Casteljau)
@@ -405,29 +503,44 @@
       if (this.ov) set(this.el, 'width', g.W === this.W0 ? this.wStyle : g.W + 'px');
       set(this.svg, 'viewBox', `0 0 ${g.W} ${g.H}`, true);
       set(this.grad, 'y1', r2(g.t), true); set(this.grad, 'y2', r2(g.b), true);
-      const by = r2(Y(lo));
-      set(this.base, 'x1', r2(g.l), true); set(this.base, 'x2', r2(g.r), true); set(this.base, 'y1', by, true); set(this.base, 'y2', by, true);
+      const by = r2(Y(lo)), eb = this.introAt(t, 0);
+      set(this.base, 'x1', r2(g.l), true); set(this.base, 'x2', r2(eb === 1 ? g.r : g.l + (g.r - g.l) * eb), true); set(this.base, 'y1', by, true); set(this.base, 'y2', by, true);
+      if (this.intro) set(this.base, 'visibility', eb > 0 ? null : 'hidden', true);
+      if (this.axisLine) {
+        const ax = r2(g.axis === 'right' ? g.r : g.l);
+        set(this.axisLine, 'x1', ax, true); set(this.axisLine, 'x2', ax, true); set(this.axisLine, 'y1', r2(g.b), true); set(this.axisLine, 'y2', r2(g.b - (g.b - g.t) * eb), true);
+        set(this.axisLine, 'visibility', eb > 0 ? null : 'hidden', true);
+      }
       // grid and axis labels
       const hx = this.X(p, g), hy = Y(hv);
       for (const tk of this.ticks) {
         const f = (tk.v - lo) / (hi - lo);
-        const op = this.opts.rescale ? r2(clamp((f - 0.1) / 0.08) * clamp((1.04 - f) / 0.08)) : f <= 1.0001 ? 1 : 0;
+        let op = this.opts.rescale && !tk.onBase ? r2(clamp((f - 0.1) / 0.08) * clamp((1.04 - f) / 0.08)) : f <= 1.0001 && f >= -1e-4 ? 1 : 0;
+        // intro: the line draws from the left, the label fades in and slides a little as its line starts
+        const e = this.intro ? this.introAt(t, tk.slot) : 1;
+        if (e <= 0) op = 0;
         const y = r2(Y(tk.v));
-        set(tk.line, 'display', op > 0 ? '' : 'none');
+        if (tk.line) set(tk.line, 'display', op > 0 ? '' : 'none');
         set(tk.lab, 'display', op > 0 ? '' : 'none');
         if (op <= 0) continue;
-        set(tk.line, 'x1', r2(g.l), true); set(tk.line, 'x2', r2(g.r), true); set(tk.line, 'y1', y, true); set(tk.line, 'y2', y, true);
-        set(tk.line, 'opacity', op === 1 ? null : String(op), true);
-        set(tk.lab, 'opacity', op === 1 ? '' : String(op));
-        if (g.axis === 'head') { set(tk.lab, 'left', r2(hx + g.axisGap) + 'px'); set(tk.lab, 'top', r2(y - 10 * P) + 'px'); set(tk.lab, 'translate', '0 -100%'); }
-        else if (g.axis === 'right') { set(tk.lab, 'left', r2(g.r + 20 * P) + 'px'); set(tk.lab, 'top', y + 'px'); set(tk.lab, 'translate', '0 -50%'); }
-        else { set(tk.lab, 'left', r2(g.l - 20 * P) + 'px'); set(tk.lab, 'top', y + 'px'); set(tk.lab, 'translate', '-100% -50%'); }
+        if (tk.line) {
+          set(tk.line, 'x1', r2(g.l), true); set(tk.line, 'x2', r2(e === 1 ? g.r : g.l + (g.r - g.l) * e), true); set(tk.line, 'y1', y, true); set(tk.line, 'y2', y, true);
+          set(tk.line, 'opacity', op === 1 ? null : String(op), true);
+        }
+        const lop = e === 1 ? op : r2(op * clamp(e / 0.7)), sl = e === 1 ? 0 : r2((1 - e) * 14 * P);
+        set(tk.lab, 'opacity', lop === 1 ? '' : String(lop));
+        if (g.axis === 'head') { set(tk.lab, 'left', r2(hx + g.axisGap + sl) + 'px'); set(tk.lab, 'top', r2(y - 10 * P) + 'px'); set(tk.lab, 'translate', '0 -100%'); }
+        else if (g.axis === 'right') { set(tk.lab, 'left', r2(g.r + 20 * P + sl) + 'px'); set(tk.lab, 'top', y + 'px'); set(tk.lab, 'translate', '0 -50%'); }
+        else { set(tk.lab, 'left', r2(g.l - 20 * P - sl) + 'px'); set(tk.lab, 'top', y + 'px'); set(tk.lab, 'translate', '-100% -50%'); }
       }
       // labels and dots of the points reached so far
       for (let i = 0; i < n; i++) {
         const on = p >= i - 1e-6;
         const lab = this.labelEls[i];
-        if (lab && lab.__gmW != null) { set(lab, 'data-reached', on ? '' : null, true); set(lab, 'left', r2(this.X(i, g) - lab.__gmW / 2) + 'px'); set(lab, 'top', r2(g.b + 22 * P) + 'px'); }
+        if (lab && lab.__gmW != null) {
+          set(lab, 'data-reached', on ? '' : null, true); set(lab, 'left', r2(this.X(i, g) - lab.__gmW / 2) + 'px'); set(lab, 'top', r2(g.b + 22 * P) + 'px');
+          if (this.intro) set(lab, 'opacity', eb === 1 ? '' : String(r2(clamp((1.15 * eb - i / Math.max(1, n - 1)) / 0.15))));
+        }
         const dot = this.dots[i];
         set(dot, 'data-reached', on ? '' : null, true);
         set(dot, 'left', r2(this.X(i, g)) + 'px'); set(dot, 'top', r2(Y(this.vals[i])) + 'px');

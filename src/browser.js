@@ -113,6 +113,9 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
     // Partial raster redraws only the changed part of a tile, on top of pixels from whenever that tile was last drawn:
     // the result then depends on the frame history (1 worker != N workers by a pixel or two). Costs no measurable speed.
     '--disable-partial-raster',
+    // Checker imaging draws a frame without an image that is not decoded yet and adds it in a later frame: which frame
+    // a capture gets would depend on timing.
+    '--disable-checker-imaging',
   ];
   if (platform() === 'linux' && (process.getuid && process.getuid() === 0 || process.env.GIVEMOTION_NO_SANDBOX)) args.push('--no-sandbox');
   const mode = gl === 'auto' ? (hasGPU() ? 'gpu' : 'swiftshader') : gl;
@@ -124,7 +127,7 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
   if (process.env.GIVEMOTION_CHROME_ARGS) args.push(...process.env.GIVEMOTION_CHROME_ARGS.split(/\s+/).filter(Boolean));
   if (beginFrame) {
     args.push('--deterministic-mode', '--enable-begin-frame-control', '--disable-threaded-animation', '--disable-threaded-scrolling',
-      '--disable-checker-imaging', '--disable-new-content-rendering-timeout', '--run-all-compositor-stages-before-draw', '--disable-image-animation-resync');
+      '--disable-new-content-rendering-timeout', '--run-all-compositor-stages-before-draw', '--disable-image-animation-resync');
   }
   return args;
 }
@@ -290,6 +293,29 @@ export class FramePage {
     }
     const r = await this.s('Page.captureScreenshot', { format, ...(format === 'jpeg' ? { quality } : {}), optimizeForSpeed: true, fromSurface: true, captureBeyondViewport: false });
     return Buffer.from(r.data, 'base64');
+  }
+  /**
+   * Forget the paint state of earlier frames. Chrome keeps raster state per composited layer from frame to frame: a
+   * layer that moves, scales or has will-change keeps the raster scale and sub-pixel offset it was first drawn at (or
+   * the largest scale it reached), so a frame could depend on which frames this page drew before it (1 worker !=
+   * N workers by a pixel level on grid lines and text). Hiding the page's content for one drawn frame drops every such
+   * layer, and the frame drawn after it makes new ones for the current state only. Call it right after a seek: the new
+   * layers are made for the time the page is at (it draws once more itself, as the compositor may draw at any moment).
+   */
+  async resetPaint() {
+    const had = await this.evaluate(`(() => { const b = document.body; if (!b) return false; window.__gmResetStyle = b.getAttribute('style'); b.style.setProperty('content-visibility', 'hidden', 'important'); return true; })()`);
+    if (!had) return;
+    try {
+      await this._drawFrame();
+    } finally {
+      await this.evaluate(`(() => { const b = document.body, s = window.__gmResetStyle; delete window.__gmResetStyle; if (s == null) b.removeAttribute('style'); else b.setAttribute('style', s); })()`);
+    }
+    await this._drawFrame();
+  }
+  /** Have the compositor draw the current state once (a tiny capture). */
+  async _drawFrame() {
+    if (this.mode === 'beginframe') await this._beginFrame(true, 'jpeg', 1);
+    else await this.s('Page.captureScreenshot', { format: 'jpeg', quality: 1, optimizeForSpeed: true, fromSurface: true, clip: { x: 0, y: 0, width: 8, height: 8, scale: 1 } });
   }
   async close() {
     if (this.browser) { const b = this.browser; this.browser = null; await b.close(); }

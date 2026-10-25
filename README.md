@@ -124,9 +124,7 @@ givemotion and once with Remotion 4.0.538. 27 blind AI judges scored the 36 vide
 givemotion rendered every video faster (about 2× overall) and needed far less code, because the camera, beat
 detection and hand-drawn shapes are built in (the Remotion agents wrote their own). The quality edge is small
 and mostly fewer visible mistakes; Remotion won the year recap, explainer, whiteboard and promo briefs. These are AI
-judges looking at frames, on one machine. Method, every score and the limits:
-[the write-up](docs/experiments/2026-10-vs-remotion.md); the speed test is in
-[`benchmarks/vs-remotion`](benchmarks/vs-remotion) so you can run it yourself. givemotion contains no code from
+judges looking at frames, on one machine. givemotion contains no code from
 Remotion, and the test used Remotion only as a user does. We are not affiliated with Remotion.
 
 The next table compares givemotion with **HyperFrames** in more detail, from each project's own docs and

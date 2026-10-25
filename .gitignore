@@ -11,7 +11,7 @@ snapshots/
 benchmarks/**/node_modules/
 benchmarks/vs-hyperframes/gm/
 benchmarks/vs-hyperframes/hf/
-bench/agents/runs/
+bench/agents/
 .gm-parts/
 __pycache__/
 .claude/worktrees/

@@ -37,7 +37,7 @@ second. Do not reformat files you are not changing.
 - `worktree-agent-aee43b06a8b1470d6`: motion blur without stepped copies, cheaper. If it meets quality + <25% cost, turn auto blur on by default.
 - `worktree-agent-ab38ffe6c11fa6d44`: 1 worker == N workers determinism fix (fails on main for code-explainer, coffee-promo).
 - `worktree-agent-ae269254e2fbe6109`: check.js false positives / misses.
-- Open question from r10 (docs/experiments/2026-10-r10.md): natural motion is not visible to judges and `analyze --motion` ranks it below classic; makers override defaults with explicit ease/duration. Diagnose (motion or metric), and find a judge method that can see motion.
+- Open question from r10: natural motion is not visible to judges and `analyze --motion` ranks it below classic; makers override defaults with explicit ease/duration. Diagnose (motion or metric), and find a judge method that can see motion.
 
 ## N7. Natural, real-world motion (Leo's request; start here)
 Videos still move like software: every move eases from a dead stop to a dead stop, consecutive moves and camera shots
@@ -84,8 +84,9 @@ Files: `src/render.js`, `src/runtime/motion.js`, `src/runtime/runtime.js`, `src/
 (a short "motion principles" paragraph: anticipation, follow-through, arcs, ease out on entrances, ease in on exits).
 
 ## N8. Token cost for agents (measure and lower it)
-context (median ~2.6M vs ~1.7M tokens processed, almost all cached), from the agent docs kept in context every turn,
-the `check`/`snapshot` output and contact-sheet images, and ~15% more turns. At list prices that is roughly 10-20%
+Measured in agent rounds, givemotion makers write a median ~29k output tokens per video but read a lot of
+context (median ~2.6M tokens processed, almost all cached), from the agent docs kept in context every turn,
+the `check`/`snapshot` output and contact-sheet images, and many turns. At list prices that is roughly 10-20%
 more per video (cache reads are cheap; this is an estimate, not a bill). They also made fewer visible errors, and
 renders cost half the CPU time. Ideas, measured with `bench/agents` (tokens per video at the same quality):
 - `SKILL.md` is ~54 KB (~13.5k tokens) and growing: a short core (~15 KB: the composition format, the top tools, the

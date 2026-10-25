@@ -10,6 +10,8 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const f1 = (x) => Math.round(x * 10) / 10;
   const px = () => (typeof I.PX === 'function' ? I.PX() : 1);
+  // (rounded sketched corners and loops around boxes are new looks: <html data-motion="classic"> keeps the old ones)
+  const natural = () => !I.naturalMotion || I.naturalMotion();
   // original shape → the sketched group that replaced it (so references taken by scripts still work)
   const replaced = I.replaced = I.replaced || new WeakMap();
 
@@ -59,10 +61,52 @@
 
   /** A rough straight line. */
   function line(x1, y1, x2, y2, o) { o = opts(o); return passes(o, (R) => strokeLine(x1, y1, x2, y2, o, R)); }
-  /** A rough rectangle (each side its own stroke, crossing a little at the corners). */
+  /** A rough rectangle (each side its own stroke, crossing a little at the corners). { r } (or rx, ry) rounds it. */
   function rect(x, y, w, h, o) {
+    if (o && (o.r || o.rx || o.ry)) return rrect(x, y, w, h, o.rx ?? o.r ?? o.ry, o.ry ?? o.rx ?? o.r, o);
     o = opts(o);
     return passes(o, (R) => strokeLine(x, y, x + w, y, o, R) + strokeLine(x + w, y, x + w, y + h, o, R, false) + strokeLine(x + w, y + h, x, y + h, o, R, false) + strokeLine(x, y + h, x, y, o, R, false));
+  }
+  /** A rough rounded rectangle: the sides as quick strokes, each corner a quarter curve that picks up where the side
+   *  ended (the pen goes round without lifting); the end runs a little past the start. */
+  function rrect(x, y, w, h, rx, ry, o) {
+    o = opts(o);
+    rx = Math.max(0, Math.min(+rx || 0, w / 2)); ry = Math.max(0, Math.min(+ry || 0, h / 2));
+    if (!rx || !ry) return rect(x, y, w, h, o);
+    const so = { ...o, overshoot: 0.25 * o.overshoot }, K = 0.5523;
+    const endOf = (d) => { const m = /(-?[\d.]+) (-?[\d.]+)$/.exec(d); return [+m[1], +m[2]]; };
+    const x0 = x, y0 = y;
+    return passes(o, (R) => {
+      // each pass of the pen lands a little off the last one (so the two strokes part, like on a square box)
+      x = x0 + (R() - 0.5) * 4 * px() * o.roughness; y = y0 + (R() - 0.5) * 4 * px() * o.roughness;
+      const jr = () => 1 + (R() - 0.5) * 0.16 * o.roughness, jt = () => (R() - 0.5) * Math.min(rx, ry) * 0.1 * o.roughness;
+      // a corner from where the last side ended to the start of the next side, around the corner point (qx, qy)
+      const corner = (from, to, qx, qy) => {
+        const a = jr(), b = jr();
+        const c1 = [from[0] + (qx - from[0]) * K * a + jt(), from[1] + (qy - from[1]) * K * a + jt()];
+        const c2 = [to[0] + (qx - to[0]) * K * b + jt(), to[1] + (qy - to[1]) * K * b + jt()];
+        return `C${f1(c1[0])} ${f1(c1[1])} ${f1(c2[0])} ${f1(c2[1])} ${f1(to[0])} ${f1(to[1])}`;
+      };
+      const r = x + w, b = y + h;
+      let d = strokeLine(x + rx, y, r - rx, y, so, R);
+      d += corner(endOf(d), [r, y + ry], r, y);
+      d += strokeLine(r, y + ry, r, b - ry, so, R, false);
+      d += corner(endOf(d), [r - rx, b], r, b);
+      d += strokeLine(r - rx, b, x + rx, b, so, R, false);
+      d += corner(endOf(d), [x, b - ry], x, b);
+      d += strokeLine(x, b - ry, x, y + ry, so, R, false);
+      // the last corner ends a little past the start, like a quick hand closing the shape
+      const past = Math.min((w - 2 * rx) * 0.3, (6 + R() * 10) * px());
+      d += corner(endOf(d), [x + rx + past, y + (R() - 0.5) * 2 * px() * o.roughness], x, y);
+      return d;
+    });
+  }
+  // a rounded box as plain path data (radii: [rx, ry] per corner, top-left first, clockwise)
+  function roundedBoxPath(x, y, w, h, radii) {
+    const [tl, tr, br, bl] = radii;
+    return `M${x + tl[0]} ${y}H${x + w - tr[0]}` + (tr[0] && tr[1] ? `A${tr[0]} ${tr[1]} 0 0 1 ${x + w} ${y + tr[1]}` : '') + `V${y + h - br[1]}` +
+      (br[0] && br[1] ? `A${br[0]} ${br[1]} 0 0 1 ${x + w - br[0]} ${y + h}` : '') + `H${x + bl[0]}` + (bl[0] && bl[1] ? `A${bl[0]} ${bl[1]} 0 0 1 ${x} ${y + h - bl[1]}` : '') +
+      `V${y + tl[1]}` + (tl[0] && tl[1] ? `A${tl[0]} ${tl[1]} 0 0 1 ${x + tl[0]} ${y}` : '') + 'Z';
   }
   /** A rough ellipse: drawn in one go, the end runs a little past the start like a quick pen circle. */
   function ellipse(cx, cy, rx, ry, o) {
@@ -222,6 +266,61 @@
     });
   }
 
+  // A quick pen loop around boxes [{x, y, w, h}]: a smooth closed curve around all of them (the convex hull of the
+  // boxes, each grown by pad with round corners, so it never cuts through one), drawn like a hand circling a group:
+  // it starts a little inside, wobbles slowly outward and runs on past its start. pad is in the boxes' units.
+  function convexHull(P) {
+    const pts = P.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (pts.length < 3) return pts;
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], hi = [];
+    for (const q of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = pts.length - 1; i >= 0; i--) { const q = pts[i]; while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], q) <= 0) hi.pop(); hi.push(q); }
+    return lo.slice(0, -1).concat(hi.slice(0, -1));
+  }
+  function loopPath(boxes, pad, o) {
+    o = opts(o);
+    const ring = [];
+    for (const b of boxes) {
+      if (!(b.w >= 0 && b.h >= 0)) continue;
+      // corner circles a little inside each corner: the loop clears the corners by pad and the sides by a bit more,
+      // so it reads as a loop, not a box
+      const e = Math.max(0, Math.min(b.w / 2, b.h / 2, 0.2 * Math.min(b.w, b.h), 1.5 * pad)), rc = e * Math.SQRT2 + pad;
+      for (const [cx, cy] of [[b.x + e, b.y + e], [b.x + b.w - e, b.y + e], [b.x + b.w - e, b.y + b.h - e], [b.x + e, b.y + b.h - e]])
+        for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; ring.push([cx + Math.cos(a) * rc, cy + Math.sin(a) * rc]); }
+    }
+    const H = convexHull(ring);
+    if (H.length < 3) return '';
+    const cum = [0];
+    for (let i = 1; i <= H.length; i++) cum.push(cum[i - 1] + Math.hypot(H[i % H.length][0] - H[i - 1][0], H[i % H.length][1] - H[i - 1][1]));
+    const per = cum[H.length];
+    let area = 0;
+    for (let i = 0; i < H.length; i++) { const a = H[i], b = H[(i + 1) % H.length]; area += a[0] * b[1] - b[0] * a[1]; }
+    const out = area > 0 ? 1 : -1;
+    // a point on the hull, and how far a hand would bow out there: long straight runs bulge a little (a loop, not a
+    // polygon), nothing at the corners
+    const at = (s) => {
+      const L = (((s % 1) + 1) % 1) * per;
+      let i = 1; while (i < H.length && cum[i] < L) i++;
+      const a = H[i - 1], b = H[i % H.length], sl = cum[i] - cum[i - 1], f = (L - cum[i - 1]) / Math.max(1e-9, sl);
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, Math.sin(Math.PI * f) * Math.max(0, sl - 2 * pad) * 0.04];
+    };
+    return passes(o, (R, p) => {
+      const k = o.roughness, s0 = R(), over = 0.1 + R() * 0.15;
+      const steps = Math.max(16, Math.min(160, Math.round((per * (1 + over)) / (26 * px()))));
+      const ph1 = R() * 6.28, ph2 = R() * 6.28, f1 = 1 + R(), f2 = 3 + R() * 2, d = 0.004;
+      const pts = [];
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps, s = s0 + (1 + over) * t, q = at(s), q0 = at(s - d), q1 = at(s + d);
+        const tx = q1[0] - q0[0], ty = q1[1] - q0[1], tl = Math.hypot(tx, ty) || 1, nx = (out * ty) / tl, ny = (-out * tx) / tl;
+        // a slow wobble (outward on average) and a slight spiral, so where the end overlaps the start the strokes part
+        const w = pad * (0.1 + k * (0.1 * Math.sin(ph1 + t * f1 * 6.28) + 0.05 * Math.sin(ph2 + t * f2 * 6.28)) + (t - 0.5) * 0.22 * k * (p % 2 ? -1 : 1));
+        pts.push([q[0] + nx * (w + q[2]), q[1] + ny * (w + q[2])]);
+      }
+      return smooth(pts);
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // data-sketch: turn plain SVG shapes into hand-drawn ones
   // ---------------------------------------------------------------------------
@@ -237,7 +336,19 @@
   function geometryPath(el) {
     const n = (a) => parseFloat(el.getAttribute(a)) || 0;
     switch (el.tagName.toLowerCase()) {
-      case 'rect': return { kind: 'rect', args: [n('x'), n('y'), n('width'), n('height')] };
+      case 'rect': {
+        // rounded corners: rx / ry (attributes or CSS); one of them alone rounds both ways
+        const cs = getComputedStyle(el);
+        let rx = parseFloat(cs.rx), ry = parseFloat(cs.ry);
+        if (!isFinite(rx)) rx = parseFloat(el.getAttribute('rx'));
+        if (!isFinite(ry)) ry = parseFloat(el.getAttribute('ry'));
+        if (!isFinite(rx)) rx = ry;
+        if (!isFinite(ry)) ry = rx;
+        const w = n('width'), h = n('height');
+        rx = Math.min(rx || 0, w / 2); ry = Math.min(ry || 0, h / 2);
+        if (rx > 0 && ry > 0 && natural()) return { kind: 'rrect', args: [n('x'), n('y'), w, h, rx, ry] };
+        return { kind: 'rect', args: [n('x'), n('y'), w, h] };
+      }
       case 'circle': return { kind: 'ellipse', args: [n('cx'), n('cy'), n('r'), n('r')] };
       case 'ellipse': return { kind: 'ellipse', args: [n('cx'), n('cy'), n('rx'), n('ry')] };
       case 'line': return { kind: 'line', args: [n('x1'), n('y1'), n('x2'), n('y2')] };
@@ -251,6 +362,12 @@
   function outlinePoints(g) {
     const [a, b, c, d] = g.args;
     if (g.kind === 'rect') return [[a, b], [a + c, b], [a + c, b + d], [a, b + d]];
+    if (g.kind === 'rrect') {
+      const [rx, ry] = [g.args[4], g.args[5]], pts = [];
+      for (const [qx, qy, a0] of [[a + c - rx, b + ry, -90], [a + c - rx, b + d - ry, 0], [a + rx, b + d - ry, 90], [a + rx, b + ry, 180]])
+        for (let i = 0; i <= 6; i++) { const t = ((a0 + i * 15) * Math.PI) / 180; pts.push([qx + Math.cos(t) * rx, qy + Math.sin(t) * ry]); }
+      return pts;
+    }
     if (g.kind === 'ellipse') { const pts = []; for (let i = 0; i < 48; i++) { const t = (i / 48) * Math.PI * 2; pts.push([a + Math.cos(t) * c, b + Math.sin(t) * d]); } return pts; }
     if (g.kind === 'polygon' || g.kind === 'polyline') return toPoints(a);
     if (g.kind === 'path') return a;
@@ -263,6 +380,7 @@
     const [a, b, c, d] = g.args;
     switch (g.kind) {
       case 'rect': return `M${a} ${b}H${a + c}V${b + d}H${a}Z`;
+      case 'rrect': { const q = [g.args[4], g.args[5]]; return roundedBoxPath(a, b, c, d, [q, q, q, q]); }
       case 'ellipse': return `M${a - c} ${b}A${c} ${d} 0 1 0 ${a + c} ${b}A${c} ${d} 0 1 0 ${a - c} ${b}Z`;
       case 'line': return `M${a} ${b}L${c} ${d}`;
       case 'polyline': case 'polygon': { const P = toPoints(a); return P.length ? 'M' + P.map((q) => q[0] + ' ' + q[1]).join('L') + (g.kind === 'polygon' ? 'Z' : '') : null; }
@@ -276,7 +394,7 @@
     const cs = getComputedStyle(el);
     const seed = o.seed != null ? String(o.seed) + ':' + index : (el.id || '') + ':' + index;
     const so = { roughness: o.roughness ?? 1, passes: o.passes ?? 2, bow: o.bow ?? 1, seed, raw: o };
-    const fnK = { rect, ellipse, line, polyline, polygon, path }[g.kind];
+    const fnK = { rect, rrect, ellipse, line, polyline, polygon, path }[g.kind];
     const nPass = Math.max(1, Math.min(3, so.passes));
     const outlines = [];
     for (let p = 0; p < nPass; p++) outlines.push(fnK(...g.args, { ...so, passes: 1, seed: seed + ':' + p }));
@@ -378,6 +496,8 @@
     marks.push({ el, kind: 'border', svg, seed: (el.id || 'b') + ':' + marks.length, opts: parseOpts(el, {}) });
   }
   function buildMark(m) {
+    // (a sketched shape was replaced by its group)
+    if (!m.el.isConnected && replaced.get(m.el)) m.el = replaced.get(m.el);
     const el = m.el;
     if (!el.isConnected) return false;
     // Built once while the page loads (the same for every worker). Things in clips that are not on screen yet are
@@ -397,12 +517,22 @@
       if (cs.position === 'static') el.style.position = 'relative';
       el.style.borderColor = 'transparent';
       // the svg's 0,0 is the padding box corner: step back over the border
-      const box = `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
+      // rounded corners (border-radius) are drawn round
+      const rad = ['TopLeft', 'TopRight', 'BottomRight', 'BottomLeft'].map((c) => {
+        const v = String(cs['border' + c + 'Radius'] || '0').trim().split(/\s+/);
+        const one = (s0, full) => (/%$/.test(s0) ? (parseFloat(s0) / 100) * full : parseFloat(s0) || 0);
+        return [one(v[0], w), one(v[1] ?? v[0], h)];
+      });
+      const sc = Math.min(1, w / Math.max(1e-6, rad[0][0] + rad[1][0]), w / Math.max(1e-6, rad[3][0] + rad[2][0]), h / Math.max(1e-6, rad[0][1] + rad[3][1]), h / Math.max(1e-6, rad[1][1] + rad[2][1]));
+      const box = natural() && rad.some((q) => q[0] > 0 && q[1] > 0) ? roundedBoxPath(-bw, -bw, w, h, rad.map((q) => [q[0] * sc, q[1] * sc])) : `M${-bw} ${-bw}H${w - bw}V${h - bw}H${-bw}Z`;
       const ds = [path(box, { ...R2, roughness: m.opts.roughness ?? 1, passes: 1 }), path(box, { ...R2, seed: m.seed + 'b', roughness: m.opts.roughness ?? 1, passes: 1 })];
       m.svg.innerHTML = ds.map((d) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="${Math.max(2, bw || 3 * px())}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
       el.appendChild(m.svg);
       return true;
     }
+    // A circle around something that is not a run of text (a group, a card, an image, an SVG <g> or shape): a loop
+    // that hugs its box instead of an ellipse that would cut its corners
+    if (m.kind === 'circle' && natural() && !textLike(el)) return buildLoopMark(m);
     // Text marks live inside the element, so they move, fade and hide with it. Line boxes are measured relative to the
     // element's own box (entrance moves and camera zoom scale all of them alike).
     const B = el.getBoundingClientRect(), k = el.offsetWidth ? B.width / el.offsetWidth : 1;
@@ -430,6 +560,49 @@
     m.p = m.svg.firstChild;
     if (cs.position === 'static') el.style.position = 'relative';
     el.appendChild(m.svg);
+    m.base = gm.timing(el).start;
+    m.svg.style.visibility = 'hidden';
+    return true;
+  }
+  // only text and inline elements inside (a heading, a span, a paragraph), nothing that is a box of its own
+  function textLike(el) {
+    if (el instanceof SVGElement || !el.textContent.trim() || el.querySelector('img,svg,canvas,video,picture,iframe,object')) return false;
+    for (const e of el.querySelectorAll('*')) { const ds = getComputedStyle(e).display; if (!/^(inline|contents|none)/.test(ds)) return false; }
+    return true;
+  }
+  function buildLoopMark(m) {
+    const el = m.el, pv = (el.getAttribute('data-sketch-mark-padding') || '').trim().split(/[\s,]+/).map(parseFloat).filter((x) => isFinite(x));
+    const pad = (pv.length ? pv[0] : 20) * px();
+    let box, host;
+    if (el instanceof SVGElement) {
+      // in the shape's own user space. An outer <svg> holds it inside; a <g> or a shape gets it right after itself
+      // (with its transform attribute), so the mark never grows the group's own box (arrows and camera shots use it)
+      let b; try { b = el.getBBox(); } catch (e) { return false; }
+      if (!b.width && !b.height) return false;
+      box = { x: b.x, y: b.y, w: b.width, h: b.height };
+      if (el instanceof SVGSVGElement && !(el.parentNode instanceof SVGElement)) host = el;
+      else {
+        const g = document.createElementNS(SVGNS, 'g');
+        g.setAttribute('data-check', 'ignore'); g.setAttribute('class', 'gm-sketch-mark');
+        const tf = el.getAttribute('transform');
+        if (tf) g.setAttribute('transform', tf);
+        m.svg = g;
+        host = el.parentNode;
+      }
+    } else {
+      const w = el.offsetWidth, h = el.offsetHeight;
+      if (!w || !h) return false;
+      const cs = getComputedStyle(el);
+      // the svg's 0,0 is the padding box corner
+      box = { x: -(parseFloat(cs.borderLeftWidth) || 0), y: -(parseFloat(cs.borderTopWidth) || 0), w, h };
+      if (cs.position === 'static') el.style.position = 'relative';
+      host = el;
+    }
+    const color = el.getAttribute('data-sketch-mark-color') || '#e03131';
+    const d = loopPath([box], pad, { roughness: 1, passes: 1, seed: m.seed });
+    m.svg.innerHTML = `<path d="${d}" fill="none" stroke="${color}" stroke-width="${(5 * px()).toFixed(1)}" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>`;
+    m.p = m.svg.firstChild;
+    if (host === el) el.appendChild(m.svg); else host.insertBefore(m.svg, el.nextSibling);
     m.base = gm.timing(el).start;
     m.svg.style.visibility = 'hidden';
     return true;
@@ -849,6 +1022,13 @@
     const L = r2(X) + 'px', Tp = r2(Y) + 'px';
     return () => { if (el.style.left === L && el.style.top === Tp) return false; el.style.left = L; el.style.top = Tp; return true; };
   }
+  const shifted = (j) => !!(I.shiftTravel && (j.tr.opts.offset || j.tr.opts.side));
+  // points along the arrow's line (its space's coordinates), evenly by length
+  function lineSamples(g) {
+    const n = g.curve ? 32 : 1, out = [];
+    for (let i = 0; i <= n; i++) { const q = pointOnLine(g, i / n); out.push([q.x, q.y]); }
+    return out;
+  }
   // an element riding along an arrow: the arrow's line, in the rider's own coordinates
   function planTravel(j, T) {
     const g = connGeom(j.conn), el = j.el;
@@ -860,7 +1040,8 @@
       if (!m) return null;
       const inv = m.inverse(), P = (x, y) => { const s = fwd(x, y), q = new DOMPoint(s[0], s[1]).matrixTransform(inv); return [q.x, q.y]; };
       const a = P(g.x1, g.y1), b = P(g.x2, g.y2), q = P(g.qx, g.qy);
-      const pe = measure(g.curve ? `M${a[0]} ${a[1]}Q${q[0]} ${q[1]} ${b[0]} ${b[1]}` : `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`), len = pe.getTotalLength();
+      const side = shifted(j) && I.shiftTravel(lineSamples(g).map((s) => P(s[0], s[1])), j.tr, j.w || 0, j.h || 0);
+      const pe = measure(side ? 'M' + side.map((s) => f1(s[0]) + ' ' + f1(s[1])).join('L') : g.curve ? `M${a[0]} ${a[1]}Q${q[0]} ${q[1]} ${b[0]} ${b[1]}` : `M${a[0]} ${a[1]}L${b[0]} ${b[1]}`), len = pe.getTotalLength();
       const at = len * Math.max(0, Math.min(1, j.tr.progress(I.mapT(el, T) - I.clipStartOf(el))));
       const p = pe.getPointAtLength(at), p0 = pe.getPointAtLength(Math.max(0, at - 0.5)), p1 = pe.getPointAtLength(Math.min(len, at + 0.5));
       const rot = j.tr.opts.rotate, ang = rot === true || rot === 'auto' ? (Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180) / Math.PI : 0;
@@ -868,9 +1049,15 @@
       return () => { if (el.style.transform === v) return false; el.style.transform = v; return true; };
     }
     // CSS offset-path: (0,0) is the element's own layout corner; the browser animates offset-distance (the stops)
-    const toCB = spaceMap(el.offsetParent || el.parentElement), ox = el.offsetLeft, oy = el.offsetTop;
+    // (an outer <svg> has no offsetLeft: where its box sits was measured once, j.host)
+    const H = j.host, toCB = spaceMap(H ? H.cb : el.offsetParent || el.parentElement), ox = H ? H.ox : el.offsetLeft, oy = H ? H.oy : el.offsetTop;
     const P = (x, y) => { const s = fwd(x, y), q = toCB(s[0], s[1]); return r2(q[0] - ox) + ' ' + r2(q[1] - oy); };
-    v = `path("M${P(g.x1, g.y1)} ${g.curve ? 'Q' + P(g.qx, g.qy) + ' ' : 'L'}${P(g.x2, g.y2)}")`;
+    if (shifted(j)) {
+      // beside the line (offset / side): the line sampled in the rider's space, moved sideways
+      const C = (x, y) => { const s = fwd(x, y), q = toCB(s[0], s[1]); return [q[0] - ox, q[1] - oy]; };
+      const pts = I.shiftTravel(lineSamples(g).map((s) => C(s[0], s[1])), j.tr, H ? H.w : el.offsetWidth, H ? H.h : el.offsetHeight);
+      v = `path("M${pts.map((s) => r2(s[0]) + ' ' + r2(s[1])).join(' L')}")`;
+    } else v = `path("M${P(g.x1, g.y1)} ${g.curve ? 'Q' + P(g.qx, g.qy) + ' ' : 'L'}${P(g.x2, g.y2)}")`;
     return () => { if (j.lastV === v) return false; el.style.offsetPath = v; j.lastV = v; return true; };
   }
   // Anchors and riders, in order: a label on a label (or on a rider, or inside a moving label) is placed after it.
@@ -945,6 +1132,90 @@
   I.hooks.post.push((T) => runJobs(T, true));
   I.hooks.post.push(updateConnectors);
 
+  // ---------------------------------------------------------------------------
+  // gm.sketch.loop(targets, { padding, passes, roughness, seed, color, width, draw, in, behind, id, class }): a
+  // hand-drawn loop around a group of elements (or {x, y, w, h} boxes in the space's coordinates). Measured once while
+  // the page loads, at the moment it starts drawing (so things that are still entering are where they will be).
+  // ---------------------------------------------------------------------------
+  const loops = [];
+  let loopsBuilt = false;
+  function loopAround(targets, o = {}) {
+    const L = { targets: Array.isArray(targets) ? targets : [targets], o, seed: o.seed ?? 'loop' + loops.length };
+    loops.push(L);
+    if (loopsBuilt) buildLoop(L, false);
+    return { el: () => L.path || null, progress: (t) => (L.progressAt ? L.progressAt(t) : L.path ? 1 : 0), __gmLoop: L };
+  }
+  function loopDraw(L) {
+    const dr = L.o.draw;
+    if (dr == null || dr === false) return null;
+    const at = Array.isArray(dr) ? +dr[0] : typeof dr === 'object' ? +dr.at || 0 : +dr || 0;
+    const dur = Array.isArray(dr) ? +(dr[1] ?? 1) : typeof dr === 'object' ? +(dr.duration ?? 1) : 1;
+    const ease = I.easing ? I.easing(Array.isArray(dr) ? dr[2] || 'in-out-cubic' : (dr && dr.ease) || 'in-out-cubic') : (q) => q;
+    return { at, dur, ease };
+  }
+  function buildLoop(L, probe) {
+    const o = L.o, els = [], boxes0 = [];
+    for (const t of L.targets) {
+      if (typeof t === 'string') { try { els.push(...document.querySelectorAll(t)); } catch (e) { I.report('error', 'loop-no-target', `gm.sketch.loop: "${t}" is not a valid selector.`, null); } }
+      else if (t && t.nodeType === 1) els.push(elOf(t));
+      else if (t && typeof t === 'object' && 'x' in t) boxes0.push({ x: +t.x || 0, y: +t.y || 0, w: +t.w || 0, h: +t.h || 0 });
+    }
+    let space = o.in ? elOf(o.in) : null;
+    if (!space && els.length) { space = commonParent(els[0], els[0]); for (const e of els) while (space !== document.body && !space.contains(e)) space = space.parentElement; }
+    if (!els.length && !boxes0.length) { if (L.dead) return; L.dead = true; I.report('error', 'loop-no-target', `gm.sketch.loop: ${JSON.stringify(L.targets.map(String))} matched nothing.`, null, "Give selectors or elements to circle, e.g. gm.sketch.loop(['#a', '#b', '#c'], { draw: [5, 1] })."); return; }
+    space = space || document.body;
+    const dr = loopDraw(L), base = o.global ? 0 : gm.timing(space === document.body ? els[0] || space : space).start;
+    // measured where things are when the loop starts drawing
+    if (probe && I.probe) I.probe(base + (dr ? dr.at : 0));
+    const boxes = boxes0.slice(), rr = (x) => Math.round(x * 100) / 100;
+    for (const e of els) {
+      const hidden = [];
+      if (!e.getClientRects().length) for (let a = e; a; a = a.parentElement) if (a.hasAttribute && a.hasAttribute('data-gm-hidden')) { hidden.push(a); a.removeAttribute('data-gm-hidden'); }
+      try { const r = rectIn(e, space); if (r && (r.w || r.h)) boxes.push({ x: rr(r.x), y: rr(r.y), w: rr(r.w), h: rr(r.h) }); } finally { for (const a of hidden) a.setAttribute('data-gm-hidden', ''); }
+    }
+    const pad = (o.padding ?? 24) * px();
+    const d = loopPath(boxes, pad, { roughness: o.roughness ?? 1, passes: o.passes ?? 2, seed: L.seed });
+    if (L.path) { L.path.setAttribute('d', d); return; }
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'gm-sketch-loop' + (o.class ? ' ' + o.class : ''));
+    if (o.id) svg.id = o.id;
+    svg.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none';
+    const pe = document.createElementNS(SVGNS, 'path');
+    pe.setAttribute('d', d);
+    pe.setAttribute('fill', 'none');
+    pe.style.stroke = o.color || '#e03131';
+    pe.style.strokeWidth = (o.width ?? 5) * px() + 'px';
+    pe.style.strokeLinecap = 'round'; pe.style.strokeLinejoin = 'round';
+    svg.appendChild(pe);
+    if (space !== document.body && getComputedStyle(space).position === 'static') space.style.position = 'relative';
+    if (o.behind) space.insertBefore(svg, space.firstChild); else space.appendChild(svg);
+    L.svg = svg; L.path = pe;
+    if (dr) {
+      pe.setAttribute('pathLength', '1');
+      L.progressAt = (T) => Math.max(0, Math.min(1, dr.ease(Math.max(0, Math.min(1, (T - base - dr.at) / Math.max(1e-6, dr.dur))))));
+    }
+  }
+  function updateLoops(T) {
+    let changed = false;
+    for (const L of loops) {
+      if (!L.progressAt) continue;
+      const p = L.progressAt(T), dash = p >= 1 ? 'none' : `${p.toFixed(4)} 2`, vis = p <= 0 ? 'hidden' : '';
+      if (dash !== L.lastDash || vis !== L.lastVis) { L.path.style.strokeDasharray = dash; L.svg.style.visibility = vis; L.lastDash = dash; L.lastVis = vis; changed = true; }
+    }
+    return changed;
+  }
+  // Drawn first where things are while the page loads (before cameras measure the world's content, so a shot at
+  // 'content' includes the loop), then measured again after every other step of loading, at the moment it starts
+  // drawing (timelines and cameras are built then, so probing that moment shows the page as rendered).
+  I.hooks.init.unshift(() => { for (const L of loops) if (!L.svg) { try { buildLoop(L, false); } catch (e) { I.pageError(e); } } });
+  I.hooks.init.push(() => I.hooks.init.push(() => {
+    if (!loops.length) { loopsBuilt = true; return; }
+    for (const L of loops) if (!L.dead) { try { buildLoop(L, true); } catch (e) { I.pageError(e); } }
+    if (I.probe) I.probe(0);
+    loopsBuilt = true;
+  }));
+  I.hooks.seek.push(updateLoops);
+
   gm.rect = rectIn;
   gm.connect = connect;
   // Without a seed, the shape's own numbers are the seed: the same call gives the same drawing in every frame and
@@ -965,6 +1236,7 @@
     path: seeded((d, o) => path(d, o), 1),
     arrow: seeded((x1, y1, x2, y2, o) => arrow(x1, y1, x2, y2, { ...o, raw: o || {} }), 4),
     hachure: seeded((shape, o) => hachure(shape, o), 1),
+    loop: loopAround,
     underline: (x1, y1, x2, y2, o) => { if (y2 != null && typeof y2 === 'object') { o = y2; y2 = undefined; } return seeded((a, b, c, e, oo) => underline(a, b, c, e, { ...oo, raw: oo || {} }), 4)(x1, y1, x2, y2 ?? y1, o); },
     apply: setupSketch,
   };

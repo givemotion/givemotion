@@ -1,9 +1,9 @@
 <!-- block:
 description: A mouse pointer that glides between targets and clicks them. Aim at real elements with CSS selectors (the pointer follows them even while they move, through any camera zoom), or at "x,y" points (px at 1080p, in the box the cursor sits in: inside a gm.camera world that is world px). Add ! to click. Clicked elements get a short press, and the attribute data-gm-pressed while pressed and data-gm-hover while the pointer is over them, so you can style them. Put it inside a camera world (it zooms with the world) or after the world in the scene (it keeps its size and still lands on the targets in the world).
-params: points (e.g. "#email #submit! 1500,900"), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, and fades out after its last point), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
+params: points (e.g. "#email #submit! 1500,900"; a selector aims a little below its middle, or where you say after @: "#slot-thu@30%,55%" = 30% across and 55% down its box, "#row@40,50%" = 40 px in from its left edge (px at 1080p, zoomed with it) and halfway down; put the ! last: "#slot-thu@30%,55%!"), aim (default aim point for selector targets without their own @, same form, default "50%,56%"), ring (the click ripple's color, e.g. "#e5484d"; "light" = white; default: a dark ring with a light halo that reads on light and dark UIs, white with <html data-motion="classic">), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, and fades out after its last point), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
 usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node:nth-child(2)!" times="0.3 1.4 3 4.2" show="auto"></gm-include>
 -->
-<div class="gmb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-show="{{show|always}}" data-style="{{style|auto}}">
+<div class="gmb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-show="{{show|always}}" data-style="{{style|auto}}" data-aim="{{aim}}" data-ring="{{ring}}">
   <div class="gmb-cursor__ring"></div>
   <svg class="gmb-cursor__arrow" viewBox="0 0 24 24"><path d="M4 2.5l15.5 9.2-6.6 1.6-3.4 6.2z"/></svg>
   <svg class="gmb-cursor__hand" viewBox="0 0 24 24"><path d="M9 3.2c.9 0 1.6.7 1.6 1.6v6.1l.6-.1c.8 0 1.5.6 1.6 1.4l.1.2c.3-.5.8-.8 1.4-.8.8 0 1.5.6 1.6 1.4.3-.3.7-.5 1.2-.5.9 0 1.6.7 1.6 1.6v2.3c0 3.1-2.5 5.6-5.6 5.6h-1.3c-1.9 0-3.6-1-4.6-2.6l-2.9-4.8c-.4-.7-.2-1.6.5-2 .6-.4 1.4-.2 1.9.3l.8 1V4.8c0-.9.7-1.6 1.6-1.6z"/></svg>
@@ -14,11 +14,19 @@ usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node
   const arrow = root.querySelector('.gmb-cursor__arrow'), hand = root.querySelector('.gmb-cursor__hand'), ring = root.querySelector('.gmb-cursor__ring');
   const scope = root.closest('.scene,[data-duration],[data-start]') || document.body;
   // "x,y" or a CSS selector; "!" at the end means click
+  // an aim point inside the target's box: "30%,55%" (share of its size) or px at 1080p from its left/top edge ("40,50%")
+  const aimOf = (v) => { const m = /^\s*(-?[\d.]+)(%?)\s*,\s*(-?[\d.]+)(%?)\s*$/.exec(v || ''); return m ? [{ v: +m[1], pct: !!m[2] }, { v: +m[3], pct: !!m[4] }] : null; };
+  const aim0 = aimOf(root.dataset.aim);
+  if ((root.dataset.aim || '').trim() && !aim0) gm.__report('warning', 'cursor-aim', `cursor: aim="${root.dataset.aim}" is not "x,y" (like "30%,55%" or "40,50%").`, root, 'Give two values: percent of the target box (30%) or px at 1080p from its left/top edge (40).');
   const pts = root.dataset.points.trim().split(/\s+(?![^\[]*\])/).map((p) => {
     const click = p.endsWith('!');
-    const s = click ? p.slice(0, -1) : p;
+    let s = click ? p.slice(0, -1) : p;
     const m = /^(-?[\d.]+),(-?[\d.]+)$/.exec(s);
-    return m ? { x: +m[1], y: +m[2], click } : { sel: s, click, el: null };
+    if (m) return { x: +m[1], y: +m[2], click };
+    const at = /^(.+)@(-?[\d.]+%?,-?[\d.]+%?)$/.exec(s);
+    let aim = aim0;
+    if (at) { s = at[1]; aim = aimOf(at[2]); }
+    return { sel: s, click, el: null, aim };
   });
   // times: seconds into the clip, or "video: 12.5 13.4" / "beats: 16 18" / "bars: 4 4.5" (then video times)
   const tAttr = (root.dataset.times || '').trim();
@@ -52,9 +60,21 @@ usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node
     const el = targetOf(p);
     if (!el) return { x: (p.x || 0) * gm.px, y: (p.y || 0) * gm.px };
     const r = el.getBoundingClientRect();
-    // aim a little below the middle, like a real hand would
-    const [x, y] = S.toLocal(r.left + r.width * 0.5, r.top + r.height * 0.56);
+    // aim a little below the middle, like a real hand would (or at the point given with @ / aim)
+    if (!p.aim) { const [x, y] = S.toLocal(r.left + r.width * 0.5, r.top + r.height * 0.56); return { x, y }; }
+    const k = el.offsetWidth ? r.width / el.offsetWidth : 1; // the target's own zoom on screen
+    const ax = p.aim[0].pct ? r.width * p.aim[0].v / 100 : p.aim[0].v * gm.px * k, ay = p.aim[1].pct ? r.height * p.aim[1].v / 100 : p.aim[1].v * gm.px * k;
+    const [x, y] = S.toLocal(r.left + ax, r.top + ay);
     return { x, y };
+  }
+  // the click ring: a dark ring with a light halo reads on light and dark screens (classic motion: the old white one)
+  const rc = (root.dataset.ring || '').trim(), natural = !gm.__internal || !gm.__internal.naturalMotion || gm.__internal.naturalMotion();
+  if (/^(light|white)$/i.test(rc)) { /* the stylesheet's white ring */ }
+  else if (rc || natural) {
+    const c = rc && !/^dark$/i.test(rc) ? rc : '#16181d';
+    ring.style.borderColor = c;
+    ring.style.background = `color-mix(in srgb, ${c} 14%, transparent)`;
+    ring.style.boxShadow = '0 0 0 calc(var(--px)*3) rgba(255,255,255,.75), inset 0 0 0 calc(var(--px)*2) rgba(255,255,255,.5)';
   }
   const pressed = new Set();
   gm.onLayout(root, (local, info) => {

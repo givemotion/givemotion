@@ -8,7 +8,7 @@ Purpose: structure, pacing and the moves that scored well for Excalidraw-style v
 |---|---|
 | 0–3 s | Handwritten title written on (`write`) with a scribble underline, camera close |
 | 3–26 s | Steps, ~4–5 s each: the camera moves a short distance to the next spot, the shape draws on (`draw`), the label is written (`write`, anchored with `data-anchor`), an arrow draws from the previous step (`gm.connect` with `sketch: true`, `draw`), a highlight or circle mark lands on the key word |
-| 26–30 s | Pull back to the whole diagram (`fit: 'content'`), big labels still readable, a final "ta-da" scribble or title |
+| 26–30 s | Pull back to the whole diagram (`fit: 'content'`), big labels still readable, a final "ta-da" scribble (`gm.sketch.loop([...every step and label], { draw: [27, 1.2] })` circles the whole flow) or title |
 
 Rules (from three test rounds):
 - Ink: strokes 5–7 px, labels ≥ 48 px in world units (they shrink in the overview), saturated accents (`#1971c2`, `#e8590c`), hatch fills. 3 px ink was judged "thin and faint".

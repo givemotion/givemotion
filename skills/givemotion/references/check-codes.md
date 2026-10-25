@@ -50,7 +50,8 @@ Inside a `gm.camera` world, text sliding past the frame edge is fine, but a labe
 | `timeline-no-target`, `cursor-target`, `fly-no-from`, `connect-no-target`, `burst-no-target` | A selector matched nothing. |
 | `morph-no-pairs` | `morph` transition without matching `data-morph` names in both scenes. |
 | `audio-not-found`, `audio-no-beats`, `audio-late` | `gm.audio()` found no file/element, found no steady beat, or was called after the video started. |
-| `camera-no-world`, `travel-no-element`, `anchor-no-target`, `chart-no-element` | A selector given to `gm.camera` / `gm.path.travel` / `data-anchor` / `gm.chart.line` matched nothing. |
+| `camera-no-world`, `travel-no-element`, `anchor-no-target`, `chart-no-element`, `loop-no-target` | A selector given to `gm.camera` / `gm.path.travel` / `data-anchor` / `gm.chart.line` / `gm.sketch.loop` matched nothing. |
+| `travel-inline`, `travel-bad-side` | `gm.path.travel` on an inline element (a `<span>`: give it `display: inline-block`), or a `side` that is not `above` `below` `left` `right`. |
 | `chart-no-values`, `chart-no-size`, `chart-bad-point` | `gm.chart.line` got fewer than 2 numbers, its element has no width/height, or a point name is not an index, label, `last` or `max`. |
 | `data-missing` | A `{{data.…}}` came out empty: pass `--data`, add `data.json`, or give a default `{{data.x|default}}`. |
 | `include-not-found` | A `<gm-include src>` file does not exist. |

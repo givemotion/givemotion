@@ -2,6 +2,8 @@
 
 Purpose: what each `check` code means and how to fix it, how `check` decides, and how to mark intentional cases with `data-check`. (Every issue in the `check` output already prints a message and a fix; read this when one is unclear.)
 
+Three levels: ✖ error (broken: must fix), ⚠ warning (a real fault such as cut-off, overlapping or unreadable text: fix it unless it is on purpose), ℹ style note (`straight-move`, `camera-stop`, `fast-no-blur`, `same-ease`, `empty-frame`: a hint about taste; look at the frames and ignore it when the move is what you meant).
+
 Contents
 - Layout and readability codes
 - Pacing and framing codes

@@ -118,7 +118,9 @@ test('skill pack: SKILL.md and plugin.json carry the package version; SKILL.md s
   assert.equal(/^\s+version:\s*"([^"]+)"/m.exec(fm)[1], pkg.version, 'SKILL.md metadata.version = package.json version');
   assert.equal(JSON.parse(readFileSync(join(root, '.claude-plugin', 'plugin.json'), 'utf8')).version, pkg.version, 'plugin.json version');
   assert.ok(Buffer.byteLength(skill) <= 19000, `SKILL.md is ${Buffer.byteLength(skill)} bytes: keep it under ~18 KB, move topics to references/`);
-  assert.ok(skill.indexOf('## Quality rules') < 12000, 'quality rules within the first ~3k tokens, so they survive compaction');
+  const q = skill.indexOf('## How good motion is made here');
+  assert.ok(q > 0 && q < 12000, 'craft rules within the first ~3k tokens, so they survive compaction');
+  assert.ok(Buffer.byteLength(skill) <= 14000, 'SKILL.md stays a short core + router (~3.5k tokens): details go to references/');
 });
 
 test('motionIssues: a camera that stops between shots, fast moves without blur, straight diagonals, one easing for everything', async () => {

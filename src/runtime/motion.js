@@ -133,6 +133,22 @@
       return sameShape(A, B) ? interpTokens(A, B)(f - i) : samples[Math.round(f)];
     };
   }
+  /** 'var(--accent)' in a tween value → the element's value of --accent (with fallbacks, nested), so colors and lengths
+   *  from CSS variables interpolate instead of snapping or turning black. Done once, when the tween is set up. */
+  function resolveVars(el, v) {
+    if (typeof v !== 'string' || v.indexOf('var(') < 0 || !(el instanceof Element)) return v;
+    const cs = getComputedStyle(el);
+    for (let guard = 0; guard < 20 && v.indexOf('var(') >= 0; guard++) {
+      const i = v.lastIndexOf('var(');
+      let depth = 0, j = i + 3;
+      for (; j < v.length; j++) { if (v[j] === '(') depth++; else if (v[j] === ')' && --depth === 0) break; }
+      const inner = v.slice(i + 4, j), c = inner.indexOf(',');
+      const name = (c < 0 ? inner : inner.slice(0, c)).trim();
+      const val = cs.getPropertyValue(name).trim() || (c < 0 ? '' : inner.slice(c + 1).trim());
+      v = v.slice(0, i) + val + v.slice(j + 1);
+    }
+    return v;
+  }
   function makeInterp(from, to, prop) {
     if (typeof from === 'number' && typeof to === 'number') return (p) => from + (to - from) * p;
     const fs = String(from), ts = String(to);
@@ -763,7 +779,7 @@
             else if (it.type === 'from') { from = normalizeEnd(k, spec.from, prev); to = prev; }
             // (fromTo: a property only in the start values is set there and held, not tweened toward the earlier value)
             else { from = normalizeEnd(k, spec.from !== undefined ? spec.from : prev, prev); to = spec.to !== undefined ? normalizeEnd(k, spec.to, from) : from; }
-            from = coerceFrom(k, from, to);
+            from = coerceFrom(k, resolveVars(el, from), resolveVars(el, to)); to = resolveVars(el, to);
             sg.from = from; sg.to = to;
             if (k === 'morph') sg.interp = morphInterp(String(from || to), String(to && to.nodeType ? to.getAttribute('d') : to));
             else if (k === 'text') { const T = String(to); sg.interp = (p) => T.slice(0, Math.round(p * T.length)); }
@@ -2035,6 +2051,7 @@
     const kindDefs = BURST_KINDS[b.opts.kind || 'confetti'] || BURST_KINDS.confetti;
     const edgeDefs = edge ? Object.assign({ spread: 50, speed: 260, stagger: Math.min(1.6, (b.opts.duration ?? kindDefs.duration) * 0.5) }, EDGE[edge]) : null;
     const o = Object.assign({ kind: 'confetti', at: 0, x: '50%', y: '50%', colors: ['#ff5c8a', '#ffd166', '#06d6a0', '#118ab2', '#a78bfa', '#ffffff'], seed: bursts.indexOf(b) + 1 }, kindDefs, edgeDefs, b.opts);
+    if (Array.isArray(o.colors)) o.colors = o.colors.map((c) => resolveVars(el, c)); // 'var(--accent)' works here too
     const find = (v) => (typeof v === 'string' ? el.querySelector(v) || document.querySelector(v) : v);
     const behind = o.behind ? find(o.behind) : null;
     if (o.behind && !behind) I.report('warning', 'burst-no-target', `gm.burst: behind "${o.behind}" matched nothing.`, null);
@@ -2260,12 +2277,15 @@
       const t = I.mapT(s.el, T) - I.clipStartOf(s.el) - s.delay;
       const N = s.text.length;
       const tick = Math.floor((t + 10) * 18);
+      // before its delay the text is hidden (keeping its layout), like data-type, instead of cycling glyphs early
+      const hide = t < 0;
+      if (hide !== s.hidden) { if (s.vis0 === undefined) s.vis0 = s.el.style.visibility; s.el.style.visibility = hide ? 'hidden' : s.vis0; s.hidden = hide; changed = true; }
       let out = '';
       for (let i = 0; i < N; i++) {
         const ch = s.text[i];
         if (/\s/.test(ch)) { out += ch; continue; }
         const reveal = (i / Math.max(1, N - 1)) * s.dur * 0.85 + s.dur * 0.15;
-        out += t >= reveal ? ch : t < 0 ? (i < 0 ? ch : s.chars[Math.floor(hash(i, tick) * s.chars.length)]) : s.chars[Math.floor(hash(i, tick) * s.chars.length)];
+        out += t >= reveal || hide ? ch : s.chars[Math.floor(hash(i, tick) * s.chars.length)];
       }
       if (out !== s.last) { s.el.textContent = out; s.last = out; changed = true; }
     }

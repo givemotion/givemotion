@@ -448,11 +448,11 @@ function skillVersion(text) {
 const stampVersion = (text) => text.replace(/^(\s+version:\s*)["']?[^"'\n]*["']?/m, `$1"${pkg.version}"`);
 
 // The section for a project's AGENTS.md (Cursor, Codex and other agents that read it): the loop and the
-// "What to read" table of SKILL.md, pointing at the installed files.
+// recipe and reference tables of SKILL.md, pointing at the installed files.
 function agentsSection() {
   const skill = readFileSync(join(SKILL_SRC, 'SKILL.md'), 'utf8');
-  const i = skill.indexOf('## What to read');
-  const table = (i >= 0 ? skill.slice(i) : '').replace(/^## What to read.*$/m, '## What to read').replace(/`references\//g, '`.agents/skills/givemotion/references/').trim();
+  const i = skill.indexOf('## Technique recipes');
+  const table = (i >= 0 ? skill.slice(i) : '').replace(/^## Technique recipes.*$/m, '## What to read: technique recipes').replace(/`references\//g, '`.agents/skills/givemotion/references/').trim();
   return `${AGENTS_START}
 # Videos with givemotion
 

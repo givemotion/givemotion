@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { findChrome } from '../src/browser.js';
 import { ffmpegInfo, ffmpegPath } from '../src/ffmpeg.js';
 import { render, check, inspect, openComposition } from '../src/api.js';
+import { formatReport } from '../src/check.js';
 
 const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
 const hasEsbuild = await import('esbuild').then(() => true, () => false);
@@ -719,8 +720,11 @@ test('check: robotic motion warnings (camera-stop, fast-no-blur, straight-move, 
     ${[1, 2, 3, 4, 5].map((i) => `tl.to('#d${i}', { x: 300, y: 150, duration: 0.8, ease: 'power2.out' }, ${0.2 * i}); tl.to('#d${i}', { x: 0, y: 0, duration: 0.5, ease: 'power2.out' }, ${2 + 0.2 * i});`).join('\n')}</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4" data-motion="classic"'));
   writeFileSync(fs, page(`${motionWorld}<script>gm.timeline('#stage').fromTo('#world', { x: 0, y: 0 }, { x: -600, y: -300, duration: 3.8, ease: 'in-out-sine' }, 0.1);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"'));
   const codes = async (f) => [...new Set((await check(f)).issues.map((i) => i.code))];
-  const rc = await codes(fr);
+  const rep = await check(fr), rc = [...new Set(rep.issues.map((i) => i.code))];
   for (const c of ['camera-stop', 'fast-no-blur', 'straight-move', 'same-ease']) assert.ok(rc.includes(c), `${c} in ${rc.join(', ')}`);
+  // style, not faults: reported as notes, so they never block or nag like a warning
+  for (const i of rep.issues.filter((x) => ['camera-stop', 'fast-no-blur', 'straight-move', 'same-ease'].includes(x.code))) assert.equal(i.severity, 'info', i.code);
+  assert.ok(rep.notes >= 4 && /style note/.test(formatReport(rep)));
   const sc = await codes(fs);
   for (const c of ['camera-stop', 'fast-no-blur', 'straight-move', 'same-ease']) assert.ok(!sc.includes(c), `no ${c} for smooth motion (${sc.join(', ')})`);
 });
@@ -932,4 +936,29 @@ test('motion blur: auto draws a smooth smear along the move (no stepped copies),
   // the static HUD box is the same as without blur
   const ha = [...grayFrame(a, 15, 160, 470, 335)], ho = [...grayFrame(o, 15, 160, 470, 335)];
   assert.ok(Math.max(...ha.map((v, i) => Math.abs(v - ho[i]))) <= 12, 'HUD unchanged');
+});
+
+test('timeline: color tweens to var(--x) and color-mix() resolve against the element (no black, no snap); gm.burst colors too', { skip }, async () => {
+  const d = tmp(), f = join(d, 'v.html');
+  writeFileSync(f, page(`<style>:root{--accent:#ff0000;--mix:color-mix(in srgb, var(--accent) 50%, #0000ff)}</style>
+    <div id="a" style="position:absolute;left:0;top:0;width:100px;height:100px;background:#0000ff"></div>
+    <div id="b" style="position:absolute;left:200px;top:0;width:100px;height:100px;background:#000"></div>
+    <script>gm.timeline('#stage').to('#a', { backgroundColor: 'var(--accent)', duration: 1, ease: 'linear' }, 0).to('#b', { backgroundColor: 'var(--mix, #fff)', duration: 1 }, 0);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rows = await seekEach(f, [0.5, 1.5], `[getComputedStyle(document.querySelector('#a')).backgroundColor, getComputedStyle(document.querySelector('#b')).backgroundColor]`);
+  const rgb = (s) => s.match(/[\d.]+/g).map(Number);
+  const [mr, , mb] = rgb(rows[0][0]);
+  assert.ok(mr > 40 && mb > 40, `halfway between blue and red: ${rows[0][0]}`);
+  assert.deepEqual(rgb(rows[1][0]).slice(0, 3), [255, 0, 0]);
+  const [er, , eb] = rgb(rows[1][1]);
+  assert.ok(er > 100 && eb > 100, `color-mix end resolved: ${rows[1][1]}`);
+});
+
+test('data-scramble: hidden (layout kept) until its delay, then decodes to the real text', { skip }, async () => {
+  const d = tmp(), f = join(d, 's.html');
+  writeFileSync(f, page(`<h1 id="s" data-scramble="0.5" data-scramble-delay="1">Decode me</h1>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rows = await seekEach(f, [0.5, 1.2, 1.9], `[document.querySelector('#s').style.visibility, document.querySelector('#s').textContent]`);
+  assert.deepEqual(rows[0], ['hidden', 'Decode me']);
+  assert.equal(rows[1][0], '');
+  assert.notEqual(rows[1][1], 'Decode me');
+  assert.equal(rows[2][1], 'Decode me');
 });

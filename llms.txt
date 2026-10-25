@@ -9,6 +9,8 @@ Core loop: plan a shot list → write HTML → `npx givemotion check file.html` 
 ## Agent skill (read SKILL.md first, the rest on demand)
 
 - [SKILL.md](skills/givemotion/SKILL.md): the loop, composition format, timing model, quality rules, built-in motion, presets, blocks, and which reference to read when.
+- [techniques/](skills/givemotion/references/techniques/): one short recipe per technique (logo reveal, kinetic type, text reveals, camera, transitions, light, charts, paths/maps, shapes, UI demo, code, impacts, captions, hand-drawn, backgrounds).
+- [api.md](skills/givemotion/references/api.md): built-in attributes, presets, easings, preset CSS, blocks.
 - [motion-design.md](skills/givemotion/references/motion-design.md): motion design principles with numbers (timing, easing, camera grammar, continuity) and what blind judges punished.
 - [styles.md](skills/givemotion/references/styles.md): eight named looks (palette tokens, fonts, background, motion personality).
 - [timeline.md](skills/givemotion/references/timeline.md): full `gm.timeline` / `gm.fly` API, sequences, cuts, cut-align, the morph transition.

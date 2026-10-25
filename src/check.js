@@ -1031,14 +1031,20 @@ export async function check(input, opts = {}) {
     merged = groupMany(merged);
     // A script that failed can make the video look still or empty: say so instead of sending the reader on a hunt.
     if (merged.some((i) => i.code === 'script-error')) for (const i of merged) if (i.code === 'still' || i.code === 'empty-start') i.message += ' This may only be because of the script error: fix that first.';
+    // Taste, not faults: these are hints to look at, never something to chase until check is quiet.
+    for (const i of merged) if (STYLE_NOTES.has(i.code) && i.severity === 'warning') i.severity = 'info';
     const errors = merged.filter((i) => i.severity === 'error').length;
     const warnings = merged.filter((i) => i.severity === 'warning').length;
-    return { ok: errors === 0, errors, warnings, issues: merged, info: summarizeInfo(info), motion, logs };
+    const notes = merged.filter((i) => i.severity === 'info').length;
+    return { ok: errors === 0, errors, warnings, notes, issues: merged, info: summarizeInfo(info), motion, logs };
   } finally {
     await ctx.page.close();
     await ctx.server.close();
   }
 }
+
+/** Codes that judge style (a move's path, easing variety, camera pauses): reported as ℹ notes, not ⚠ warnings. */
+export const STYLE_NOTES = new Set(['straight-move', 'camera-stop', 'fast-no-blur', 'same-ease', 'empty-frame']);
 
 /** gm.log() lines: the same message at neighbouring times becomes one line with a time range and a count. */
 export function groupLogs(list) {
@@ -1169,7 +1175,8 @@ export function formatReport(rep, { file } = {}) {
     lines.push(`    ${x.message}`);
     if (x.fix) lines.push(`    fix: ${x.fix}`);
   }
-  lines.push(`${rep.errors} error${rep.errors === 1 ? '' : 's'}, ${rep.warnings} warning${rep.warnings === 1 ? '' : 's'}`);
+  lines.push(`${rep.errors} error${rep.errors === 1 ? '' : 's'}, ${rep.warnings} warning${rep.warnings === 1 ? '' : 's'}` +
+    (rep.notes ? `, ${rep.notes} style note${rep.notes === 1 ? '' : 's'} (ℹ: look at the frames; ignore it if the move is what you meant)` : ''));
   return lines.join('\n');
 }
 

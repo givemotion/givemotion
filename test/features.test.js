@@ -818,7 +818,7 @@ import { resolveMotionBlur } from '../src/render.js';
 import { imageLength } from '../src/ffmpeg.js';
 
 test('motion blur: flag values', () => {
-  assert.deepEqual(resolveMotionBlur(undefined), { mode: 'auto', samples: 1 });
+  assert.deepEqual(resolveMotionBlur(undefined), { mode: 'off', samples: 1, why: 'default' }); // auto is opt-in until validated
   assert.equal(resolveMotionBlur(undefined, { motion: 'classic' }).mode, 'off');
   assert.equal(resolveMotionBlur('auto', { motion: 'classic' }).mode, 'auto');
   assert.equal(resolveMotionBlur('off').mode, 'off');
@@ -857,8 +857,8 @@ test('motion blur: auto blurs only the frames where something moves fast, the sa
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, blurPage());
   const a = join(d, 'a.mp4'), b = join(d, 'b.mp4'), o = join(d, 'off.mp4');
-  const sa = await render(f, { output: a, workers: 1, cache: false, ...quiet });
-  const sb = await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  const sa = await render(f, { output: a, workers: 1, motionBlur: 'auto', cache: false, ...quiet });
+  const sb = await render(f, { output: b, workers: 3, motionBlur: 'auto', cache: false, ...quiet });
   const so = await render(f, { output: o, motionBlur: 'off', cache: false, ...quiet });
   assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
   assert.equal(sa.motionBlur.mode, 'auto');
@@ -908,8 +908,8 @@ test('motion blur: auto draws a smooth smear along the move (no stepped copies),
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, smearPage());
   const a = join(d, 'a.mp4'), b = join(d, 'b.mp4'), o = join(d, 'off.mp4');
-  const sa = await render(f, { output: a, workers: 1, cache: false, ...quiet });
-  await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  const sa = await render(f, { output: a, workers: 1, motionBlur: 'auto', cache: false, ...quiet });
+  await render(f, { output: b, workers: 3, motionBlur: 'auto', cache: false, ...quiet });
   await render(f, { output: o, motionBlur: 'off', cache: false, ...quiet });
   assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
   assert.equal(sa.motionBlur.mode, 'auto');

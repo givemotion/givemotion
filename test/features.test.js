@@ -898,3 +898,235 @@ test('motion blur: data-motion="classic" turns it off (same video as --motion-bl
   assert.ok(s2.parts.reused >= 1 && s2.parts.rendered >= 1);
   assert.ok(readFileSync(part).equals(readFileSync(full)));
 });
+
+// timeline and camera (r10)
+async function evalSeq(file, times, expr) {
+  const ctx = await openComposition(file, { mode: 'render' });
+  try { const out = []; for (const t of times) { await ctx.page.seek(t); out.push(await ctx.page.evaluate(expr)); } return out; } finally { await ctx.page.close(); await ctx.server.close(); }
+}
+
+test('timeline (r10): a CSS-hidden ring waits for its fromTo; from-only props hold; seeking back restores the page values; classic keeps start values early', { skip }, async () => {
+  const d = tmp();
+  const body = `<div id="s" data-duration="6"><i id="ring" style="position:absolute;width:20px;height:20px;opacity:0"></i><i id="dim" style="position:absolute;left:40px;width:20px;height:20px;opacity:0.6"></i><i id="pk" style="position:absolute;left:80px;width:20px;height:20px"></i><i id="fly" style="position:absolute;left:120px;width:20px;height:20px"></i></div>
+    <script>gm.timeline('#s').fromTo('#ring', { opacity: 0.9, scale: 0.8 }, { opacity: 0, scale: 2, duration: 0.8 }, 4)
+      .fromTo('#dim', { opacity: 0.6 }, { opacity: 0, duration: 1 }, 2).fromTo('#pk', { opacity: 0 }, { opacity: 1, duration: 0.2 }, 2)
+      .to('#pk', { y: 100, duration: 0.4 }, 3).set('#pk', { autoAlpha: 0 }, 3.5)
+      .set('#fly', { autoAlpha: 0 }, 0).fromTo('#fly', { autoAlpha: 1, x: -100 }, { x: 0, duration: 0.5 }, 4);</script>`;
+  const expr = `['ring', 'dim', 'pk', 'fly'].map((id) => { const cs = getComputedStyle(document.getElementById(id)); return [+(+cs.opacity).toFixed(2), Math.round(new DOMMatrix(cs.transform).f)]; })`;
+  const f = join(d, 'a.html');
+  writeFileSync(f, page(body, 'data-width="320" data-height="180" data-fps="30" data-duration="6"'));
+  // forward, then back to 2.1 s and 1 s (the transform and autoAlpha written at 4-5 s must not stay behind)
+  const [, at425, at21, at1] = await evalSeq(f, [0, 4.25, 2.1, 1], expr);
+  assert.deepEqual(at1, [[0, 0], [0.6, 0], [0, 0], [0, 0]], 'at 1 s: ring hidden (its CSS), dim at its start, pk hidden by its fromTo, fly hidden by its set');
+  assert.equal(at21[2][1], 0, 'pk not moved down before its .to at 3 s');
+  assert.equal(at425[3][0], 1, 'fromTo with autoAlpha only in the start values holds it (not a fade back to 0)');
+  assert.ok(at425[0][0] > 0.3, 'ring pulses at 4.25 s');
+  // classic: the fromTo start values show from the clip start, as before
+  const g = join(d, 'b.html');
+  writeFileSync(g, page(body, 'data-width="320" data-height="180" data-fps="30" data-duration="6" data-motion="classic"'));
+  const [c1] = await evalSeq(g, [1], expr);
+  assert.equal(c1[0][0], 0.9, 'classic: ring shows its fromTo start values early');
+});
+
+test('timeline (r10): a tween timed after its clip ends is reported (unscoped timeline on a late clip)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="18"><h1 id="pay" data-start="15" data-duration="3">Payoff</h1></div>
+    <script>gm.timeline().fromTo('#pay', { opacity: 0 }, { opacity: 1, duration: 0.5 }, 15.05);</script>`, 'data-width="320" data-height="180" data-fps="30" data-duration="18"'));
+  const r = await check(f, { quiet: true, from: 14, to: 18 });
+  const w = r.issues.find((i) => i.code === 'timeline-after-clip');
+  assert.ok(w && /15\.05s/.test(w.message) && /0\.05/.test(w.fix), JSON.stringify(r.issues.map((i) => i.code)));
+});
+
+test('camera (r10): bounds keep the view inside the world (auto for an opaque world, explicit rect), safe band and per-side padding move the framing, fit frames where an element rests (its scale-in is seen), data-parallax inside the world, cam.state(); classic unchanged; 1 worker == 2', { skip }, async () => {
+  const d = tmp();
+  const mk = (name, cam, attrs = 'data-width="640" data-height="360" data-fps="30" data-duration="4"') => {
+    const f = join(d, name);
+    writeFileSync(f, page(`<section class="scene" data-duration="4" style="position:absolute;inset:0;overflow:hidden">
+      <div id="world" style="position:absolute;left:0;top:0;width:1600px;height:900px;background:#234">
+        <div id="dot" style="position:absolute;left:20px;top:20px;width:40px;height:40px;background:#fc3"></div>
+        <div id="win" style="position:absolute;left:1000px;top:500px;width:300px;height:200px;background:#e55"></div>
+        <i id="tree" data-parallax="1.5" style="position:absolute;left:700px;top:400px;width:40px;height:40px;background:#4c8"></i>
+      </div></section>
+      <script>gm.timeline('#world').fromTo('#win', { scale: 0.3 }, { scale: 1, duration: 1.5, ease: 'linear' }, 2);
+      window.cam = gm.camera('#world'${cam.opts || ''}).shot(0, ${cam.a}).shot(1.5, ${cam.b});</script>`, attrs));
+    return f;
+  };
+  const expr = `(() => { const box = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; };
+    const w = document.querySelector('#world').getBoundingClientRect(); const st = cam.state();
+    return { world: [Math.round(w.left), Math.round(w.top), Math.round(w.right), Math.round(w.bottom)], dot: box('#dot'), win: box('#win'), tree: box('#tree'), st: { x: Math.round(st.x), y: Math.round(st.y), zoom: +st.zoom.toFixed(3), vw: Math.round(st.view.w) } }; })()`;
+  // follow a dot in the world's corner at zoom 2: the view stays inside the (opaque) world
+  const f = mk('a.html', { a: `{ follow: '#dot', zoom: 2, lag: 0 }`, b: `{ fit: '#win', padding: 40, duration: 0.4 }` });
+  const [a0, a25, a38] = await seekEach(f, [0.5, 2.5, 3.8], expr);
+  assert.ok(a0.world[0] <= 0.5 && a0.world[1] <= 0.5, 'no space beyond the world edge: ' + JSON.stringify(a0.world));
+  assert.equal(a0.st.zoom, 2); assert.equal(a0.st.vw, 320);
+  assert.ok(a0.st.x >= 160 && a0.st.y >= 90, 'state() reports the clamped centre: ' + JSON.stringify(a0.st));
+  // fit on a window that scales in: framed where it rests, so it grows on screen
+  assert.ok(a25.win[2] < 0.8 * a38.win[2], 'the scale-in is visible: ' + a25.win[2] + ' -> ' + a38.win[2]);
+  assert.ok(Math.abs(a38.win[0] + a38.win[2] / 2 - 320) < 2 && Math.abs(a38.win[1] + a38.win[3] / 2 - 180) < 2, 'framed centred at rest: ' + a38.win);
+  // parallax 1.5 inside the world: exactly in place when the camera looks at it, displaced 50% more elsewhere
+  const g = mk('b.html', { a: `{ center: '#tree', zoom: 1 }`, b: `{ center: '#tree', offset: [200, 0], zoom: 1, duration: 0.01 }` });
+  const [p0, p1] = await seekEach(g, [0.5, 3], expr);
+  assert.ok(Math.abs(p0.tree[0] + 20 - 320) <= 1, 'tree in place when looked at: ' + p0.tree);
+  assert.ok(Math.abs(p1.tree[0] + 20 - (320 - 300)) <= 1.5, 'near layer moves 1.5x: ' + p1.tree);
+  // explicit bounds rect, a keep-clear band at the bottom and per-side padding
+  const h = mk('c.html', { opts: `, { safe: { bottom: 120 }, bounds: { x: 0, y: 0, w: 1600, h: 900 } }`, a: `{ fit: '#win', padding: [20, 20, 20, 20], rest: false }`, b: `{ fit: '#win', padding: [20, 20, 20, 200], duration: 0.01, rest: false }` });
+  const [s0, s1] = await seekEach(h, [1.4, 3.95], expr);
+  assert.ok(Math.abs(s0.win[1] + s0.win[3] / 2 - (360 - 120) / 2) < 2, 'centred above the band: ' + s0.win);
+  assert.ok(s1.win[0] + s1.win[2] / 2 > 320 + 30, 'a big left padding moves the subject right: ' + s1.win);
+  // classic: no automatic bounds (the follow shows beyond the corner)
+  const [c0] = await seekEach(mk('d.html', { a: `{ follow: '#dot', zoom: 2 }`, b: `{ follow: '#dot', zoom: 2 }` }, 'data-width="640" data-height="360" data-fps="30" data-duration="4" data-motion="classic"'), [0.5], expr);
+  assert.ok(c0.world[0] > 50, 'classic: unchanged (no bounds): ' + c0.world);
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 120);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});
+
+// transitions, counters (r10)
+function rgbRow(video, n, w, y) {
+  const b = execFileSync(ffmpegPath(), ['-hide_banner', '-loglevel', 'error', '-i', video, '-vf', `select=eq(n\\,${n}),crop=${w}:2:0:${y},format=rgb24`, '-frames:v', '1', '-f', 'rawvideo', '-'], { maxBuffer: 1 << 24 });
+  return (x) => [b[x * 3], b[x * 3 + 1], b[x * 3 + 2]];
+}
+const bandPage = (scenes) => page(`<style>.scene{background:#00f}</style><main data-sequence data-cuts="0 1.5" data-cut-align="middle">${scenes}</main>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"');
+
+test('band transition: on the cut the band covers the frame centre, the new scene is behind it and the old one ahead; 1 worker == 3 workers', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, bandPage(`<section class="scene" id="a"></section><section class="scene" id="b" style="background:#0f0" data-transition="band-right 0.6 #ff0000"></section>`));
+  const a = join(d, 'a.mp4'), b = join(d, 'b.mp4');
+  await render(f, { output: a, workers: 1, cache: false, ...quiet });
+  await render(f, { output: b, workers: 3, cache: false, ...quiet });
+  assert.ok(readFileSync(a).equals(readFileSync(b)), '1 worker == 3 workers');
+  const red = (p) => p[0] > 200 && p[1] < 60 && p[2] < 60, green = (p) => p[1] > 200 && p[0] < 60, blue = (p) => p[2] > 200 && p[0] < 60 && p[1] < 60;
+  const before = rgbRow(a, 30, 640, 180), mid = rgbRow(a, 45, 640, 180), after = rgbRow(a, 60, 640, 180);
+  assert.ok(blue(before(320)) && blue(before(20)), 'before: old scene');
+  // the band is 35% of 640 = 224 px wide, centred on the frame at the cut (t = 1.5 = frame 45)
+  assert.ok(red(mid(320)) && red(mid(215)) && red(mid(425)), 'band in the middle: ' + mid(320));
+  assert.ok(green(mid(20)), 'new scene behind the band: ' + mid(20));
+  assert.ok(blue(mid(620)), 'old scene ahead of the band: ' + mid(620));
+  assert.ok(green(after(320)) && green(after(620)), 'after: new scene');
+});
+
+test('band transition: color from --transition-color, 100% covers everything at the middle, nothing left after; data-enter band on an element', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, bandPage(`<section class="scene" id="a"></section><section class="scene" id="b" style="--transition-color:#123456" data-transition="band-down 0.6 100% 15deg"><div id="card" style="position:absolute;left:100px;top:100px;width:200px;height:100px;background:#fff" data-enter="band-left 0.5 1 #ffffff"></div></section>`));
+  const ctx = await openComposition(f, { mode: 'render' });
+  try {
+    await ctx.page.seek(1.5);
+    const m = await ctx.page.evaluate(`(() => { const b = document.querySelector('#b'); return { clip: getComputedStyle(b).getPropertyValue('--gm-band-clip'), color: getComputedStyle(b, '::after').backgroundColor }; })()`);
+    assert.equal(m.color, 'rgb(18, 52, 86)');
+    // band-down: points are "x% y%" (trailing edge left, front edge left, front edge right, trailing edge right);
+    // at the middle the band runs from above the top to below the bottom on both sides
+    const ys = [...m.clip.matchAll(/(-?[\d.]+)% (-?[\d.]+)%/g)].map((x) => +x[2]);
+    assert.ok(ys[0] <= 0 && ys[3] <= 0 && ys[1] >= 100 && ys[2] >= 100, 'full cover: ' + m.clip);
+    await ctx.page.seek(2.6);
+    const e = await ctx.page.evaluate(`(() => { const b = document.querySelector('#b'), c = document.querySelector('#card'); return { b: getComputedStyle(b).getPropertyValue('--gm-band-clip'), bc: getComputedStyle(b).clipPath, card: getComputedStyle(c).getPropertyValue('--gm-band-clip'), cardBand: c.getAttribute('data-gm-band') }; })()`);
+    assert.equal(e.b, '');
+    assert.equal(e.bc, 'none');
+    // the card's entrance starts 1 s into its scene (the scene starts at 1.2): 2.2-2.7, so at 2.6 it is sweeping
+    assert.ok(/polygon/.test(e.card) && e.cardBand === 'after', JSON.stringify(e));
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+});
+
+test('counters: tabular digits in natural motion only; data-count-fixed keeps one width while counting and shows the number', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), fc = join(d, 'c.html');
+  const body = `<div data-duration="3" style="font:800 60px Inter"><span id="n" data-count="0 3480" data-count-duration="2">0</span><br><span id="x" data-count="0 3480" data-count-duration="2" data-count-fixed data-count-suffix=" km">0</span></div>`;
+  writeFileSync(f, page(body));
+  writeFileSync(fc, page(body, 'data-width="640" data-height="360" data-fps="30" data-motion="classic"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  const read = `(() => { const x = document.querySelector('#x'); const vis = [...x.querySelectorAll('.gm-num > :not(.gm-ghost)')].map((e) => e.textContent).join(''); return { tn: getComputedStyle(document.querySelector('#n')).fontVariantNumeric, w: x.getBoundingClientRect().width, vis, text: x.textContent }; })()`;
+  try {
+    const ws = [];
+    for (const t of [0, 0.05, 0.2, 2.5]) {
+      await ctx.page.seek(t);
+      const r = await ctx.page.evaluate(read);
+      ws.push(r.w);
+      if (t === 0) { assert.equal(r.tn, 'tabular-nums'); assert.equal(r.vis, '0'); }
+      if (t === 2.5) { assert.equal(r.vis, '3,480'); assert.equal(r.text, '3,480 km'); }
+    }
+    assert.ok(ws.every((w) => Math.abs(w - ws[0]) < 0.01), 'width ' + ws.join(', '));
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+  assert.equal(await evalAt(fc, 0, `getComputedStyle(document.querySelector('#n')).fontVariantNumeric`), 'normal');
+});
+
+test('burst edge: pieces start along the top edge, and staggered pieces stay until they are done', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div id="s" data-duration="4" style="position:absolute;inset:0"></div><script>window.b1 = gm.burst('#s', { edge: 'top', count: 60, duration: 2 }); window.b2 = gm.burst('#s', { count: 60, duration: 2 });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"'));
+  const r = await evalAt(f, 2.4, `({ xs: b1.parts.map((p) => p.sx), ys: b1.parts.map((p) => p.sy), v1: b1.canvas.style.visibility, v2: b2.canvas.style.visibility, end: b1.end })`);
+  assert.ok(Math.min(...r.xs) < -250 && Math.max(...r.xs) > 250, 'spread along the width');
+  assert.ok(r.ys.every((y) => y < 0), 'just above the top edge');
+  assert.ok(r.end > 2.4 && r.v1 === '', 'edge pieces still falling at 2.4 s (end ' + r.end + ')');
+  assert.equal(r.v2, 'hidden');
+});
+
+// live chart (r10)
+test('live chart (r10): axis none draws no lines; grid/ticks/tickFormat/axisLine; :root --chart-line inherits; resized head and dots stay on the line; headAt on the curve', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>:root{--chart-line:#ff0000} #b .gm-chart-head{width:14px;height:14px} #b .gm-chart-dot{width:8px;height:8px}</style>
+    <div id="world" style="position:absolute;left:0;top:0;width:640px;height:360px">
+      <div id="a" style="position:absolute;left:20px;top:10px;width:600px;height:150px"></div>
+      <div id="b" style="position:absolute;left:40px;top:190px;width:560px;height:150px"></div>
+    </div>
+    <script>
+      window.A = gm.chart.line('#a', { values: [1200, 1850, 1700, 2900, 4400], axis: 'none', delay: 0, duration: 2 });
+      window.B = gm.chart.line('#b', { values: [1200, 1850, 1700, 2900, 4400], min: 0, max: 5000, ticks: 1000, tickFormat: (v) => v / 1000 + 'k', axisLine: true, delay: 0, duration: 2, ease: 'linear' });
+    </script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const r = await evalAt(f, 1.3, `(() => {
+    const vis = (e) => !!e && getComputedStyle(e).display !== 'none' && e.getAttribute('visibility') !== 'hidden';
+    const c = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; };
+    const t = gm.time - gm.timing('#b').start, h = B.headAt(t), hw = B.headAt(t, '#world'), bb = document.querySelector('#b').getBoundingClientRect();
+    return {
+      aLines: [...document.querySelectorAll('#a .gm-chart-grid line, #a .gm-chart-base, #a .gm-chart-axis')].filter(vis).length,
+      aTicks: [...document.querySelectorAll('#a .gm-chart-tick')].filter((e) => e.offsetParent).length,
+      bLines: [...document.querySelectorAll('#b .gm-chart-grid line')].filter(vis).length,
+      bTicks: [...document.querySelectorAll('#b .gm-chart-tick')].filter((e) => e.offsetParent).map((e) => e.textContent),
+      bAxis: vis(document.querySelector('#b .gm-chart-axis')), bBase: vis(document.querySelector('#b .gm-chart-base')),
+      stroke: getComputedStyle(document.querySelector('#a .gm-chart-line')).stroke,
+      head: c('#b .gm-chart-head'), headAt: [bb.left + h.x, bb.top + h.y], world: [Math.round(hw.x - h.x), Math.round(hw.y - h.y)], hv: h.value, v: B.valueAt(t),
+      dot: c('#b .gm-chart-dot[data-i="1"]'), p1: (() => { const p = B.pointAt(1); return [bb.left + p.x, bb.top + p.y]; })(),
+      mid: B.headAt(1.25).y, lin: (B.pointAt(2).y + B.pointAt(3).y) / 2, curve: B.toPx(2.5, B.valueAtIndex(2.5), 1.25).y,
+      issues: gm.inspect().issues.map((i) => i.code) };
+  })()`);
+  const near = (a, b, tol, what) => assert.ok(Math.abs(a - b) <= tol, what + ': ' + a + ' vs ' + b);
+  assert.equal(r.aLines, 0, "axis: 'none' draws no grid, base or axis line");
+  assert.equal(r.aTicks, 0);
+  assert.deepEqual(r.bTicks, ['0k', '1k', '2k', '3k', '4k', '5k'], 'a step from the bottom, the bottom labelled, with tickFormat');
+  assert.equal(r.bLines, 5, 'grid lines except where the base line is');
+  assert.ok(r.bAxis && r.bBase, 'axisLine and base line drawn');
+  assert.equal(r.stroke, 'rgb(255, 0, 0)', '--chart-line set on :root is inherited');
+  near(r.head[0], r.headAt[0], 0.6, 'resized head centered on the tip (x)'); near(r.head[1], r.headAt[1], 0.6, 'resized head centered on the tip (y)');
+  near(r.dot[0], r.p1[0], 0.6, 'resized dot on its point (x)'); near(r.dot[1], r.p1[1], 0.6, 'resized dot on its point (y)');
+  assert.deepEqual(r.world, [40, 190], "headAt(t, '#world') adds the chart's offset");
+  near(r.hv, r.v, 1e-9, 'headAt value');
+  near(r.mid, r.curve, 0.01, 'headAt follows the drawn curve'); assert.ok(Math.abs(r.mid - r.lin) > 1, 'not the straight line between points');
+  assert.deepEqual(r.issues.filter((x) => /chart|script/.test(x)), []);
+});
+
+test('live chart (r10): axisIntro draws the base and grid on from the left and fades the labels in, as a function of time; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div id="c" style="position:absolute;left:60px;top:20px;width:540px;height:280px"></div>
+    <script>window.C = gm.chart.line('#c', { values: [10, 30, 20, 45], labels: 'Q1,Q2,Q3,Q4', min: 0, max: 50, ticks: [0, 25, 50], axisIntro: { at: 0.2, duration: 1 }, delay: 1.3, duration: 1.2 });</script>`,
+  'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const at = (t) => evalAt(f, t, `(() => {
+    const base = document.querySelector('#c .gm-chart-base'), lines = [...document.querySelectorAll('#c .gm-chart-grid line')];
+    const x2 = (e) => getComputedStyle(e).display === 'none' ? null : +e.getAttribute('x2');
+    return { l: +base.getAttribute('x1'), base: base.getAttribute('visibility') === 'hidden' ? null : x2(base), grid: lines.map(x2),
+      ticks: [...document.querySelectorAll('#c .gm-chart-tick')].map((e) => e.offsetParent ? +getComputedStyle(e).opacity : 0),
+      labels: [...document.querySelectorAll('#c .gm-chart-label')].map((e) => +getComputedStyle(e).opacity) };
+  })()`);
+  const s0 = await at(0.1), s1 = await at(0.5), s2 = await at(2);
+  assert.equal(s0.base, null, 'nothing drawn before the intro');
+  assert.deepEqual(s0.ticks, [0, 0, 0]);
+  assert.ok(s1.base > s1.l && s1.base < s2.base, 'base line partly drawn: ' + s1.base);
+  assert.ok(s1.grid[0] == null || s1.grid[0] < s2.grid[0], 'a grid line starts after the base');
+  assert.ok(s1.labels[0] > 0.5 && s1.labels[3] < 0.5, 'x labels appear as the base line passes them: ' + s1.labels);
+  assert.deepEqual(s2.ticks, [1, 1, 1]); assert.deepEqual(s2.labels, [1, 1, 1, 1]);
+  assert.equal(s2.grid.length, 2, 'no grid line on the base');
+  const o1 = join(d, 'o1'), o2 = join(d, 'o2');
+  await render(f, { output: o1, workers: 1, ...quiet });
+  await render(f, { output: o2, workers: 2, ...quiet });
+  const fa = readdirSync(o1).sort();
+  assert.equal(fa.length, 90);
+  assert.deepEqual(fa.filter((x) => !readFileSync(join(o1, x)).equals(readFileSync(join(o2, x)))), []);
+});

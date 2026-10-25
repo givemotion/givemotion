@@ -1,12 +1,12 @@
 <!-- block:
 description: Line chart that draws itself left to right (built on gm.chart.line): a glowing head a camera can follow, callouts that appear when the line reaches their point, pauses at chosen points, per-segment colors, an axis that can grow with the line.
-params: values (comma list), labels (comma list, optional), title, color, prefix, suffix, width (px at 1080p; scales with the short side, default 1400), height (default 560), delay (when the line starts, s, default 0.3), duration (draw time in s including holds; default 1.8, longer for many points), holds ("Mar:1.2 Aug:1.2" pause at those points), colors ("Mar:#ff4d6d" color of the segment that ends at that point; the head takes it too), rescale ("true": the y axis grows with the highest value so far, so small early moves stay visible), axis (left | right | head | none), dots ("false" hides the point dots), endlabel ("false" hides the last value), overview ("true": after drawing, narrows to the frame width for a camera fit)
+params: values (comma list), labels (comma list, optional), title, color, prefix, suffix, width (px at 1080p; scales with the short side, default 1400), height (default 560), delay (when the line starts, s, default 0.3), duration (draw time in s including holds; default 1.8, longer for many points), holds ("Mar:1.2 Aug:1.2" pause at those points), colors ("Mar:#ff4d6d" color of the segment that ends at that point; the head takes it too), rescale ("true": the y axis grows with the highest value so far, so small early moves stay visible), axis (left | right | head | none: no labels, grid or base line), ticks (a step like 10000, or values "0,10000,20000"), grid ("false" hides the grid lines), axisintro (seconds: the axis and grid draw on from the origin at the start), dots ("false" hides the point dots), endlabel ("false" hides the last value), overview ("true": after drawing, narrows to the frame width for a camera fit)
 usage: <gm-include src="blocks/line-chart.html" title="Weekly users" values="120,180,160,240,310,420" labels="W1,W2,W3,W4,W5,W6" data-duration="5"></gm-include>
   Callouts go inside, pinned with data-point="<point> <side> <gap>" (point: 0-based index, a label like Mar, last, max, or head to ride the tip; side: top bottom left right top-left top-right bottom-left bottom-right center); each appears when the line gets there:
   <gm-include src="blocks/line-chart.html" id="growth" values="{{data.values}}" labels="{{data.months}}" holds="Mar:1.2" colors="Mar:#ff4d6d" rescale="true" duration="8"><div data-point="Mar top-right 30">Outage</div></gm-include>
   In JS: gm.chart.get('#growth') gives the chart (.timeOf('Mar'), .valueAt(t), .head); a camera follows it with follow: '#growth .gm-chart-head'.
 -->
-<div class="gmb-line" style="--c:{{color|#5eead4}};--w:{{width|1400}};--h:{{height|560}}" data-values="{{values|10,14,12,20,26,34}}" data-labels="{{labels}}" data-lc-prefix="{{prefix}}" data-lc-suffix="{{suffix}}" data-lc-delay="{{delay}}" data-lc-duration="{{duration}}" data-lc-holds="{{holds}}" data-lc-colors="{{colors}}" data-lc-rescale="{{rescale}}" data-lc-axis="{{axis|left}}" data-lc-dots="{{dots}}" data-lc-endlabel="{{endlabel}}" data-lc-overview="{{overview}}">
+<div class="gmb-line" style="--c:{{color|#5eead4}};--w:{{width|1400}};--h:{{height|560}}" data-values="{{values|10,14,12,20,26,34}}" data-labels="{{labels}}" data-lc-prefix="{{prefix}}" data-lc-suffix="{{suffix}}" data-lc-delay="{{delay}}" data-lc-duration="{{duration}}" data-lc-holds="{{holds}}" data-lc-colors="{{colors}}" data-lc-rescale="{{rescale}}" data-lc-axis="{{axis|left}}" data-lc-ticks="{{ticks}}" data-lc-grid="{{grid}}" data-lc-axisintro="{{axisintro}}" data-lc-dots="{{dots}}" data-lc-endlabel="{{endlabel}}" data-lc-overview="{{overview}}">
   <div class="gmb-line__title" data-enter="fade-up 0.6">{{title}}</div>
   <div class="gmb-line__plot">
     <div class="gmb-line__end" data-point="last top 14" data-chart-text="value"></div>
@@ -23,6 +23,7 @@ usage: <gm-include src="blocks/line-chart.html" title="Weekly users" values="120
     values: d.values, labels: d.labels, prefix: d.lcPrefix, suffix: d.lcSuffix,
     delay: d.lcDelay, duration: d.lcDuration, holds: d.lcHolds, colors: d.lcColors,
     rescale: yes(d.lcRescale), axis: d.lcAxis, dots: d.lcDots !== 'false', overview: yes(d.lcOverview),
+    ticks: d.lcTicks || undefined, grid: d.lcGrid ? d.lcGrid !== 'false' : undefined, axisIntro: +d.lcAxisintro || undefined,
   });
 })();
 </script>

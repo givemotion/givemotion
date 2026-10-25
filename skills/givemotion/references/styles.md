@@ -33,6 +33,22 @@ Built into the engine (no file, no network, the same on every machine, and they 
 - Grotesk display: `"Space Grotesk", Inter, sans-serif`
 - Condensed/impact: `"Bebas Neue", Impact, sans-serif`
 
+Your own `@font-face` with a built-in name (say a local `Inter`): **yours wins for every weight and style it declares**
+(it comes after the engine's faces). Weights or styles it does not declare still come from the built-in face of that name:
+a file declared only for 400 gives you your 400, and `font-weight: 700` or italic text uses the built-in Inter 700 / italic.
+That is fine when your file is the same font. If it is a different font, give it its own name (`font-family: 'Brand'`)
+so nothing mixes, and declare every weight you use (or one variable file with `font-weight: 100 900`).
+
+Numbers that change (`data-count`, clocks, scores): in natural motion a `data-count` element gets
+`font-variant-numeric: tabular-nums` (all digits as wide) unless your CSS sets `font-variant-numeric`. That matters: Inter and
+Space Grotesk digits are proportional by default (a 1 is a third narrower than an 8) and have tabular forms; JetBrains Mono,
+Bebas Neue and Caveat digits are already all as wide; Playfair Display has none (use `data-count-fixed`; classic motion keeps
+the font's default digits). The number still grows wider as digits are added
+(9 → 10 → 1,000), which moves centred text. Add `data-count-fixed` to stop all sideways movement: each digit sits in a cell as
+wide as the font's widest digit (works with any font, also ones without tabular digits like Playfair's old-style figures), and
+the box keeps the width of the longest number from the first frame, with the digits right-aligned in it (the units digit
+never moves; prefix and suffix stay put). For your own counters in `gm.onFrame`, set `font-variant-numeric: tabular-nums`.
+
 ## 1 Midnight Tech
 
 For: product launches, AI/dev tools, SaaS promos, tech explainers.

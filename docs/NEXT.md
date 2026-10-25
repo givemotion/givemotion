@@ -32,6 +32,13 @@ second. Do not reformat files you are not changing.
 
 ---
 
+## Unmerged agent branches (stopped by the usage limit, 2026-10-24; review, finish, merge)
+- `worktree-agent-acdf2432e5bd373fc`: fixes for r10 maker friction (fromTo start values, camera bounds, chart options, check false positives...). Tests were passing; check what is done.
+- `worktree-agent-aee43b06a8b1470d6`: motion blur without stepped copies, cheaper. If it meets quality + <25% cost, turn auto blur on by default.
+- `worktree-agent-ab38ffe6c11fa6d44`: 1 worker == N workers determinism fix (fails on main for code-explainer, coffee-promo).
+- `worktree-agent-ae269254e2fbe6109`: check.js false positives / misses.
+- Open question from r10 (docs/experiments/2026-10-r10.md): natural motion is not visible to judges and `analyze --motion` ranks it below classic; makers override defaults with explicit ease/duration. Diagnose (motion or metric), and find a judge method that can see motion.
+
 ## N7. Natural, real-world motion (Leo's request; start here)
 Videos still move like software: every move eases from a dead stop to a dead stop, consecutive moves and camera shots
 brake to zero between them, a `follow` shot locks rigidly onto its target, and everything uses the same bezier

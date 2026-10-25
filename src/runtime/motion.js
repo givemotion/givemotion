@@ -958,10 +958,18 @@
         if (v === undefined) continue;
         let a = 0, b = v;
         if (Array.isArray(v)) [a, b] = v; else if (typeof v === 'string') { const m = v.trim().split(/\s+/).map(parseFloat); if (m.length > 1) [a, b] = m; else b = m[0]; }
-        if (!el.hasAttribute('pathLength')) el.setAttribute('pathLength', '1');
         const len = Math.max(0, b - a);
+        // a group (a data-sketch shape becomes a <g> of rough strokes, or any <g>/<svg>): draw every stroke in it at
+        // once, and let solid fills come in over the last 40%, like data-enter="draw" does
+        const parts = el.getTotalLength ? [el] : (tm.drawParts || (tm.drawParts = [...el.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')].filter((n) => !n.closest('[data-gm-sketch-guide],defs,clipPath,mask,marker,pattern'))));
         // at zero length, round line caps would still paint a dot: hide the stroke then
-        if (setCached(tm, k, r4(a) + ' ' + r4(len), () => { el.style.strokeDasharray = `${r4(len)} ${r4(1 + len + 1)}`; el.style.strokeDashoffset = String(r4(-a)); el.style.strokeOpacity = len <= 0.0005 ? '0' : ''; })) changed = true;
+        if (setCached(tm, k, r4(a) + ' ' + r4(len), () => {
+          for (const n of parts) {
+            if (!n.hasAttribute('pathLength')) n.setAttribute('pathLength', '1');
+            n.style.strokeDasharray = `${r4(len)} ${r4(1 + len + 1)}`; n.style.strokeDashoffset = String(r4(-a)); n.style.strokeOpacity = len <= 0.0005 ? '0' : '';
+            if (n !== el && (n.matches('[data-gm-sketch-fill="solid"]') || n.closest('[data-gm-sketch-fill="solid"]'))) n.style.fillOpacity = String(r4(Math.max(0, Math.min(1, (len - 0.6) / 0.4))));
+          }
+        })) changed = true;
         continue;
       }
       if (k === 'morph') { if (v !== undefined && setCached(tm, k, v, (d) => el.setAttribute('d', d))) changed = true; continue; }

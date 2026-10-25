@@ -84,6 +84,7 @@ Use for: flat-shape animation, logo stings, abstract openers, transitions betwee
 - **Bars as a rhythm:** a row of rounded rects with `scaleY` keyframes `[0.3, 1, 0.5]`, `stagger: { each: 0.05, from: 'center' }`, `repeat: -1`, `yoyo: true`.
 
 ## Pitfalls
+- **Spawning shapes from nowhere.** New shapes should come out of shapes already on screen: split circles squeeze out of the parent (start at its center and size, stretch as they leave), and when something new is needed (an underline, a bar), pick one of the existing shapes and move/rotate/scale it into that role.
 - Shapes waiting at the center show through before their entrance: CSS `opacity: 0` on them and a `fromTo` with `autoAlpha: 1` (shown only when it starts).
 - A second `fromTo` on the same element (the ring here) shows its start values from the beginning of the clip and hides the first one: pass `immediateRender: false`.
 - `transform="…"` on the animated SVG shape is replaced by the tween: put the position on a parent `<g>`; set `transform-origin: 0 0` on a group that should rotate around the parent's origin.

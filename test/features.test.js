@@ -962,3 +962,13 @@ test('data-scramble: hidden (layout kept) until its delay, then decodes to the r
   assert.notEqual(rows[1][1], 'Decode me');
   assert.equal(rows[2][1], 'Decode me');
 });
+
+test('timeline draw on a data-sketch shape (a <g> of rough strokes) draws it on progressively, not all at once', { skip }, async () => {
+  const d = tmp(), f = join(d, 'k.html');
+  writeFileSync(f, page(`<svg viewBox="0 0 640 360" data-sketch style="position:absolute;inset:0"><rect id="box" x="100" y="100" width="300" height="150" fill="none" stroke="#fff" stroke-width="6"/></svg>
+    <script>gm.timeline('body').fromTo('#box', { draw: 0 }, { draw: 1, duration: 1, ease: 'linear' }, 0.5);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rows = await seekEach(f, [0.2, 1.0, 1.8], `[...document.querySelectorAll('#box path')].filter((p) => !p.closest('[data-gm-sketch-guide]') && p.style.visibility !== 'hidden').map((p) => parseFloat(p.style.strokeDasharray))`);
+  assert.ok(rows[0].length && rows[0].every((x) => +x === 0), `hidden before: ${rows[0]}`);
+  assert.ok(rows[1].every((x) => +x > 0.3 && +x < 0.7), `half drawn: ${rows[1]}`);
+  assert.ok(rows[2].every((x) => +x === 1), `done: ${rows[2]}`);
+});

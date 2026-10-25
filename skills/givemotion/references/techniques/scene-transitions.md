@@ -77,6 +77,7 @@ gm.timeline().fromTo('#stripes', { x: 0 }, { x: 2330, ...sweep }, 4.7);   // #st
 - Circle from another spot: change both `at` points; radius must reach the farthest corner (≈ 2300 px at 1080p).
 
 ## Pitfalls
+- **Zooming in as a transition** (push into the old scene, then cut or slide): it reads as "look at this" and the viewer searches for a subject that is not there. Push only toward the thing the next moment is about; otherwise leave sideways or carry a shared element across.
 - **Ghosted text:** a `fade`/`morph` with text on both sides shows two half-visible lines. Exit the old text (`data-exit="fade-up 0.3 0.5"`) or cover it.
 - **Circle that starts off its source:** a camera push on the scene moves the source on screen; keep the camera on the text, not on the parent of the source, or aim at where it is at the cut (`inspect --at 2.3 --el "#dot"`).
 - **Stripes out of sync with the reveal:** both tweens need the same start, duration and ease, and the same travel (edge starts at −400, ends at 1930: 2330 px). Keep the travel just past the frame, or the sweep crosses the screen in 2–3 frames.

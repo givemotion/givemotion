@@ -30,7 +30,9 @@ The engine gives you any HTML/CSS/SVG/canvas and a frame-exact timeline; the loo
 3. **Contrast in timing.** Fast in, slow settle; holds of 0.4-1 s after something lands; exits shorter than entrances. Never move everything at the same speed with the same curve.
 4. **Follow the brief exactly** for colors, fonts, copy, sizes and timing; your craft goes into how things move, not into extra content.
 5. **Frame 0 is the hook**, nothing is cut by the frame edge, text is big (titles 96-200 px, body ≥ 36 px at 1080p), one hero per moment, scenes flow into each other (push, whip, morph, match cut) rather than fading.
-6. **Animate** `transform`/`translate`/`scale`/`rotate`/`opacity`/`filter`/`clip-path`, not `width`/`top`/`left`.
+6. **Things come from things.** A new element is born from one already on screen, not spawned from nowhere: three circles squeeze out of the main circle; one of the rectangles on screen slides over and becomes the underline; a card grows out of the button that was clicked; the logo's mark becomes the end card's mark. Reuse and transform before you add.
+7. **A camera move means "look here".** Push in only toward something the viewer should read next. Never zoom into empty space or into the old scene as a way to transition: to leave a scene, move sideways (push, whip, wipe) or carry an element across (morph, the rule above).
+8. **Animate** `transform`/`translate`/`scale`/`rotate`/`opacity`/`filter`/`clip-path`, not `width`/`top`/`left`.
 
 ## Hierarchy: one thing matters at a time
 

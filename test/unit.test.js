@@ -4,7 +4,8 @@ import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseArgs } from '../src/args.js';
-import { expandIncludes, applyData, injectRuntime } from '../src/server.js';
+import { expandIncludes, applyData, injectRuntime, startServer } from '../src/server.js';
+import http from 'node:http';
 
 test('parseArgs: flags, values, aliases, booleans', () => {
   const a = parseArgs(['in.html', '-o', 'out.mp4', '--workers=4', '--json', '--motion-blur', '8', '--no-reuse'], { boolean: ['json', 'reuse'], alias: { o: 'output' } });
@@ -157,4 +158,29 @@ test('motionIssues: a camera that stops between shots, fast moves without blur, 
   assert.deepEqual(motionIssues(smooth, names, natural, info, 0.1).map((i) => i.code), []);
   // a step too coarse to see a stop: no camera-stop
   assert.equal(motionIssues(samples, names, classic, info, 0.25).filter((i) => i.code === 'camera-stop').length, 0);
+});
+
+test('server: no hidden files, no cross-origin reads, only localhost Host headers', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gm-srv-'));
+  writeFileSync(join(dir, '.env'), 'SECRET=1');
+  writeFileSync(join(dir, 'a.txt'), 'ok');
+  const s = await startServer({ root: dir });
+  const port = new URL(s.origin).port;
+  const get = (path, host = `127.0.0.1:${port}`) => new Promise((r, j) => http.get({ host: '127.0.0.1', port, path, headers: { Host: host } }, (x) => { x.resume(); r(x); }).on('error', j));
+  try {
+    const ok = await get('/a.txt');
+    assert.equal(ok.statusCode, 200);
+    assert.equal(ok.headers['access-control-allow-origin'], undefined);
+    assert.equal((await get('/.env')).statusCode, 404);
+    assert.equal((await get('/%2eenv')).statusCode, 404);
+    assert.equal((await get('/a.txt', `evil.example:${port}`)).statusCode, 403);
+    assert.equal((await get('/a.txt', `localhost:${port}`)).statusCode, 200);
+  } finally { await s.close(); }
+});
+
+test('injectRuntime: data cannot end the config <script> early', () => {
+  const html = injectRuntime('<html><head></head><body></body></html>', { inlineConfig: { mode: 'render', data: { name: '</script><script>alert(1)</script>' } } });
+  assert.ok(!html.includes('<script>alert(1)'));
+  const json = /window\.__GM_CONFIG = window\.__GM_CONFIG \|\| (.*?);<\/script>/.exec(html)[1];
+  assert.equal(JSON.parse(json).data.name, '</script><script>alert(1)</script>');
 });

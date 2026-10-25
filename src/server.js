@@ -64,6 +64,8 @@ function parseAttrs(s) {
   return out;
 }
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+/** JSON that is safe inside an inline <script> (a value holding "</script>" cannot end the tag). */
+export const scriptJSON = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 /**
  * Replace {{data.path}} / {{data.path|default}} with values from the render data
@@ -85,12 +87,12 @@ export function applyData(html, data) {
   });
   // Tell the page which templates came out empty, so `check` can say so.
   if (!missing.size) return out;
-  const tag = `<script type="application/json" id="gm-missing-data">${JSON.stringify({ keys: [...missing], noData: data == null })}</script>`;
+  const tag = `<script type="application/json" id="gm-missing-data">${scriptJSON({ keys: [...missing], noData: data == null })}</script>`;
   return /<\/body>/i.test(out) ? out.replace(/<\/body>/i, tag + '</body>') : out + tag;
 }
 
 export function injectRuntime(html, { inlineConfig } = {}) {
-  const tags = `<link rel="stylesheet" href="/__gm/preset.css" data-gm-preset><script>window.__GM_CONFIG = window.__GM_CONFIG || ${JSON.stringify(inlineConfig || { mode: 'preview' })};</script><script src="/__gm/runtime.js"></script>`;
+  const tags = `<link rel="stylesheet" href="/__gm/preset.css" data-gm-preset><script>window.__GM_CONFIG = window.__GM_CONFIG || ${scriptJSON(inlineConfig || { mode: 'preview' })};</script><script src="/__gm/runtime.js"></script>`;
   const head = /<head\b[^>]*>/i.exec(html);
   if (head) return html.slice(0, head.index + head[0].length) + tags + html.slice(head.index + head[0].length);
   const htmlTag = /<html\b[^>]*>/i.exec(html);
@@ -158,8 +160,11 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
   const runtime = () => readRuntime();
   const extractor = new FrameExtractor(maxW, maxH);
   const clients = new Set();
+  const loopback = LOOPBACK.has(host);
   const server = http.createServer(async (req, res) => {
     try {
+      // Only answer requests addressed to this machine by name (blocks DNS rebinding from web pages).
+      if (loopback && !LOOPBACK.has(hostname(req.headers.host))) return send(res, 403, 'text/plain', 'givemotion only serves localhost');
       const u = new URL(req.url, 'http://localhost');
       let path = decodeURIComponent(u.pathname);
       if (path === '/__gm/runtime.js') return send(res, 200, MIME['.js'], runtime().js);
@@ -202,7 +207,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         if (!file || !existsSync(file)) return send(res, 404, 'text/plain', 'audio not found: ' + src);
         const buf = await decodePCM(file, sr);
         if (!buf) return send(res, 500, 'text/plain', 'ffmpeg could not decode ' + src);
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'max-age=31536000, immutable', 'Access-Control-Allow-Origin': '*' });
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'max-age=31536000, immutable' });
         return res.end(buf);
       }
       if (path.startsWith('/__gm/studio')) {
@@ -277,19 +282,25 @@ function decodePCM(file, sr) {
   return p;
 }
 
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+function hostname(h = '') {
+  return h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0];
+}
+// Paths under the root, never hidden files or folders (.env, .git, .npmrc...): the root is often the project folder.
 function safeJoin(root, p) {
+  if (String(p).split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.well-known')) return null;
   const f = normalize(join(root, p));
   if (f !== root && !f.startsWith(root + sep)) return null;
   return f;
 }
 function send(res, code, type, body, headers = {}) {
-  res.writeHead(code, { 'Content-Type': type, 'Access-Control-Allow-Origin': '*', ...headers });
+  res.writeHead(code, { 'Content-Type': type, ...headers });
   res.end(body);
 }
 function serveFile(req, res, file, type) {
   const st = statSync(file);
   const range = req.headers.range;
-  const base = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' };
+  const base = { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Cache-Control': 'no-cache' };
   if (range) {
     const m = /bytes=(\d*)-(\d*)/.exec(range);
     let start = m && m[1] ? parseInt(m[1], 10) : 0;

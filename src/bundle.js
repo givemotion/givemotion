@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, copyFileS
 import { join, dirname, resolve, relative, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveInput } from './render.js';
-import { expandIncludes, applyData, readRuntime } from './server.js';
+import { expandIncludes, applyData, readRuntime, scriptJSON } from './server.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -43,7 +43,7 @@ export function bundle(input, opts = {}) {
     const f = join(HERE, 'runtime', 'fonts', name);
     return /caveat/i.test(html) && existsSync(f) ? `url(data:font/woff2;base64,${readFileSync(f).toString('base64')})` : 'url(about:blank)';
   });
-  const tags = `<style data-gm-preset>${css}</style><script>window.__GM_CONFIG=${JSON.stringify(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
+  const tags = `<style data-gm-preset>${css}</style><script>window.__GM_CONFIG=${scriptJSON(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
   const head = /<head\b[^>]*>/i.exec(html);
   html = head ? html.slice(0, head.index + head[0].length) + tags + html.slice(head.index + head[0].length) : tags + html;
   const pageRel = relative(base, file).split(sep).join('/').replace(/\.html?$/i, '') + '.html';

@@ -90,10 +90,21 @@ to about 20 engine fixes ([all rounds and what changed](docs/experiments/)).
 **4. Motion design, not slides.** The engine has the tools that make video feel like real animation:
 a camera that follows and frames things, motion along paths, shape morphs, shared elements that fly from one
 scene into the next, more than 25 scene transitions, kinetic type, particle bursts, live data charts the camera can
-ride, hand-drawn sketch shapes and arrows, labels that stay attached to their shapes, and cuts and pulses that land
-on the music's beats.
+ride, hand-drawn sketch shapes and arrows that draw themselves on, labels that stay attached to their shapes, and
+cuts and pulses that land on the music's beats.
 
-**5. Same input, same video, every time.** Rendering is exact and repeatable, so an agent can change one
+**5. Natural motion by default.** Things move like real objects without the agent asking for it: entrances
+spring in and settle, diagonal moves travel on a slight arc, exits accelerate away, and the camera moves like an
+operator (back-to-back shots flow into one move, `follow` trails its target and settles, backgrounds drift for
+depth). `<html data-motion="classic">` brings back plain curves when you need them.
+
+**6. The know-how of a motion designer, in the agent's docs.** The skill pack has a short core plus files the
+agent reads only when it needs them: 15 technique recipes (kinetic type, camera moves, scene transitions, logo
+reveals, charts, UI demos, hand-drawn...), each checked by rendering it; 8 ready-made looks (palette, fonts,
+background, motion personality); and guides for 9 kinds of video. Six fonts are built in (Inter, JetBrains Mono,
+Playfair Display, Space Grotesk, Bebas Neue, Caveat), so a video looks the same on every machine.
+
+**7. Same input, same video, every time.** Rendering is exact and repeatable, so an agent can change one
 thing without surprises elsewhere.
 
 ## How it compares
@@ -171,8 +182,8 @@ edition:
 
 1. Fork the repo.
 2. Add blocks in [`blocks/`](blocks) for your style: your title cards, your charts, your transitions, your colors.
-3. Add a short style guide to the agent instructions ([`skills/givemotion/SKILL.md`](skills/givemotion/SKILL.md)):
-   which blocks to use, which colors, which fonts, what to avoid.
+3. Add your look to the agent instructions ([`skills/givemotion/references/styles.md`](skills/givemotion/references/styles.md)
+   holds the built-in ones): which blocks to use, which colors, which fonts, what to avoid.
 
 Agents then make videos in that style much faster and more consistently, because they start from pieces that
 already look right instead of inventing everything each time.
@@ -237,8 +248,9 @@ on a virtual clock and captured frame by frame: CSS animations, transitions, the
 another one is), live line charts (`gm.chart.line()`), hand-drawn shapes (`data-sketch`), labels pinned to shapes
 (`data-anchor`), particle bursts, and music analysis (`gm.audio()`, `gm.beat(n)`, `data-pulse`, cuts written in beats).
 
-The full reference is one page written for agents (and good for humans too):
-[`skills/givemotion/SKILL.md`](skills/givemotion/SKILL.md).
+The full reference is the skill pack written for agents (and good for humans too):
+[`skills/givemotion/SKILL.md`](skills/givemotion/SKILL.md) and the topic files in
+[`skills/givemotion/references/`](skills/givemotion/references).
 
 ### Commands
 
@@ -253,6 +265,7 @@ The full reference is one page written for agents (and good for humans too):
 | `snapshot [file]` | Key moments of every scene in one image |
 | `inspect [file]` | Timeline as JSON; `--at 3.2 --el "#logo"` says where anything is at any moment |
 | `audio <file>` | Tempo, beats, bar starts and big hits of a song |
+| `captions <file>` | The caption pages a word-timed `.json` or `.srt` will show, so you can pick how many words per page |
 | `analyze <video.mp4>` | Report on any video (a reference, or your render): shots and cuts, transitions, camera, pacing, colors, cuts on the beat, contact sheets. `--compare ref.mp4` lists how yours differs |
 | `bundle [file] -o dir` | Standalone page + `<gm-player>` to embed the video in any site |
 | `blocks` / `add <name>` | Ready-made blocks you can copy and edit |
@@ -328,12 +341,24 @@ HTML ──► local server (adds the runtime, expands blocks and {{data}}, serv
 
 givemotion itself has **zero required npm dependencies**.
 
+### Status
+
+givemotion is young (0.x). Compositions written today should keep working, but options and APIs may still
+change between minor versions; changes are listed in the release notes.
+
+## Contributing and security
+
+Pull requests and issues are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) (and [AGENTS.md](AGENTS.md) for the
+code layout). A composition is code that runs in Chrome; if you render compositions or data from people you don't
+trust, read [SECURITY.md](SECURITY.md) first. Report security problems privately, as described there.
+
 ## License
 
 MIT. Use it, change it, fork it, sell what you make with it. Chrome and ffmpeg are installed separately under
 their own licenses. The example music and images were made for this project and are MIT too. The bundled fonts
 (Inter, JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Caveat) are under the SIL Open Font License
-(license files in `src/runtime/fonts/`).
+(license files in `src/runtime/fonts/`). Everything third-party is listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
 Remotion and HyperFrames, but no code from them. Remotion and HyperFrames are trademarks of their owners.

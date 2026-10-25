@@ -1,17 +1,57 @@
+# Dependencies
 node_modules/
+
+# Render output and caches (givemotion writes these next to compositions)
 out/
 snapshots/
+.gm-parts/
 *.mp4
 *.mov
 *.webm
+*.mkv
 *.gif
+*.mp3
+*.wav
 !examples/**/assets/*.mp4
 !docs/media/*.gif
+
+# Secrets and local config: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+.npmrc
+
+# Packaging
+*.tgz
+
+# Logs and temp files
+*.log
+npm-debug.log*
+.npm/
+.cache/
+tmp/
+coverage/
+__pycache__/
+*.pyc
+
+# Editors and OS
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local agent state (the plugin manifests in .claude-plugin/ stay tracked)
+.claude/
+CLAUDE.local.md
+
+# Benchmarks and agent test rounds: generated or kept outside the repo
 benchmarks/**/node_modules/
 benchmarks/vs-hyperframes/gm/
 benchmarks/vs-hyperframes/hf/
 bench/agents/
-.gm-parts/
-__pycache__/
-.claude/worktrees/
+test/fixtures/media/

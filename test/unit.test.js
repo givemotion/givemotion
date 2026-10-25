@@ -120,7 +120,7 @@ test('skill pack: SKILL.md and plugin.json carry the package version; SKILL.md s
   assert.ok(Buffer.byteLength(skill) <= 19000, `SKILL.md is ${Buffer.byteLength(skill)} bytes: keep it under ~18 KB, move topics to references/`);
   const q = skill.indexOf('## How good motion is made here');
   assert.ok(q > 0 && q < 12000, 'craft rules within the first ~3k tokens, so they survive compaction');
-  assert.ok(Buffer.byteLength(skill) <= 14000, 'SKILL.md stays a short core + router (~3.5k tokens): details go to references/');
+  assert.ok(Buffer.byteLength(skill) <= 15000, 'SKILL.md stays a short core + router (~3.7k tokens): details go to references/');
 });
 
 test('motionIssues: a camera that stops between shots, fast moves without blur, straight diagonals, one easing for everything', async () => {

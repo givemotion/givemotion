@@ -32,6 +32,22 @@ The engine gives you any HTML/CSS/SVG/canvas and a frame-exact timeline; the loo
 5. **Frame 0 is the hook**, nothing is cut by the frame edge, text is big (titles 96-200 px, body ≥ 36 px at 1080p), one hero per moment, scenes flow into each other (push, whip, morph, match cut) rather than fading.
 6. **Animate** `transform`/`translate`/`scale`/`rotate`/`opacity`/`filter`/`clip-path`, not `width`/`top`/`left`.
 
+## Hierarchy: one thing matters at a time
+
+Viewers preferred videos where the eye always knew where to look.
+- **Every line has a key word.** Give the word that carries the meaning contrast: the accent color, a heavier weight, a bigger size, or a highlight/underline drawn on. The rest of the line stays quieter (ink or muted color, lighter weight). One per line, at most two per screen. If everything is accent, nothing is.
+- **Every moment has one hero:** the biggest, brightest thing with the most motion. Support is clearly smaller (hero ≥ 1.6× the next size; three levels at most: hero, support, label), dimmer (muted color or 50-70% opacity), arrives after the hero and moves less.
+- **Lead the eye in order:** the hero lands first; the key word changes color or gets its underline on its own beat (0.2-0.4 s after the line settles); support follows. When the camera or a callout focuses on something, dim or blur the rest.
+- **Use the brief's palette roles strictly:** accent colors for emphasis only, muted for secondary text.
+
+## Easing: match the curve to the motion
+
+- **Entering** decelerates (ease-out: `expo.out`, `power3.out`, or `back.out(1.4)` when it lands with weight).
+- **Leaving** accelerates (ease-in: `power2.in`), shorter than the entrance (60-70%).
+- **Moving from A to B** while visible, camera moves, a scale change of something already on screen: ease-in-out (`power2.inOut`, `sine.inOut`): it starts gently and lands gently.
+- **Ambient drift:** long `sine.inOut`; `linear` only for loops (spins, tickers). Nothing that starts or stops on screen moves linearly.
+- Leave `ease` out and the engine already does this (entrances spring in, moves ease in and out, exits ease in); when you set one, follow the rules above.
+
 ## Minimal composition
 
 ```html

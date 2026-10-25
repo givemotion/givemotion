@@ -77,6 +77,7 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 
 Leave out `ease` and `duration` unless you need exact timing, and you get these for free. Setting an ease on everything throws them away (`check` warns `same-ease` when one curve is used for almost everything).
 - **Entrances have mass.** `data-enter` presets and timeline entrances spring in: fades, slides, masks and text land crisp (no overshoot); `pop`, `grow`, `scale`, `spin-in`, `flip-up`, `stretch`, `tilt` overshoot a hair and settle. Explicit names: `natural(0.7)` (a spring released from rest; the number is the damping, 1 = no overshoot) and `natural-move` (a move that gathers speed and settles).
+- **Exits leave under their own power.** A `to()` that ends at opacity 0 or scale 0 eases in (slow start, leaves at speed) instead of settling.
 - **Bigger moves take a little longer.** Without a duration, timeline moves last about 0.4–0.65 s and `gm.fly` 0.65–1.05 s depending on the distance; presets that travel by the element's size scale the same way.
 - **Moves flow.** Back-to-back tweens on the same property (one ends where the next starts) carry their speed through the joint instead of stopping.
 - **Arcs.** Diagonal x+y moves and `gm.fly` bend slightly upward like a thrown object. `arc: 0` for a dead-straight line, `arc: 0.2` for more.

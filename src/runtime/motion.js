@@ -149,6 +149,7 @@
     }
     return v;
   }
+  const exitEase = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (0.25 + 0.75 * x)); // eases in, leaves at speed
   function makeInterp(from, to, prop) {
     if (typeof from === 'number' && typeof to === 'number') return (p) => from + (to - from) * p;
     const fs = String(from), ts = String(to);
@@ -635,6 +636,10 @@
         // mass: it gathers speed, then settles
         const zero = (k) => fromProps && k in fromProps && typeof fromProps[k] !== 'function' && natNum(fromProps[k]) != null && Math.abs(natNum(fromProps[k])) <= 0.05;
         const entrance = !fly && ['opacity', 'autoAlpha', 'scale', 'scaleX', 'scaleY'].some(zero);
+        // an exit (it ends invisible or at scale 0, and is not an entrance) accelerates away: ease-in, like a thing
+        // that leaves under its own power, instead of settling into its disappearance
+        const zeroTo = (k) => toProps && k in toProps && typeof toProps[k] !== 'function' && natNum(toProps[k]) != null && Math.abs(natNum(toProps[k])) <= 0.05;
+        const exit = !fly && !entrance && op.type === 'to' && ['opacity', 'autoAlpha', 'scale', 'scaleX', 'scaleY'].some(zeroTo);
         // arc: explicit (any mode) or, in natural motion, by default for flies and for tweens that move both x and y
         const arc = timing.arc === true ? 0.1 : timing.arc != null && timing.arc !== false ? +timing.arc || 0 : nat && (fly || (keys.includes('x') && keys.includes('y'))) ? 0.1 : 0;
         if (arc && keys.includes('x') && !keys.includes('y')) { keys.push('y'); if (toProps) toProps.y = '+=0'; else fromProps.y = '+=0'; }
@@ -654,7 +659,7 @@
           const s = start + offs[i] + (jit ? jit[i].off : 0);
           const it = { el, i, n: targets.length, type: op.type, start: s, dur, rep, rd, yoyo: !!timing.yoyo, ease: gm.easing(timing.ease), props: {}, onUpdate: timing.onUpdate || null, immediate: op.type !== 'to' && timing.immediateRender !== false, irAuto: timing.immediateRender == null, natural0: nat, seq: this.items.length };
           for (const k of keys) it.props[k] = { from: fromProps && k in fromProps ? evalVal(fromProps[k], i, el, targets, rnd) : undefined, to: toProps && k in toProps ? evalVal(toProps[k], i, el, targets, rnd) : undefined };
-          if (natE) { it.natural = true; it.ease = entrance ? I.physEase(0.8) : I.moveEase(0.7); it.easeSoft = entrance ? I.physEase(1) : I.moveEase(1); }
+          if (natE) { it.natural = true; it.ease = entrance ? I.physEase(0.8) : exit ? exitEase : I.moveEase(0.7); it.easeSoft = entrance ? I.physEase(1) : exit ? exitEase : I.moveEase(1); }
           if (arc) { it.arc = arc; it.arcDefault = timing.arc == null; }
           if (nat) {
             const d = natDistance(el, it, lastTF);

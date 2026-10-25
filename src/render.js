@@ -6,7 +6,7 @@ import { join, resolve, dirname, basename, extname, relative, isAbsolute } from 
 import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage, CACHE_DIR } from './browser.js';
 import { startServer } from './server.js';
-import { requireFfmpeg, encoderPlan, openSegmentWriter, openBlender, run as runFfmpeg, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
+import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
 import { pagePrints } from './parts.js';
 
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
@@ -31,35 +31,23 @@ function parseRange(range, fps, totalFrames) {
 }
 
 /**
- * Auto motion blur settings. Speeds are in px per frame on a 1080 px screen (scaled to the composition's short side).
- * Below `min` a frame is captured once, as without blur. Above it the blur is the distance covered while the shutter is
- * open (speed x shutter, 0.5 = 180°), sampled every `gap` px or closer (so it reads as a smear, not copies), with at
- * most `maxN` samples; past that the shutter closes a little so samples stay within `maxGap` px of each other.
- * Changing any value redoes every cached part (it is in the parts fingerprint).
+ * Auto motion blur settings (see velocityBlur). Every frame is still captured once: each element that moves on its own
+ * gets a smear along its move, as long as the distance it covers while the shutter is open (shutter 0.5 = 180°), drawn
+ * by the browser in the same capture. `min`: smallest smear drawn, in px on a 1080 px screen; `maxEls`: most elements
+ * smeared in one frame (the fastest and biggest first). Changing a value redoes every cached part (parts fingerprint).
  */
-export const AUTO_BLUR = { v: 1, min: 16, gap: 6, maxN: 4, maxGap: 6, counts: [2, 3, 4] };
-
-/** Samples and shutter for one frame moving `speed` px/frame (1080 px scale), or null for a single capture. */
-export function autoBlurPlan(speed, shutter = 0.5) {
-  const A = AUTO_BLUR;
-  if (!(speed >= A.min) || !(shutter > 0)) return null;
-  let s = Math.min(1, shutter);
-  if (speed * s > A.maxN * A.maxGap) s = (A.maxN * A.maxGap) / speed;
-  const want = Math.ceil((speed * s) / A.gap);
-  return { n: A.counts.find((c) => c >= want) || A.maxN, shutter: s };
-}
+export const AUTO_BLUR = { v: 2, min: 3, maxEls: 48 };
 
 /**
- * --motion-blur: unset = off for now (with 2-4 samples, fast text shows stepped copies; see docs/NEXT.md); "auto"; "off" (also
- * 0, false, none); a number = that many samples on every frame. Transparent renders get no auto blur (averaging
- * straight-alpha images darkens edges); a number still forces it.
+ * --motion-blur: unset = off (auto is opt-in until the smear blur is validated) (data-motion="classic"); "auto"; "off" (also
+ * 0, false, none); a number = that many samples on every frame (averaged).
  */
-export function resolveMotionBlur(value, { motion = 'natural', transparent = false } = {}) {
+export function resolveMotionBlur(value, { motion = 'natural' } = {}) {
   const v = value == null || value === true ? '' : String(value).trim().toLowerCase();
   if (v === 'off' || v === 'false' || v === 'none' || v === 'no' || v === '0') return { mode: 'off', samples: 1 };
   if (v === '' || v === 'auto' || v === 'on') {
-    if (v === '') return { mode: 'off', samples: 1, why: motion === 'classic' ? 'classic' : 'default' };
-    return transparent ? { mode: 'off', samples: 1, why: 'transparent' } : { mode: 'auto', samples: 1 };
+    if (v === '') return { mode: 'off', samples: 1, why: motion === 'classic' ? 'classic' : 'default' }; // auto is opt-in until validated
+    return { mode: 'auto', samples: 1 };
   }
   const n = parseInt(v, 10);
   if (!(n >= 1)) throw new Error(`Bad --motion-blur "${value}". Use auto, off, or a number of samples per frame (2-32).`);
@@ -215,13 +203,13 @@ export async function render(input, opts = {}) {
     const fps = comp.fps;
     // motion blur: off, a fixed number of samples for every frame, or auto (the default in natural motion)
     const motion = await ctx.page.evaluate('gm.motion').catch(() => 'natural');
-    let blur = resolveMotionBlur(opts.motionBlur, { motion, transparent });
+    let blur = resolveMotionBlur(opts.motionBlur, { motion });
     // requestAnimationFrame code keeps its own state from call to call: extra sub-frame calls would change what it
     // draws next (and differ between workers), so such pages get no auto blur
     const usesRAF = () => ctx.page.evaluate('gm.__usesRAF ? gm.__usesRAF() : gm.__stateful()');
     if (blur.mode === 'auto' && (await usesRAF())) blur = { mode: 'off', samples: 1, why: 'requestAnimationFrame' };
     const blurSamples = blur.mode === 'fixed' ? blur.samples : 1;
-    const blurStats = { blurred: 0, samples: 0, probeMs: 0, ref: Math.min(comp.width, comp.height) / 1080 };
+    const blurStats = { blurred: 0, samples: 0, ref: Math.min(comp.width, comp.height) / 1080 };
     const totalFrames = Math.max(1, Math.round(comp.duration * fps));
     const [f0, f1] = parseRange(opts.frames, fps, totalFrames);
     const nFrames = f1 - f0;
@@ -235,8 +223,8 @@ export async function render(input, opts = {}) {
     const useParts = format !== 'png' && !opts.frames;
     const keepParts = useParts && opts.cache !== false;
     let ranges, parts = null;
-    const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
     if (useParts) {
+      const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
       const dir = keepParts ? join(dirname(out), '.gm-parts', basename(out)) : join(tmp, 'parts');
       const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, blur: blur.mode === 'auto' ? AUTO_BLUR : null, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
@@ -255,7 +243,7 @@ export async function render(input, opts = {}) {
         const keep = prev && prev.a === a && prev.b === b && prev.fp === fp && existsSync(file) && !(redo && a < redo[1] && b > redo[0]);
         list.push({ i, a, b, fp, file, keep });
       }
-      const why = !old ? 'first render' : old.settings !== settings ? 'settings, data or engine changed' : old.shared !== deps.shared ? sharedWhy(old.sharedParts, deps.sharedParts) : null;
+      const why = !old ? 'first render' : old.settings !== settings ? 'settings, data or engine changed' : old.shared !== deps.shared ? 'shared code, styles or files changed' : null;
       const same = (o, c) => o.fp === c.fp && o.start === c.start && o.end === c.end;
       const changedClips = old && old.settings === settings && old.shared === deps.shared ? deps.clips.flatMap((c) => {
         const o = (old.clips || []).find((x) => same(x, c));
@@ -265,25 +253,16 @@ export async function render(input, opts = {}) {
       ranges = list.filter((p) => !p.keep).map((p) => ({ a: p.a, b: p.b, file: p.file }));
       mkdirSync(dir, { recursive: true });
     } else {
-      // A single range (png, --frames) is cut into pieces on the same 1-2 s grid as the parts: every piece starts the
-      // same way whichever worker renders it, so the frames do not depend on the number of workers.
-      ranges = [];
-      for (let a = f0, i = 0; a < f1; i++) {
-        const b = Math.min(f1, (Math.floor(a / segF) + 1) * segF);
-        ranges.push({ a, b, file: format === 'png' ? null : join(tmp, `seg${String(i).padStart(4, '0')}.${plan.segExt}`) });
-        a = b;
-      }
+      ranges = [{ a: f0, b: f1, file: format === 'png' ? null : join(tmp, `seg.${plan.segExt}`) }];
     }
     const todoFrames = ranges.reduce((s, r) => s + r.b - r.a, 0);
     const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames), Math.max(1, todoFrames)));
     const auto = blur.mode === 'auto';
-    // Auto blur: frames are not equally expensive, so ranges are handed out by cost (below) instead of in fixed runs.
-    // Every range starts with its own warm-up.
-    // Otherwise give each worker a run of neighbouring ranges.
-    const groups = auto ? Array.from({ length: Math.min(workers, ranges.length) }, () => []) : splitRanges(ranges, workers);
+    // each worker gets a run of neighbouring frames
+    const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : blur.mode === 'auto' ? ', motion blur auto' : blur.why ? ', no motion blur: ' + (blur.why === 'transparent' ? 'transparent output' : 'the page uses requestAnimationFrame') : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: the page uses requestAnimationFrame' : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
@@ -292,75 +271,18 @@ export async function render(input, opts = {}) {
 
     if (process.env.GIVEMOTION_PROFILE) log(`  setup ${Date.now() - t0}ms`);
     const setDurations = Object.keys(media.durations).length ? `(() => { const d = ${JSON.stringify(media.durations)}; gm.__setVideoDurations && gm.__setVideoDurations(d); })()` : null;
-    const reopen = async (page) => { await page.open(ctx.url, ctx.config); if (setDurations) await page.evaluate(setDurations); };
     // Start other workers in parallel
     const extra = todoFrames ? await Promise.all(Array.from({ length: nWorkers - 1 }, () => newWorker(ctx, opts))) : [];
     pages.push(...extra);
     if (setDurations) await Promise.all(pages.map((p) => p.evaluate(setDurations)));
-    // Auto blur: how far things move at every frame to render (seeks and box reads, no captures; about 0.3 ms a frame
-    // for a DOM page), measured in pieces spread over all pages
-    const steps = new Map(); // f -> px moved on screen from frame f-1 to f
-    let rafLate = false;
-    if (auto && todoFrames) {
-      const q0 = Date.now();
-      // every frame of the video when it is cut into parts, so a re-rendered part sees the same as a full render
-      const need = new Set();
-      if (useParts) for (let f = -1; f <= totalFrames; f++) need.add(f);
-      else for (const r of ranges) for (let f = r.a - 1; f <= r.b; f++) need.add(f);
-      const frames = [...need].sort((x, y) => x - y);
-      const per = Math.max(30, Math.ceil(frames.length / pages.length));
-      const pieces = [];
-      for (let i = 0; i < frames.length;) {
-        let j = i + 1;
-        while (j < frames.length && frames[j] === frames[j - 1] + 1 && j - i < per) j++;
-        pieces.push(frames.slice(i, j));
-        // the next piece starts on this one's last frame (to measure the step into its first frame)
-        i = j < frames.length && frames[j] === frames[j - 1] + 1 ? j - 1 : j;
-      }
-      await Promise.all(pages.map(async (page, k) => {
-        for (let i = k; i < pieces.length; i += pages.length) {
-          const run = pieces[i];
-          const d = await page.evaluate(`(${motionProbe.toString()})(${JSON.stringify(run.map((f) => Math.max(0, f / fps)))}, ${shutter})`, { timeoutMs: Math.max(60000, run.length * 1000) });
-          run.slice(1).forEach((f, n) => steps.set(f, d[n]));
-        }
-        if (await page.evaluate('gm.__usesRAF ? gm.__usesRAF() : false')) rafLate = true;
-        // start every page again, so what it renders next does not depend on which frames it measured (Chrome keeps
-        // some paint state between frames; pages driven by timers also cannot seek back)
-        await reopen(page);
-      }));
-      if (rafLate) { steps.clear(); if (!opts.quiet) log('  no motion blur: the page uses requestAnimationFrame'); } // (see above)
-      blurStats.probeMs = Date.now() - q0;
-    }
-    const framePlan = (f) => autoBlurPlan(Math.max(steps.get(f) || 0, steps.get(f + 1) || 0) / blurStats.ref, shutter);
-    // A part with blur is cut into pieces (of 10 frames or more) (rendered by any worker, then joined into the part without
-    // re-encoding), so one busy part does not keep everyone waiting. How a part is cut depends only on its own frames.
-    const costOf = (a, b) => { let c = 1; for (let f = a; f < b; f++) { const pl = framePlan(f); c += pl ? pl.n : 1; } return c; };
-    const queue = auto ? ranges.flatMap((r) => {
-      const k = useParts ? Math.min(Math.max(1, Math.floor((r.b - r.a) / 10)), 1 + Math.floor((costOf(r.a, r.b) - 1 - (r.b - r.a)) / 12)) : 1; // one more piece per 12 extra samples
-      if (k === 1) return [{ ...r, cost: costOf(r.a, r.b) }];
-      const whole = { file: r.file, left: k, pieces: [] };
-      return Array.from({ length: k }, (_, i) => {
-        const a = r.a + Math.round((i * (r.b - r.a)) / k), b = r.a + Math.round(((i + 1) * (r.b - r.a)) / k);
-        const file = join(tmp, `${basename(r.file)}.piece${i}.${plan.segExt}`);
-        whole.pieces.push(file);
-        return { a, b, file, whole, cost: costOf(a, b) };
-      });
-    }).sort((x, y) => y.cost - x.cost || x.a - y.a) : null;
-    // hand the work out by its cost (most first, to the least busy worker), each worker in time order. Fixed for a
-    // given number of workers: Chrome's paint caches can keep a little history, so who renders what must not depend on
-    // timing.
-    if (auto) {
-      const load = groups.map(() => 0);
-      for (const r of queue) { let w = 0; for (let i = 1; i < groups.length; i++) if (load[i] < load[w]) w = i; groups[w].push(r); load[w] += r.cost; }
-      for (const g of groups) g.sort((x, y) => x.a - y.a);
-    }
-    const joinPieces = async (whole) => {
-      const list = join(tmp, basename(whole.file) + '.pieces.txt'), tmpWhole = whole.file + '.tmp.' + plan.segExt;
-      writeFileSync(list, whole.pieces.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n'));
-      await runFfmpeg(['-f', 'concat', '-safe', '0', '-i', list, '-map', '0', '-c', 'copy', tmpWhole]);
-      renameSync(tmpWhole, whole.file);
-      rmSync(list, { force: true });
-      for (const f of whole.pieces) rmSync(f, { force: true });
+    // Auto blur: seek with velocityBlur (installed once per page), which also smears what moves fast at that time
+    const vbArgs = JSON.stringify({ min: AUTO_BLUR.min * blurStats.ref, maxEls: AUTO_BLUR.maxEls });
+    const installed = new WeakSet();
+    const seekFrame = async (page, f) => {
+      const t = Math.max(0, f / fps);
+      if (!auto) return page.seek(t);
+      if (!installed.has(page)) { await page.evaluate(`window.__gmVelocityBlur = ${velocityBlur.toString()}; 1`); installed.add(page); }
+      return page.evaluate(`__gmVelocityBlur(${t}, ${shutter / fps}, ${vbArgs})`);
     };
 
     let done = 0, reused = 0;
@@ -384,106 +306,36 @@ export async function render(input, opts = {}) {
       const prof = { seek: 0, cap: 0, write: 0, end: 0 };
       // a finished part's encoder keeps working while the next part is captured (the encoder pipeline stays full)
       const ending = [], open = [];
-      const framePath = (f) => (out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`));
-      // Auto motion blur for frames a..b-1: capture each frame once, or 2-4 times across the shutter when something moves
-      // fast (framePlan, from the motion measured before), and average those samples (openBlender). Frames reach the
-      // writer in order. The decision and the sample times depend only on the time, and every range starts the same way
-      // (warm up on frame a-1), so any split between workers and any re-rendered part gives the same bytes.
-      const captureAuto = async (a, b, writer) => {
-        let q0 = Date.now();
-        // every range starts the same way, whichever worker renders it and whatever this page rendered before: on the frame
-        // before (the first samples of frame a come before a), with Chrome's paint state from earlier frames dropped
-        last = null;
-        // (a page whose state depends on the frames it ran, e.g. timers, cannot step back: a fresh page for it)
-        if (prevFrame >= -1 && (await page.evaluate('gm.__stateful()'))) { const q1 = Date.now(); await reopen(page); prof.reopen = (prof.reopen || 0) + Date.now() - q1; }
-        await page.seek(Math.max(0, a - 1) / fps);
-        const q1 = Date.now();
-        await page.resetPaint();
-        prof.reset = (prof.reset || 0) + Date.now() - q1;
-        const blenders = new Map();
-        let chain = Promise.resolve();
-        const put = (f, img) => {
-          chain = chain.then(() => img).then((buf) => (writer ? writer.write(buf) : writeFileSync(framePath(f), buf)));
-          chain.catch(() => {});
-        };
+      let frames = 0;
+      try {
+      for (const { a, b, file } of group) {
+        frames += b - a;
+        const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
+        const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
         try {
+          // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
+          // and Chrome's paint state from earlier frames is dropped, so any split between workers gives the same bytes
+          if (a !== prevFrame + 1) { last = null; if (a > 0) { await seekFrame(page, a - 1); await page.resetPaint(); await page.capture(captureFormat, jpegQ); } }
           for (let f = a; f < b; f++) {
-            const pl = framePlan(f);
-            const n = pl ? pl.n : 1;
-            const bufs = [];
-            for (let s = 0; s < n; s++) {
-              const t = n > 1 ? (f + ((s + 0.5) / n - 0.5) * pl.shutter) / fps : f / fps;
-              q0 = Date.now();
-              const r = await page.seek(Math.max(0, t));
+            for (let s = 0; s < blurSamples; s++) {
+              let q0 = Date.now();
+              const r = blurSamples > 1 ? await page.seek(Math.max(0, (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps)) : await seekFrame(page, f);
               prof.seek += Date.now() - q0; q0 = Date.now();
               if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
               let buf;
               if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
               else { buf = last; if (s === 0) reused++; }
               last = buf;
-              bufs.push(buf);
-              prof.cap += Date.now() - q0;
+              if (auto && r && r.blurred) { blurStats.blurred++; blurStats.samples += r.blurred; }
+              prof.cap += Date.now() - q0; q0 = Date.now();
+              if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
+              else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
             }
-            if (n > 1 && bufs.some((x) => x !== bufs[0])) {
-              let bl = blenders.get(n);
-              if (!bl) blenders.set(n, (bl = openBlender({ n, png: captureFormat === 'png', jpegQuality: jpegQ })));
-              put(f, bl.push(bufs));
-              blurStats.blurred++;
-              blurStats.samples += n;
-            } else put(f, bufs[0]);
+            prevFrame = f;
             done++;
             progress();
           }
-          q0 = Date.now();
-          await Promise.all([...blenders.values()].map((bl) => bl.end()));
-          await chain;
-          prof.write += Date.now() - q0;
-        } catch (e) {
-          for (const bl of blenders.values()) bl.kill();
-          throw e;
-        }
-      };
-      const next = ((i) => () => group[i++])(0);
-      let frames = 0;
-      try {
-      for (let r; (r = next());) {
-        const { a, b, file, whole } = r;
-        frames += b - a;
-        const tmpFile = file ? file + '.tmp.' + plan.segExt : null;
-        const writer = file ? openSegmentWriter({ fps, inputCodec: captureFormat === 'png' ? 'png' : 'mjpeg', out: tmpFile, plan, motionBlur: blurSamples > 1 ? { samples: blurSamples } : null }) : null;
-        try {
-          if (blur.mode === 'auto') {
-            await captureAuto(a, b, writer);
-            prevFrame = b - 1;
-          } else {
-            // Every range starts the same way, whichever worker renders it and whatever it rendered before: on its first
-            // frame, with Chrome's paint state from earlier frames dropped (page.resetPaint).
-            last = null;
-            await page.seek(a / fps);
-            const q1 = Date.now();
-            await page.resetPaint();
-            prof.reset = (prof.reset || 0) + Date.now() - q1;
-            for (let f = a; f < b; f++) {
-              for (let s = 0; s < blurSamples; s++) {
-                const t = blurSamples > 1 ? (f + (s / (blurSamples - 1) - 0.5) * shutter) / fps : f / fps;
-                let q0 = Date.now();
-                const r = await page.seek(Math.max(0, t));
-                prof.seek += Date.now() - q0; q0 = Date.now();
-                if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
-                let buf;
-                if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
-                else { buf = last; if (s === 0) reused++; }
-                last = buf;
-                prof.cap += Date.now() - q0; q0 = Date.now();
-                if (writer) { await writer.write(buf); prof.write += Date.now() - q0; }
-                else if (s === 0) writeFileSync(out.includes('%') ? out.replace(/%0?(\d*)d/, (m, n) => String(f).padStart(parseInt(n || '1', 10), '0')) : join(out, `frame-${String(f).padStart(6, '0')}.png`), buf);
-              }
-              prevFrame = f;
-              done++;
-              progress();
-            }
-          }
-          if (writer) { open.push(writer); ending.push(writer.end().then(async () => { renameSync(tmpFile, file); open.splice(open.indexOf(writer), 1); if (whole && --whole.left === 0) await joinPieces(whole); })); }
+          if (writer) { open.push(writer); ending.push(writer.end().then(() => { renameSync(tmpFile, file); open.splice(open.indexOf(writer), 1); })); }
           // do not let more than two parts queue up behind the encoder
           if (ending.length > 2) { const q1 = Date.now(); await ending[ending.length - 3]; prof.end += Date.now() - q1; }
         } catch (e) {
@@ -499,7 +351,7 @@ export async function render(input, opts = {}) {
         await Promise.allSettled(ending);
         throw e;
       }
-      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms${prof.reopen ? `, reload ${prof.reopen}ms` : ''}${prof.reset ? `, paint reset ${prof.reset}ms` : ''} for ${frames} frames`);
+      if (process.env.GIVEMOTION_PROFILE) log(`  worker ${wi}: seek ${prof.seek}ms, capture ${prof.cap}ms, write ${prof.write}ms, encoder flush ${prof.end}ms for ${frames} frames`);
     }));
     const tLoop = Date.now();
     const pageErrors = pages.flatMap((p) => p.errors);
@@ -507,10 +359,10 @@ export async function render(input, opts = {}) {
     pages.length = 0;
     if (format !== 'png') {
       mkdirSync(dirname(out), { recursive: true });
-      const segments = parts ? parts.list.map((p) => p.file) : (auto ? ranges : groups.flat()).map((r) => r.file);
+      const segments = parts ? parts.list.map((p) => p.file) : groups.flat().map((r) => r.file);
       await finalize({ segments, listFile: join(tmp, 'list.txt'), out, format, duration: nFrames / fps, audio: media.audio.map((a) => ({ ...a, start: a.start - f0 / fps, end: a.end - f0 / fps })).filter((a) => a.end > 0).map((a) => (a.start < 0 ? { ...a, from: a.from + -a.start * a.rate, start: 0 } : a)), fps, plan, transparent });
       if (parts && keepParts) {
-        writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, sharedParts: parts.deps.sharedParts, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));
+        writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));
         // parts of an older, longer video
         for (const f of readdirSync(parts.dir)) if (/^part-\d+\./.test(f) && !parts.list.some((p) => basename(p.file) === f)) rmSync(join(parts.dir, f), { force: true });
       }
@@ -520,17 +372,14 @@ export async function render(input, opts = {}) {
     const summary = {
       output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
       seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode, encoder: plan ? plan.vargs[plan.vargs.indexOf('-c:v') + 1] : 'png',
-      motionBlur: blur.mode === 'auto' ? { mode: 'auto', frames: todoFrames, blurred: blurStats.blurred, samples: blurStats.samples, extraCaptures: blurStats.samples - blurStats.blurred, probeMs: blurStats.probeMs } : { mode: blur.mode, samples: blurSamples },
-      parts: keepParts ? { why: parts.why || null, total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
+      motionBlur: auto ? { mode: 'auto', frames: todoFrames, blurred: blurStats.blurred, elements: blurStats.samples } : { mode: blur.mode, samples: blurSamples },
+      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
       bytes: format === 'png' ? null : statSync(out).size,
       warnings: comp.issues.filter((i) => i.severity !== 'error'),
       pageErrors: dedupe(pageErrors),
     };
-    if (!opts.quiet && blur.mode === 'auto' && todoFrames) {
-      const pc = (x) => Math.round((x / todoFrames) * 100);
-      log(`  motion blur: ${blurStats.blurred} of ${todoFrames} frames (${pc(blurStats.blurred)}%) moved fast and got ${AUTO_BLUR.counts[0]}-${AUTO_BLUR.maxN} samples: +${blurStats.samples - blurStats.blurred} captures (+${pc(blurStats.samples - blurStats.blurred)}%), motion check ${(blurStats.probeMs / 1000).toFixed(1)}s (--motion-blur off to skip)`);
-    }
-    if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s (${summary.renderFps} fps${summary.parts ? `, ${summary.parts.reused} of ${summary.parts.total} parts reused from the last render` : ''}, ${reused} still frames copied) → ${relativeOut(out)}`);
+    if (!opts.quiet && auto && todoFrames) log(`  motion blur: ${blurStats.blurred} of ${todoFrames} frames (${Math.round((blurStats.blurred / todoFrames) * 100)}%) had fast moves, smeared in the same capture (--motion-blur off to skip)`);
+    if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s (${summary.renderFps} fps, ${reused} static frames reused) → ${relativeOut(out)}`);
     return summary;
   } finally {
     await Promise.all(pages.map((p) => p.close().catch(() => {})));
@@ -540,16 +389,31 @@ export async function render(input, opts = {}) {
 }
 
 /**
- * Runs inside the page (it is turned into a string). Seeks to each time in `times` (seconds, increasing) and returns, for
- * every time after the first, how far anything visible moved on screen since the time before, in CSS px: the largest
- * displacement of a point of an element's box that is inside the viewport, under the move+scale that takes the box from
- * one time to the next (so a camera pan, a zoom, a card sliding in or out all count; an element growing off screen does
- * not). Not motion: elements at opacity 0 or visibility hidden, and boxes that only moved because text or children
- * changed in that step (typing, counters, a caret: their layout box moved, not a transform). A seek the runtime reports
- * as not dirty changed nothing and costs no layout read. Every value is a function of the two times only.
+ * Auto motion blur. Runs inside the page (it is turned into a string and installed once per page). Seeks to time t for
+ * the frame capture that follows, and smears whatever moves fast at t, like a camera shutter open for `dt` seconds:
+ * every element that moves on its own (not just carried by a moving parent) gets an SVG blur along its move, as long
+ * as the distance it covers in `dt`. The browser draws it in the same capture, so a frame costs one capture as without
+ * blur, the smear is continuous (no stepped copies), and what does not move stays as sharp as before (a static title
+ * over a moving background, a HUD over a camera pan). The move is measured from the boxes at t - dt/2 and t (two
+ * forward seeks, so pages driven by timers work too) and doubled, so the result depends only on t.
+ * Not motion: boxes that only moved because text or children changed (typing, counters), elements at opacity 0, ones
+ * already softened by a CSS blur at least a quarter of the smear. A zoom (scale change) gets no smear, only the move of
+ * the element's centre does. An element is smeared only if it already is a stacking context (a transform, opacity,
+ * filter...), so the filter cannot change what draws over what or how it blends; 3D (preserve-3d) is left alone.
+ * Returns { dirty, needsReload, blurred }: dirty when the frame can differ from the frame before (also when the
+ * previous frame had a smear), blurred = number of elements smeared.
  */
-export async function motionProbe(times, shutter = 0.5) {
-  const SKIP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE', 'NOSCRIPT', 'BR', 'HEAD']);
+export async function velocityBlur(t, dt, o = {}) {
+  const MIN = o.min ?? 3, MAXN = o.maxEls ?? 48;
+  const st = window.__gmVB || (window.__gmVB = { els: [], svg: null });
+  const had = st.els.length > 0;
+  for (const [el, prev, prio] of st.els) { if (prev) el.style.setProperty('filter', prev, prio); else el.style.removeProperty('filter'); }
+  st.els = [];
+  if (st.svg) st.svg.replaceChildren();
+  const seek = async (x) => { let r = gm.seek(x); if (r && r.then) r = await r; return r || {}; };
+  // pages drawn by requestAnimationFrame code keep state between calls: an extra seek would change what they draw
+  if (!(dt > 0) || t - dt / 2 <= 0 || (gm.__usesRAF && gm.__usesRAF())) { const r = await seek(t); return { dirty: !!r.dirty || had, needsReload: !!r.needsReload, blurred: 0 }; }
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE', 'NOSCRIPT', 'BR', 'HEAD', 'DEFS', 'FILTER', 'CLIPPATH', 'MASK', 'LINEARGRADIENT', 'RADIALGRADIENT', 'STOP', 'TSPAN', 'SYMBOL', 'MARKER', 'PATTERN']);
   const W = innerWidth, H = innerHeight;
   const all = document.getElementsByTagName('*');
   // the layout box (no transforms) of the nearest HTML element, in page coordinates
@@ -564,71 +428,153 @@ export async function motionProbe(times, shutter = 0.5) {
     memo.set(h, v);
     return v;
   };
-  const snap = () => {
-    const rects = new Map(), lay = new Map(), memo = new Map();
+  const snap = (lay) => {
+    const m = new Map(), memo = new Map();
     for (let i = 0; i < all.length; i++) {
       const el = all[i];
-      if (SKIP.has(el.tagName) || el === document.documentElement || el === document.body) continue;
+      if (SKIP.has(el.tagName.toUpperCase()) || el === document.documentElement || el === document.body || el === st.svg) continue;
       const r = el.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) { rects.set(el, r); lay.set(el, layoutOf(el, memo)); }
+      if (r.width > 0 && r.height > 0) { m.set(el, r); if (lay) lay.set(el, layoutOf(el, memo)); }
     }
-    return { rects, lay };
+    return m;
   };
-  // largest |x' - x| over the visible part of a 1-D interval mapped from [a0,a1] (before) to [b0,b1] (after)
-  const along = (a0, a1, b0, b1, size) => {
-    const s = (b1 - b0) / (a1 - a0);
-    let best = 0;
-    const lo = Math.max(a0, 0), hi = Math.min(a1, size);
-    if (hi >= lo) for (const x of [lo, hi]) best = Math.max(best, Math.abs(b0 + (x - a0) * s - x));
-    const lo2 = Math.max(b0, 0), hi2 = Math.min(b1, size);
-    if (hi2 >= lo2) for (const x of [lo2, hi2]) best = Math.max(best, Math.abs(x - (a0 + (x - b0) / s)));
-    return best;
-  };
-  const seen = (r) => r.right > 0 && r.bottom > 0 && r.left < W && r.top < H;
-  const same = (p, q) => p === q || (!!p && !!q && p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3]);
-  const compare = (prev, cur, reflow) => {
-    const moved = [];
-    for (const [el, b] of cur.rects) {
-      const a = prev.rects.get(el);
-      if (!a || (a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height)) continue;
-      if (!seen(a) && !seen(b)) continue;
-      if (reflow && !same(prev.lay.get(el), cur.lay.get(el))) continue;
-      const d = Math.hypot(along(a.left, a.right, b.left, b.right, W), along(a.top, a.bottom, b.top, b.bottom, H));
-      if (d > 0.5) moved.push([d, el]);
-    }
-    moved.sort((x, y) => y[0] - x[0]);
-    for (const [d, el] of moved) if (shows(el, d)) return Math.round(d * 100) / 100;
-    return 0;
-  };
-  // does motion of d px on this element show? Not when it is (nearly) transparent or already as soft as the blur would
-  // make it (a CSS blur on it or around it)
-  const shows = (el, d) => {
-    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
-    let alpha = 1, soft = 0;
-    for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
-      const cs = getComputedStyle(e);
-      alpha *= parseFloat(cs.opacity);
-      if (cs.filter && cs.filter !== 'none') for (const m of cs.filter.matchAll(/blur\(([\d.]+)px\)/g)) soft += parseFloat(m[1]);
-    }
-    return alpha >= 0.2 && soft < (d * shutter) / 4;
-  };
+  const r0 = await seek(t - dt / 2);
+  const layA = new Map(), layB = new Map();
+  const A = snap(layA);
   const mo = new MutationObserver(() => {});
   mo.observe(document.documentElement, { subtree: true, childList: true, characterData: true });
-  const out = [];
-  let prev = null;
-  try {
-    for (let k = 0; k < times.length; k++) {
-      let r = gm.seek(times[k]);
-      if (r && r.then) r = await r;
-      const reflow = mo.takeRecords().length > 0;
-      if (k === 0) { prev = snap(); continue; }
-      if (!r || !r.dirty) { out.push(0); continue; }
-      const cur = snap();
-      out.push(compare(prev, cur, reflow));
-      prev = cur;
+  let r1, reflow = false;
+  try { r1 = await seek(t); } finally { reflow = mo.takeRecords().length > 0; mo.disconnect(); }
+  // when text or children changed, boxes whose layout moved are not motion (layout boxes read only then)
+  const B = snap(reflow ? layB : null);
+  const seen = (q) => q.right > 0 && q.bottom > 0 && q.left < W && q.top < H;
+  const parentOf = (el) => { for (let p = el.parentElement; p; p = p.parentElement) if (A.has(p) && B.has(p)) return p; return null; };
+  const cand = [];
+  for (const [el, b] of B) {
+    const a = A.get(el);
+    if (!a || (a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height)) continue;
+    if (!seen(a) && !seen(b)) continue;
+    if (reflow) { const p = layA.get(el), q = layB.get(el); if (!(p === q || (p && q && p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3]))) continue; }
+    // own move: where the centre went, against where the parent's move+scale would have taken it
+    const ca = [(a.left + a.right) / 2, (a.top + a.bottom) / 2];
+    let px = ca[0], py = ca[1], psx = 1, psy = 1;
+    const p = parentOf(el);
+    if (p) {
+      const pa = A.get(p), pb = B.get(p);
+      psx = pb.width / pa.width; psy = pb.height / pa.height;
+      px = pb.left + (ca[0] - pa.left) * psx;
+      py = pb.top + (ca[1] - pa.top) * psy;
     }
-  } finally { mo.disconnect(); }
-  return out;
+    const cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
+    const vx = 2 * (cx - px), vy = 2 * (cy - py);
+    const L = Math.hypot(vx, vy);
+    // own zoom: how far the farthest visible point of the box moves while the shutter is open
+    const ex = Math.max(Math.abs(Math.max(0, b.left) - cx), Math.abs(Math.min(W, b.right) - cx));
+    const ey = Math.max(Math.abs(Math.max(0, b.top) - cy), Math.abs(Math.min(H, b.bottom) - cy));
+    const zx = 2 * Math.abs(b.width / a.width / psx - 1) * ex, zy = 2 * Math.abs(b.height / a.height / psy - 1) * ey, Z = Math.max(zx, zy);
+    // a smear costs about in proportion to the area it covers on screen: a big element (a camera world, a whole
+    // scene) needs a longer smear (up to 4x) before it is drawn
+    const area = (Math.max(0, Math.min(W, b.right) - Math.max(0, b.left)) * Math.max(0, Math.min(H, b.bottom) - Math.max(0, b.top))) / (W * H);
+    const min = MIN * (1 + 3 * area);
+    if (L >= min || Z >= 4 * min) cand.push({ el, vx, vy, L, zx: Z >= 4 * min ? zx : 0, zy: Z >= 4 * min ? zy : 0, Z: Z >= 4 * min ? Z : 0, b, w: Math.max(L, Z / 2) * Math.sqrt(area) });
+  }
+  cand.sort((x, y) => y.w - x.w);
+  const ns = 'http://www.w3.org/2000/svg';
+  const num = (x) => String(Math.round(x * 1000) / 1000);
+  const linear = (s) => {
+    let m = new DOMMatrix();
+    if (s.transform && s.transform !== 'none') { const q = new DOMMatrix(s.transform); m = new DOMMatrix([q.a, q.b, q.c, q.d, 0, 0]); }
+    if (s.scale && s.scale !== 'none') { const v = s.scale.split(/\s+/).map(parseFloat); m = new DOMMatrix().scale(v[0], v.length > 1 ? v[1] : v[0]).multiply(m); }
+    const rot = s.rotate && /^(?:(?:z|0 0 1)\s+)?(-?[\d.]+)deg$/.exec(s.rotate.trim()); // (a 3D rotate is left out)
+    if (rot) m = new DOMMatrix().rotate(parseFloat(rot[1])).multiply(m);
+    return m;
+  };
+  let n = 0;
+  for (const c of cand) {
+    if (n >= MAXN) break;
+    const el = c.el, svgChild = el instanceof SVGElement && !(el instanceof SVGSVGElement);
+    const cs = getComputedStyle(el);
+    if (cs.transformStyle === 'preserve-3d' || cs.mixBlendMode !== 'normal') continue;
+    if (svgChild) { let e = el.parentElement; while (e && !SKIP.has(e.tagName.toUpperCase())) e = e.parentElement; if (e) continue; } // in a clip path, mask, symbol...
+    if (!svgChild) {
+      const stacking = cs.transform !== 'none' || cs.translate !== 'none' || cs.rotate !== 'none' || cs.scale !== 'none' || cs.filter !== 'none' || parseFloat(cs.opacity) < 1 ||
+        (cs.position !== 'static' && cs.zIndex !== 'auto') || cs.position === 'fixed' || cs.position === 'sticky' || cs.isolation === 'isolate' || /transform|opacity|filter/.test(cs.willChange);
+      if (!stacking) continue;
+    }
+    if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    // the element's own units (its transforms and its parents'), and how soft it already is
+    let m = new DOMMatrix(), soft = 0, alpha = 1, ox = c.b.left, oy = c.b.top;
+    for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+      const s = e === el ? cs : getComputedStyle(e);
+      alpha *= parseFloat(s.opacity);
+      if (s.filter && s.filter !== 'none') for (const g of s.filter.matchAll(/blur\(([\d.]+)px\)/g)) soft += parseFloat(g[1]);
+      if (!svgChild && !(e instanceof SVGElement && !(e instanceof SVGSVGElement))) m = linear(s).multiply(m);
+    }
+    if (svgChild) {
+      const q = el.getScreenCTM && el.getScreenCTM();
+      if (!q) continue;
+      m = new DOMMatrix([q.a, q.b, q.c, q.d, 0, 0]); ox = q.e; oy = q.f;
+    }
+    if (alpha < 0.05 || soft * 4 >= Math.max(c.L, c.Z / 2)) continue;
+    const inv = m.inverse();
+    const ux = inv.a * c.vx + inv.c * c.vy, uy = inv.b * c.vx + inv.d * c.vy;
+    // a zoom (or a box growing along one axis) adds a blur along each axis of about half the smear its edges get (the
+    // centre of a zoom stays sharper in a real camera; a filter cannot vary across the element)
+    const Lu = Math.hypot(ux, uy), zs = 0.145 * Math.sqrt(Math.abs(inv.a * inv.d - inv.b * inv.c)), zux = zs * c.zx, zuy = zs * c.zy;
+    if (!(Lu > 0 || c.Z > 0) || !isFinite(Lu) || !isFinite(zs)) continue;
+    if (!st.svg) {
+      st.svg = document.createElementNS(ns, 'svg');
+      st.svg.setAttribute('aria-hidden', 'true');
+      st.svg.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;overflow:hidden;pointer-events:none';
+      document.body.appendChild(st.svg);
+    }
+    const f = document.createElementNS(ns, 'filter');
+    const id = 'gm-mblur-' + n;
+    f.setAttribute('id', id);
+    f.setAttribute('color-interpolation-filters', 'sRGB');
+    // a box of length L along the move has the spread of a gaussian with sigma L/sqrt(12). Straight moves (close to
+    // horizontal or vertical) get that along their axis. A gaussian can only spread along the element's axes, so a
+    // diagonal move first averages 2-8 copies spaced evenly along it (each halving step doubles them), then a gaussian
+    // half the spacing wide melts the copies into one even smear (no steps)
+    let src = 'SourceGraphic', k = 0.289;
+    if (Lu > 0 && Math.min(Math.abs(ux), Math.abs(uy)) > 0.38 * Lu) {
+      const lv = Math.max(1, Math.min(3, Math.ceil(Math.log2(c.L / 8))));
+      for (let i = 0; i < lv; i++) {
+        const d = 1 / 2 ** (i + 2), a1 = document.createElementNS(ns, 'feOffset'), a2 = document.createElementNS(ns, 'feOffset'), mix = document.createElementNS(ns, 'feComposite');
+        a1.setAttribute('in', src); a1.setAttribute('dx', num(ux * d)); a1.setAttribute('dy', num(uy * d)); a1.setAttribute('result', 'a' + i);
+        a2.setAttribute('in', src); a2.setAttribute('dx', num(-ux * d)); a2.setAttribute('dy', num(-uy * d)); a2.setAttribute('result', 'b' + i);
+        mix.setAttribute('in', 'a' + i); mix.setAttribute('in2', 'b' + i); mix.setAttribute('operator', 'arithmetic');
+        mix.setAttribute('k2', '0.5'); mix.setAttribute('k3', '0.5'); mix.setAttribute('result', 'c' + i);
+        f.append(a1, a2, mix);
+        src = 'c' + i;
+      }
+      k = 0.71 / 2 ** lv; // sigma along the move = half the spacing of the copies (L / 2^lv)
+    }
+    const g = document.createElementNS(ns, 'feGaussianBlur');
+    g.setAttribute('in', src);
+    const sx = Math.hypot(k * ux, zux), sy = Math.hypot(k * uy, zuy);
+    g.setAttribute('stdDeviation', `${num(sx)} ${num(sy)}`);
+    f.append(g);
+    // region: what shows (the viewport, in the element's units) plus the reach of the smear: content just outside the
+    // viewport smears into it. Drawing the filter costs in proportion to this area, so it is kept tight (a camera world
+    // can be much bigger than the screen). Rotated or flipped elements get a viewport of margin instead.
+    f.setAttribute('filterUnits', 'userSpaceOnUse');
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [qx, qy] of [[0, 0], [W, 0], [0, H], [W, H]]) {
+      const lx = inv.a * (qx - ox) + inv.c * (qy - oy), ly = inv.b * (qx - ox) + inv.d * (qy - oy);
+      x0 = Math.min(x0, lx); y0 = Math.min(y0, ly); x1 = Math.max(x1, lx); y1 = Math.max(y1, ly);
+    }
+    const loose = !svgChild && (Math.abs(m.b) + Math.abs(m.c) > 1e-6 || m.a < 0 || m.d < 0);
+    const mx = (loose ? x1 - x0 : 0) + Math.abs(ux) / 2 + 3 * sx + 2, my = (loose ? y1 - y0 : 0) + Math.abs(uy) / 2 + 3 * sy + 2;
+    f.setAttribute('x', num(x0 - mx)); f.setAttribute('y', num(y0 - my)); f.setAttribute('width', num(x1 - x0 + 2 * mx)); f.setAttribute('height', num(y1 - y0 + 2 * my));
+    st.svg.appendChild(f);
+    const prev = el.style.getPropertyValue('filter'), prio = el.style.getPropertyPriority('filter');
+    // !important: above the page's own filter animations, which are kept (the smear is added after them)
+    el.style.setProperty('filter', (cs.filter !== 'none' ? cs.filter + ' ' : '') + `url(#${id})`, 'important');
+    st.els.push([el, prev, prio]);
+    n++;
+  }
+  return { dirty: !!(r0.dirty || r1.dirty) || had || n > 0, needsReload: !!(r0.needsReload || r1.needsReload), blurred: n };
 }
 
 const hashOf = (s) => createHash('sha1').update(s).digest('hex').slice(0, 20);
@@ -644,12 +590,21 @@ function engineHash() {
 }
 
 /**
- * Split the work between workers: the ranges (parts, or the pieces of a single range) are grouped into runs of
- * neighbours with about the same number of frames.
+ * Split the work between workers. Whole parts (useParts) are grouped into runs of neighbours with about the same number
+ * of frames; a single range (--frames, png) is cut into one chunk per worker, as before.
  */
-function splitRanges(ranges, workers) {
+function splitRanges(ranges, workers, useParts, tmp, plan) {
   const total = ranges.reduce((s, r) => s + r.b - r.a, 0);
   if (!total) return [];
+  if (!useParts) {
+    const { a: f0, b: f1, file } = ranges[0];
+    const per = Math.ceil(total / workers), out = [];
+    for (let i = 0; i < workers; i++) {
+      const a = f0 + i * per, b = Math.min(f1, a + per);
+      if (a < b) out.push([{ a, b, file: file ? join(tmp, `seg${String(i).padStart(3, '0')}.${plan.segExt}`) : null }]);
+    }
+    return out;
+  }
   const groups = [];
   let cur = [], n = 0, left = total, wLeft = workers;
   for (const r of ranges) {
@@ -683,20 +638,7 @@ async function dependencyPrints(ctx) {
     try { const st = statSync(f); return p + ':' + (st.size > 64 * 1024 * 1024 ? st.size + '-' + st.mtimeMs : hashOf(readFileSync(f))); } catch { return p + ':missing'; }
   });
   const units = (c) => c.units.map((u) => ({ fp: hashOf(u.print), t: +u.t.toFixed(6), end: u.end == null ? null : +u.end.toFixed(6), name: u.name }));
-  const sharedParts = r.sharedParts ? { ...r.sharedParts, files: hashOf(fileHash.join('\n')) } : null;
-  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), sharedParts, clips: r.clips.map((c) => ({ fp: hashOf(c.print), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name, units: units(c) })), fine: r.fine };
-}
-
-/** Why every part is redone when the shared print changed: which piece of it changed, in words. */
-function sharedWhy(o, n) {
-  if (!o || !n) return 'shared code, styles or files changed';
-  const what = [];
-  if (o.scripts !== n.scripts) what.push('a script changed (a script can change any frame, so every part is redone; edits to the HTML inside one scene only redo that scene)');
-  if (o.styles !== n.styles) what.push('a style changed');
-  if (o.page !== n.page) what.push('the HTML outside the scenes changed');
-  if (o.files !== n.files) what.push('a file the page loads changed');
-  if (!what.length && o.live !== n.live) what.push('the page came out different after loading (scripts that build elements, camera fits)');
-  return what.length ? what.join('; ') : 'shared code, styles or files changed';
+  return { shared: hashOf(r.shared + '\n' + fileHash.join('\n')), clips: r.clips.map((c) => ({ fp: hashOf(c.print), start: +c.start.toFixed(6), end: +c.end.toFixed(6), name: c.name, units: units(c) })), fine: r.fine };
 }
 
 /** Only the soundtrack: `render comp.html -o sound.mp3` (also .wav .m4a .ogg .flac) */

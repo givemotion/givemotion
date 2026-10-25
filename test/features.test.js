@@ -1261,3 +1261,140 @@ test('blocks: cursor aims at a point inside its target (@x,y and aim=); browser-
   assert.equal(v.bar, 'rgb(10, 20, 30)'); assert.equal(v.text, 'rgb(200, 100, 0)');
   assert.ok(Math.abs(v.size - 36 * px) < 0.1, 'url size ' + v.size);
 });
+
+// check fixes (r10)
+const codesOf = (rep, code) => rep.issues.filter((i) => i.code === code).map((i) => i.selector);
+
+test('check (r10): text-over-line skips text whose card, sketch fill or ::before scrim is painted over the line (also under pointer-events:none lines)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>.scrim{position:absolute;isolation:isolate}.scrim::before{content:'';position:absolute;inset:-20px -30px;background:radial-gradient(closest-side,rgba(17,17,17,.95),rgba(17,17,17,.6) 60%,transparent);z-index:-1}</style>
+    <div data-duration="2">
+    <svg viewBox="0 0 640 360" style="position:absolute;inset:0;width:640px;height:360px"><line x1="0" y1="80" x2="640" y2="80" stroke="#888" stroke-width="4"/><line x1="0" y1="290" x2="640" y2="290" stroke="#888" stroke-width="4"/></svg>
+    <svg viewBox="0 0 640 360" style="position:absolute;inset:0;width:640px;height:360px;pointer-events:none"><line x1="0" y1="185" x2="640" y2="185" stroke="#3af" stroke-width="4"/></svg>
+    <div style="position:absolute;left:20px;top:56px;padding:6px 12px;background:rgba(24,42,66,0.94)"><p id="carded" style="margin:0;font-size:30px">On its card</p></div>
+    <p id="bare" style="position:absolute;left:380px;top:62px;margin:0;font-size:30px">Crossed</p>
+    <div style="position:absolute;left:40px;top:140px;z-index:5"><svg width="240" height="90" viewBox="0 0 240 90" style="display:block"><path d="M3 3 H237 V87 H3 Z" fill="#fff" stroke="#3af" stroke-width="4"/></svg><p id="rider" style="position:absolute;left:20px;top:28px;margin:0;font-size:30px;color:#123">&lt;html&gt;</p></div>
+    <div class="scrim" style="left:380px;top:270px"><b id="count" style="font-size:36px">1,864</b></div></div>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rep = await check(f);
+  assert.deepEqual(codesOf(rep, 'text-over-line'), ['#bare']);
+});
+
+test('check (r10): straight-move judges motion in camera-world space (a static SVG group is not blamed for a camera zoom/pan)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="3"><div id="world" style="position:absolute;left:0;top:0;width:2000px;height:1200px">
+    <svg width="2000" height="1200" viewBox="0 0 2000 1200" style="position:absolute;left:0;top:0"><g id="hub" style="transform:translate(0px,0px)"><rect x="900" y="500" width="200" height="200" fill="#4a8"/></g><rect x="1500" y="900" width="200" height="150" fill="#a84"/></svg></div></section>
+    <script>gm.camera('#world').shot(0, { fit: { x: 0, y: 0, w: 2000, h: 1125 } }).shot(0.6, { fit: { x: 1300, y: 800, w: 480, h: 270 }, duration: 1.6, ease: 'linear' });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const rep = await check(f);
+  assert.deepEqual(codesOf(rep, 'straight-move'), []);
+});
+
+test('check (r10): text-offscreen: a title cut by the frame edge in a camera shot at rest is found (even mostly out); text riding a fast push is not an error', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), g = join(d, 'b.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="5"><div id="world" style="position:absolute;left:0;top:0;width:1400px;height:800px">
+    <h1 id="title" style="position:absolute;left:60px;top:40px;margin:0;font-size:36px;white-space:nowrap">How a web request works</h1>
+    <div style="position:absolute;left:400px;top:120px;width:150px;height:100px;background:#345"></div><h2 id="lab" style="position:absolute;left:420px;top:240px;margin:0;font-size:22px">1. You type a URL</h2></div></section>
+    <script>gm.camera('#world').shot(0, { fit: ['#title'], padding: 40 }).shot(1.5, { fit: { x: 330, y: 30, w: 480, h: 270 }, duration: 1 });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="5"'));
+  const rep = await check(f);
+  assert.ok(rep.issues.some((i) => i.code === 'text-offscreen' && i.selector === '#title' && i.time >= 2.4), JSON.stringify(rep.issues.map((i) => [i.code, i.selector, i.time])));
+  writeFileSync(g, page(`<div data-duration="4" style="position:absolute;inset:0;overflow:hidden">
+    <div id="p1" style="position:absolute;left:0;top:0;width:640px;height:360px;background:#234"><h2 style="position:absolute;left:40px;top:150px;margin:0;font-size:40px;white-space:nowrap">One-click deploy for everyone</h2></div>
+    <div id="p2" style="position:absolute;left:0;top:0;width:640px;height:360px;background:#432"><h2 style="position:absolute;left:40px;top:150px;margin:0;font-size:40px;white-space:nowrap">Ship it in one click today</h2></div></div>
+    <script>gm.timeline().fromTo('#p2', { x: 640 }, { x: 0, duration: 0.5, ease: 'in-out-cubic' }, 1.5).to('#p1', { x: -640, duration: 0.5, ease: 'in-out-cubic' }, 1.5);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"'));
+  const rep2 = await check(g);
+  assert.deepEqual(rep2.issues.filter((i) => i.code === 'text-offscreen'), []);
+});
+
+test('check (r10): data-check="overlap-ok" silences text-covered/text-overlap for an intended pile, nothing else', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  const pile = (attr) => page(`<div data-duration="2"><div id="pile" ${attr}>${[0, 1, 2, 3].map((i) => `<div class="card" style="position:absolute;left:${60 + i * 50}px;top:${80 + i * 18}px;width:200px;padding:10px;background:#2a3f5f;font-size:24px">Task number ${i + 1}</div>`).join('')}</div>
+    <p id="stuck" style="position:absolute;left:560px;top:300px;margin:0;font-size:30px;white-space:nowrap">Off the edge</p></div>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"');
+  writeFileSync(f, pile(''));
+  const rep = await check(f);
+  assert.ok(rep.issues.some((i) => i.code === 'text-covered' || i.code === 'text-overlap'), 'the pile is reported without overlap-ok');
+  writeFileSync(f, pile('data-check="overlap-ok"'));
+  const rep2 = await check(f);
+  assert.deepEqual(rep2.issues.filter((i) => /^(text-covered|text-overlap|moving-overlap|text-over-line)$/.test(i.code)), []);
+  assert.ok(rep2.issues.some((i) => i.code === 'text-offscreen'), 'other checks still run');
+});
+
+test('check (r10): moving-overlap when an exit and the next entrance overlap, both readable; not for a crossfade', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<div data-duration="3">
+    <h1 id="old" style="position:absolute;left:60px;top:60px;margin:0;font-size:44px">Your workflow</h1>
+    <h1 id="new" style="position:absolute;left:80px;top:64px;margin:0;font-size:44px">Copy. Paste.</h1>
+    <h1 id="fa" style="position:absolute;left:60px;top:220px;margin:0;font-size:44px">Before</h1>
+    <h1 id="fb" style="position:absolute;left:70px;top:224px;margin:0;font-size:44px">After it</h1></div>
+    <script>gm.timeline().to('#old', { y: -20, opacity: 0, duration: 1, ease: 'linear' }, 1).from('#new', { y: 40, opacity: 0, duration: 0.2, ease: 'linear' }, 1)
+      .fromTo('#fa', { opacity: 1 }, { opacity: 0, duration: 0.6, ease: 'linear' }, 1).fromTo('#fb', { opacity: 0 }, { opacity: 1, duration: 0.6, ease: 'linear' }, 1);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const rep = await check(f);
+  const mo = rep.issues.filter((i) => i.code === 'moving-overlap');
+  assert.equal(mo.length, 1, JSON.stringify(mo));
+  assert.ok(['#old', '#new'].includes(mo[0].selector));
+});
+
+test('check (r10): overlap tests honor clip-path (two scenes clipped to opposite sides of a slanted wipe)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  const half = (id, poly, txt) => `<div style="position:absolute;inset:0;clip-path:polygon(${poly})"><h1 id="${id}" style="position:absolute;left:0;right:0;top:140px;margin:0;text-align:center;font-size:60px">${txt}</h1></div>`;
+  writeFileSync(f, page(`<div data-duration="2">${half('l', '0px 0px, 340px 0px, 300px 360px, 0px 360px', '214 km')}${half('r', '340px 0px, 640px 0px, 640px 360px, 300px 360px', '0 km run')}</div>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rep = await check(f);
+  assert.deepEqual(rep.issues.filter((i) => /overlap/.test(i.code)), []);
+  writeFileSync(f, page(`<div data-duration="2">${half('l', '0px 0px, 640px 0px, 640px 360px, 0px 360px', '214 km')}${half('r', '0px 0px, 640px 0px, 640px 360px, 0px 360px', '0 km run')}</div>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rep2 = await check(f);
+  assert.ok(rep2.issues.some((i) => i.code === 'text-overlap'), 'unclipped overlap is still found');
+});
+
+test('check (r10): low-contrast uses the WCAG large-text target (24 px+, bold 18.66 px+) and gives the same verdict to the same colors on the same backing', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>.c{position:absolute;width:150px;height:70px;background:#182A42;top:40px}.c p{margin:8px;font-size:7px;color:#6a7a90}</style><div data-duration="3">
+    <p id="big" style="position:absolute;left:20px;top:200px;margin:0;font-size:10px;color:#6b6b6b">Large grey text here</p>
+    <p id="small" style="position:absolute;left:20px;top:260px;margin:0;font-size:7px;color:#6b6b6b">Small grey text here</p>
+    <div class="c" id="c1" style="left:10px"><p>Card one body</p></div>
+    <div class="c" id="c2" style="left:170px" data-start="1" data-duration="1"><p>Card two body</p></div>
+    <div class="c" id="c3" style="left:330px" data-start="1.5" data-duration="1"><p>Card three body</p></div></div>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const rep = await check(f, { contrastSamples: 1 });
+  const lc = codesOf(rep, 'low-contrast').sort();
+  assert.deepEqual(lc, ['#c1 > p', '#c2 > p', '#c3 > p', '#small']);
+});
+
+test('check (r10): css-scale-vs-tween when CSS scale and a timeline scale tween multiply; snapshot --times keeps only times inside --from/--to', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>.chk{scale:0}.ok{translate:-50% 0}</style><div data-duration="2"><div id="c" class="chk" style="position:absolute;left:100px;top:100px;width:60px;height:60px;background:#4a8"></div>
+    <div id="m" class="ok" style="position:absolute;left:300px;top:100px;width:60px;height:60px;background:#48a"></div></div>
+    <script>gm.timeline().to('#c', { scale: 1, duration: 0.3 }, 0.5).to('#m', { x: 40, scale: 1.2, duration: 0.3 }, 0.5);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rep = await check(f);
+  assert.deepEqual(codesOf(rep, 'css-scale-vs-tween'), ['#c']);
+  const { snapshot } = await import('../src/api.js');
+  const s = await snapshot(f, { times: '0.2,1.2,1.6', from: 1, to: 1.5, output: join(d, 'snaps') });
+  assert.deepEqual(s.times, [1.2]);
+});
+
+test('check (r10): world text under a caption band outside the camera world is text-covered; a camera that zooms in and straight back out is not a camera-stop', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), g = join(d, 'b.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2"><div id="world" style="position:absolute;left:0;top:0;width:1200px;height:700px">
+    <div style="position:absolute;left:100px;top:100px;width:300px;height:150px;background:#345"></div>
+    <p id="half" style="position:absolute;left:120px;top:342px;margin:0;font-size:24px;white-space:nowrap">Half under the caption</p>
+    <p id="full" style="position:absolute;left:420px;top:368px;margin:0;font-size:24px;white-space:nowrap">Fully under it</p></div>
+    <div id="cap" style="position:absolute;left:0;right:0;bottom:0;height:60px;background:#222;font-size:20px;padding:10px">Caption band</div></section>
+    <script>gm.camera('#world').shot(0, { fit: { x: 80, y: 0, w: 640, h: 360 } });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const rep = await check(f);
+  assert.deepEqual(codesOf(rep, 'text-covered').sort(), ['#full', '#half']);
+  writeFileSync(g, page(`<section class="scene" data-duration="5"><div id="world" style="position:absolute;left:0;top:0;width:1000px;height:567px">
+    <div style="position:absolute;left:66px;top:66px;width:133px;height:100px;background:#345"></div><div id="b" style="position:absolute;left:433px;top:233px;width:133px;height:100px;background:#345"></div>
+    <div style="position:absolute;left:800px;top:400px;width:133px;height:100px;background:#345"></div></div></section>
+    <script>gm.camera('#world').shot(0, { fit: 'content', padding: 20 }).shot(1.9, { fit: '#b', padding: 66, duration: 0.9 }).shot(2.9, { fit: 'content', padding: 20, duration: 1.4 });</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="5"'));
+  const rep2 = await check(g);
+  assert.deepEqual(codesOf(rep2, 'camera-stop'), []);
+});
+
+test('render (r10): when a script edit makes every part redo, the summary and log say so', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html'), out = join(d, 'out', 'v.mp4');
+  const pg = (x) => page(`<div data-duration="1"><b id="x" style="display:block;font-size:40px">Hi</b></div><script>gm.timeline().to('#x', { x: ${x}, duration: 0.5 }, 0);</script>`, 'data-width="160" data-height="90" data-fps="30"');
+  writeFileSync(f, pg(20));
+  await render(f, { output: out, ...quiet });
+  writeFileSync(f, pg(30));
+  const logs = [];
+  const r = await render(f, { output: out, log: (m) => logs.push(m) });
+  assert.equal(r.parts.reused, 0);
+  assert.match(r.parts.why, /a script changed/);
+  assert.ok(logs.some((l) => /redoing every part: a script changed/.test(l)), logs.join('\n'));
+});

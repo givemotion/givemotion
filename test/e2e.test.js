@@ -142,7 +142,7 @@ test('every block renders without errors', { skip }, async () => {
 });
 
 test('examples pass check', { skip }, async () => {
-  for (const ex of ['product-promo', 'data-story', 'vertical-short', 'code-explainer', 'generative', 'personalized', 'bench']) {
+  for (const ex of ['data-story', 'generative', 'personalized', 'bench']) {
     const rep = await check(join(ROOT, 'examples', ex, 'index.html'));
     assert.equal(rep.errors, 0, `${ex}: ${JSON.stringify(rep.issues.filter((i) => i.severity === 'error'))}`);
   }

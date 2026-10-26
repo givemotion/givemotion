@@ -24,8 +24,8 @@ their own.
 
 ### Example media
 
-The music, logos, images and data in `examples/` and `docs/media/` were made for this project and are covered by
-the MIT license in `LICENSE`. The brands in the examples ("Flowline", the coffee shop) are made up.
+The compositions and data in `examples/` and the animations in `docs/media/` were made for this project and are
+covered by the MIT license in `LICENSE`. The repository ships no music or other audio.
 
 ## Optional npm dependencies (not bundled, installed only if present)
 

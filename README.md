@@ -18,7 +18,7 @@ If you are looking for a **free, open-source way to make videos with code**, to 
 </p>
 
 *All three were made by a Claude agent from a one-paragraph brief, using only this project's docs.
-They are in [`examples/`](examples).*
+The data story is in [`examples/data-story`](examples/data-story); more compositions are in [`examples/`](examples).*
 
 ---
 
@@ -355,7 +355,7 @@ trust, read [SECURITY.md](SECURITY.md) first. Report security problems privately
 ## License
 
 MIT. Use it, change it, fork it, sell what you make with it. Chrome and ffmpeg are installed separately under
-their own licenses. The example music and images were made for this project and are MIT too. The bundled fonts
+their own licenses. The examples and the animations in this README were made for this project and are MIT too. The bundled fonts
 (Inter, JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Caveat) are under the SIL Open Font License
 (license files in `src/runtime/fonts/`). Everything third-party is listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

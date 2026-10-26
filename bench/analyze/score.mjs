@@ -32,13 +32,10 @@ const CASES = [
   { name: 'shared-gradient', file: 'bench/analyze/cases/shared-gradient.html' },
   { name: 'busy-bg', file: 'bench/analyze/cases/busy-bg.html' },
   { name: 'camera-in-shot', file: 'bench/analyze/cases/camera-in-shot.html' },
-  { name: 'vertical-short', file: 'examples/vertical-short/index.html' },
-  { name: 'product-promo', file: 'examples/product-promo/index.html' },
   { name: 'held-other', file: 'bench/analyze/cases/held-other.html', held: true },
   { name: 'held-busy', file: 'bench/analyze/cases/held-busy.html', held: true },
   { name: 'held-vertical', file: 'bench/analyze/cases/held-vertical.html', held: true },
   { name: 'data-story', file: 'examples/data-story/index.html', held: true },
-  { name: 'code-explainer', file: 'examples/code-explainer/index.html', held: true },
   { name: 'photosynthesis', file: 'examples/made-by-agents/photosynthesis/index.html', held: true },
 ];
 

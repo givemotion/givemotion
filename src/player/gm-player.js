@@ -36,7 +36,7 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
   };
   const fmt = (s) => { s = Math.max(0, s); const m = Math.floor(s / 60); return m + ':' + String(Math.floor(s % 60)).padStart(2, '0'); };
 
-  class MwPlayer extends HTMLElement {
+  class GmPlayer extends HTMLElement {
     static get observedAttributes() { return ['src', 'controls', 'muted', 'data', 'rate']; }
     constructor() {
       super();
@@ -171,5 +171,5 @@ input[type=range]{flex:1;accent-color:#fff;height:4px;cursor:pointer}
     }
     toggle() { this._paused ? this.play() : this.pause(); }
   }
-  customElements.define('gm-player', MwPlayer);
+  customElements.define('gm-player', GmPlayer);
 })();

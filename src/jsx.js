@@ -34,7 +34,7 @@ export async function jsxPage(file) {
   const r = await compileJsx(file);
   const esc = (s) => s.replace(/<\/script/gi, '<\\/script');
   if (r.error) {
-    const msg = JSON.stringify('JSX compile error:\n' + r.error);
+    const msg = JSON.stringify('JSX compile error:\n' + r.error).replace(/</g, '\\u003c');
     return `<!doctype html><html data-duration="1"><head><meta charset="utf-8"></head><body><pre style="color:#f55;font:20px monospace;white-space:pre-wrap;padding:30px">${r.error.replace(/</g, '&lt;')}</pre><script>window.gm && gm.__report('error','jsx-compile',${msg},null,'Fix the code at the line shown.');</script></body></html>`;
   }
   return `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="display:contents"></div><script>${esc(r.js)}</script></body></html>`;

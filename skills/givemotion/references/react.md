@@ -6,6 +6,7 @@ A composition can be a React component in a `.jsx` (or `.tsx`) file. The engine 
 everything in SKILL.md (clips, sequences, transitions, `data-enter`, `data-camera`, `data-morph`, `gm.timeline`,
 audio, check, snapshot, render) works, because React just renders normal HTML elements with those attributes.
 Run every command on the `.jsx` file: `npx givemotion check video.jsx`, `snapshot video.jsx`, `render video.jsx -o out.mp4`.
+React and the JSX compiler are not installed with givemotion; add them to the project once: `npm i -D esbuild react react-dom`.
 
 ```jsx
 import { Sequence, Scene, Clip, useTime, interpolate, useTimeline } from 'givemotion/react';

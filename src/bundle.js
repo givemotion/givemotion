@@ -38,10 +38,16 @@ export function bundle(input, opts = {}) {
   for (const f of files) while (!(f + sep).startsWith(base + sep) && dirname(base) !== base) base = dirname(base);
   const rt = readRuntime();
   const config = { mode: 'preview', data: opts.data ?? null, bundled: true };
-  // built-in fonts: inlined when the page uses them (a bundle has no givemotion server)
+  // built-in fonts: inlined when the page or its css/js names the family (a bundle has no givemotion server).
+  // Sketch labels default to Caveat.
+  const text = [html, ...[...files].filter((f) => /\.(css|js)$/i.test(f) && statSync(f).size < 2e6).map((f) => readFileSync(f, 'utf8'))].join('\n');
+  const uses = (name) => {
+    const family = name.replace(/-latin.*$/, '').replace(/-/g, ' '); // jetbrains-mono-latin-wght-normal.woff2 -> jetbrains mono
+    return new RegExp(`\\b${family}\\b`, 'i').test(text) || (family === 'caveat' && /sketch/i.test(text));
+  };
   const css = rt.css.replace(/url\(\/__gm\/fonts\/([\w.-]+)\)/g, (m, name) => {
     const f = join(HERE, 'runtime', 'fonts', name);
-    return /caveat/i.test(html) && existsSync(f) ? `url(data:font/woff2;base64,${readFileSync(f).toString('base64')})` : 'url(about:blank)';
+    return uses(name) && existsSync(f) ? `url(data:font/woff2;base64,${readFileSync(f).toString('base64')})` : 'url(about:blank)';
   });
   const tags = `<style data-gm-preset>${css}</style><script>window.__GM_CONFIG=${scriptJSON(config)};</script><script>${rt.js.replace(/<\/script/gi, '<\\/script')}</script>`;
   const head = /<head\b[^>]*>/i.exec(html);

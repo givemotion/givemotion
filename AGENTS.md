@@ -20,5 +20,5 @@
 - Agent test rounds (fresh agents make videos from the docs, blind judges score them): the harness in `bench/agents/` is kept outside the repo (ignored). Results: `docs/experiments/`. The quality knowledge from those rounds lives in `skills/givemotion/references/techniques/` (one recipe per technique, verified by rendering), `references/motion-design.md` and `references/genres/`: update them when a round teaches something new.
 - Tests: `npm test` (needs Chrome + ffmpeg for the e2e part). Determinism matters: any change to the runtime must keep `1 worker == N workers` byte-identical.
 - Before changing a block or example: `node src/cli.js check <file>` and `node src/cli.js snapshot <file>` and look at the sheet.
-- Do not copy code from other video frameworks. Write it fresh. Name other frameworks only in the README comparison.
+- Do not copy code from other video frameworks. Write it fresh. Name other frameworks only in the README comparison and in `benchmarks/` (the scripts it links to).
 - The local server (`src/server.js`) only serves loopback Host headers, never hidden files, and sends no CORS headers: keep it that way (the root is often a project folder with `.env` in it). JSON put inside an inline `<script>` goes through `scriptJSON`.

@@ -1,6 +1,6 @@
 # Ideas: video analysis and partial re-render
 
-Status: ideas only, from Leo (Oct 2026). Not built. Ask Leo before starting either one.
+Status: both are built (October 2026): `givemotion analyze`, and renders that redo only the changed parts. Kept for the reasoning behind them.
 
 ## 1. `givemotion analyze`: help an agent see a video
 

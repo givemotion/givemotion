@@ -470,7 +470,7 @@
       if (!this.geom()) return false;
       let changed = false;
       const set = (el, k, v, attr) => {
-        const c = el.__mwc || (el.__mwc = {});
+        const c = el.__gmc || (el.__gmc = {});
         if (c[k] === v) return;
         c[k] = v;
         if (attr) { if (v == null) el.removeAttribute(k); else el.setAttribute(k, v); }

@@ -35,6 +35,8 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     if (!attrs.src) return `<!-- gm-include without src -->`;
     const file = resolve(fileDir, attrs.src);
     // Includes are read here on the server, so they may live outside the served folder (../blocks).
+    // Only HTML/SVG blocks, never hidden files or folders (.env, .ssh): a page must not be able to read secrets in.
+    if (!/\.(html?|svg)$/i.test(file) || String(attrs.src).split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.' && x !== '..')) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include only reads .html and .svg files (and no hidden files): ${esc(attrs.src)}</div>`;
     if (!existsSync(file) || !statSync(file).isFile()) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include not found: ${esc(attrs.src)}</div>`;
     if (seen.includes(file)) return `<!-- circular gm-include ${esc(attrs.src)} -->`;
     let body = readFileSync(file, 'utf8');
@@ -195,7 +197,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       }
       if (path === '/__gm_analyze') {
         // Tiny page used by `givemotion audio <file>`
-        const src = JSON.stringify(u.searchParams.get('src') || '');
+        const src = scriptJSON(u.searchParams.get('src') || '');
         const fps = parseFloat(u.searchParams.get('fps')) || 30;
         return send(res, 200, MIME['.html'], injectRuntime(`<!doctype html><html data-width="320" data-height="180" data-fps="${fps}" data-duration="1"><body><script>window.__gmA = gm.audio(${src});</script></body></html>`, { inlineConfig: { mode: 'render' } }), { 'Cache-Control': 'no-store' });
       }

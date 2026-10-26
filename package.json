@@ -17,6 +17,7 @@
   "main": "src/api.js",
   "exports": {
     ".": "./src/api.js",
+    "./react": "./src/react/index.jsx",
     "./runtime": "./src/runtime/runtime.js",
     "./preset.css": "./src/runtime/preset.css",
     "./package.json": "./package.json"
@@ -70,7 +71,23 @@
     "free",
     "mit"
   ],
-  "optionalDependencies": {
+  "peerDependencies": {
+    "esbuild": "^0.28.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "peerDependenciesMeta": {
+    "esbuild": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
     "esbuild": "^0.28.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

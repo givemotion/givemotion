@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { parseArgs } from '../src/args.js';
 import { expandIncludes, applyData, injectRuntime, startServer } from '../src/server.js';
 import http from 'node:http';
+import { bundle } from '../src/bundle.js';
 
 test('parseArgs: flags, values, aliases, booleans', () => {
   const a = parseArgs(['in.html', '-o', 'out.mp4', '--workers=4', '--json', '--motion-blur', '8', '--no-reuse'], { boolean: ['json', 'reuse'], alias: { o: 'output' } });
@@ -183,4 +184,37 @@ test('injectRuntime: data cannot end the config <script> early', () => {
   assert.ok(!html.includes('<script>alert(1)'));
   const json = /window\.__GM_CONFIG = window\.__GM_CONFIG \|\| (.*?);<\/script>/.exec(html)[1];
   assert.equal(JSON.parse(json).data.name, '</script><script>alert(1)</script>');
+});
+
+test('bundle: inlines exactly the built-in fonts the page names', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gm-bundle-'));
+  writeFileSync(join(dir, 'index.html'), '<html data-width="320" data-height="180" data-duration="1"><head><link rel="stylesheet" href="s.css"></head><body><h1 style="font-family:Inter">Hi</h1></body></html>');
+  writeFileSync(join(dir, 's.css'), 'code { font-family: "JetBrains Mono", monospace }');
+  const out = readFileSync(bundle(join(dir, 'index.html'), { output: join(dir, 'b') }).page, 'utf8');
+  const faces = (fam) => [...out.matchAll(new RegExp(`font-family:'${fam}'[^}]*src:url\\(([^)]{0,30})`, 'g'))].map((m) => m[1].startsWith('data:font/woff2') ? 'inline' : m[1]);
+  assert.ok(faces('Inter').length && faces('Inter').every((x) => x === 'inline'));
+  assert.ok(faces('JetBrains Mono').every((x) => x === 'inline'));
+  assert.ok(faces('Bebas Neue').every((x) => x === 'about:blank'));
+  assert.ok(faces('Caveat').every((x) => x === 'about:blank'));
+});
+
+test('gm-include: reads HTML/SVG blocks, never hidden or other files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gm-inc-sec-'));
+  writeFileSync(join(dir, '.env'), 'SECRET=1');
+  writeFileSync(join(dir, 'notes.txt'), 'SECRET=2');
+  mkdirSync(join(dir, '.hidden'));
+  writeFileSync(join(dir, '.hidden', 'x.html'), 'SECRET=3');
+  writeFileSync(join(dir, 'ok.html'), '<b>block</b>');
+  const html = expandIncludes('<gm-include src=".env"/><gm-include src="notes.txt"/><gm-include src=".hidden/x.html"/><gm-include src="./ok.html"/>', dir, dir);
+  assert.ok(!html.includes('SECRET'));
+  assert.ok(html.includes('<b>block</b>'));
+});
+
+test('server: the audio analysis page cannot be used to inject a script', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gm-srv2-'));
+  const s = await startServer({ root: dir });
+  try {
+    const body = await (await fetch(s.origin + '/__gm_analyze?src=' + encodeURIComponent('</script><script>alert(1)</script>'))).text();
+    assert.ok(!body.includes('<script>alert(1)'));
+  } finally { await s.close(); }
 });

@@ -338,8 +338,9 @@ HTML ──► local server (adds the runtime, expands blocks and {{data}}, serv
 - Node.js 20+
 - ffmpeg on your PATH (`brew install ffmpeg`, `sudo apt install ffmpeg`, `winget install ffmpeg`)
 - Chrome: `npx givemotion install` downloads it, or it finds the one you have
+- Only for React compositions: `npm i -D esbuild react react-dom` in your project
 
-givemotion itself has **zero required npm dependencies**.
+givemotion itself has **zero npm dependencies**: installing it adds one package.
 
 ### Status
 

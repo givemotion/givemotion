@@ -19,6 +19,8 @@ web page. Keep that in mind when you render compositions or data you did not wri
   requests addressed to `localhost`/`127.0.0.1`, sends no cross-origin headers, and never serves hidden files or
   folders (`.env`, `.git`, ...). It serves the files under the project folder, so other programs on your own machine
   can read them while it runs.
+- **`<gm-include>`** is expanded on your machine, so it can read files outside the project folder (shared blocks);
+  it only reads `.html` and `.svg` files and never hidden files or folders.
 - **Chrome's sandbox** stays on, except when running as root on Linux (common in Docker) or when
   `GIVEMOTION_NO_SANDBOX` is set. In those cases isolate the process with the container instead.
 - **Data and props** (`--data`, `--props`) are inserted into the HTML as text. If you build compositions from user

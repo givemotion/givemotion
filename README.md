@@ -271,9 +271,10 @@ The full reference is the skill pack written for agents (and good for humans too
 | `blocks` / `add <name>` | Ready-made blocks you can copy and edit |
 | `install` / `doctor` / `bench` | Get Chrome, check your setup, measure speed (and what makes a page slow to draw) |
 
-Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout),
+Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout; `4/3` for 1440p),
 `--frames 2s-5s`, `--transparent`, `--motion-blur 8|auto`, `--codec h265|av1`, `--hardware`, `--workers`,
-`--muted`, `--data file.json`, `--props '{…}'`. Every command takes `--json`.
+`--muted`, `--data file.json`, `--props '{…}'`, `--cache-dir <dir>` (where the parts cache lives),
+`--progress json` (JSON progress lines on stderr, for apps). Every command takes `--json`.
 
 Rendering again after a change only redoes the parts of the video that changed (edit one scene → only its 1-2 s parts
 are rendered; in one long scene, an edit to something that appears at 40 s keeps the first 40 s), and the result is

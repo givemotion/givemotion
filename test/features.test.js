@@ -992,3 +992,74 @@ test('render: media files must be inside the project folder', { skip }, async ()
   writeFileSync(join(d, 'proj', 'index.html'), page('<audio src="..%2foutside.wav"></audio>', 'data-width="320" data-height="180" data-fps="10" data-duration="1"'));
   await assert.rejects(render(join(d, 'proj', 'index.html'), { output: join(d, 'out.mp4'), ...quiet }), /inside the project folder/);
 });
+
+test('timeline text: set() swaps a string in at its time, to() swaps at its end, numbers still count, seeking back restores; 1 worker == 2', { skip }, async () => {
+  const d = tmp(), f = join(d, 'tx.html');
+  writeFileSync(f, page(`<main data-sequence><section class="scene" data-duration="1">A</section>
+    <section class="scene" id="s2" data-duration="2" style="font-size:40px"><b id="y">Score 0</b> <i id="c">00:00</i> <u id="z">old</u> <em id="w">0</em> <s id="n">000</s> <span id="t"></span>
+    <script>gm.timeline('#s2').set('#y', { textContent: 'Live now' }, 0.5).to('#y', { textContent: 'Done', duration: 0.5 }, 1)
+      .set('#c', { text: '12:30' }, 0.5).set('#c', { textContent: '12:45' }, 1.2)
+      .fromTo('#z', { textContent: 'from' }, { textContent: 'to', duration: 0.5 }, 1)
+      .to('#w', { textContent: '50%', duration: 1, ease: 'linear' }, 0.5).set('#n', { textContent: 42 }, 0.5)
+      .to('#t', { text: 'Hello', duration: 1, ease: 'linear' }, 0.5);</script></section></main>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const expr = `['y', 'c', 'z', 'w', 'n', 't'].map((id) => document.getElementById(id).textContent)`;
+  const rows = await seekEach(f, [1.2, 1.6, 2.3, 2.7, 1.6, 1.2], expr);
+  assert.deepEqual(rows[0], ['Score 0', '00:00', 'from', '0', '000', '']); // fromTo shows its start text before it starts
+  assert.deepEqual(rows[1], ['Live now', '12:30', 'from', '5%', '042', 'H']);
+  assert.deepEqual(rows[2], ['Live now', '12:45', 'from', '40%', '042', 'Hell']); // to() holds the old text until its end
+  assert.deepEqual(rows[3], ['Done', '12:45', 'to', '50%', '042', 'Hello']); // text: types its string out
+  assert.deepEqual(rows[4], rows[1], 'seeking back shows the earlier text');
+  assert.deepEqual(rows[5], rows[0]);
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, format: 'png', workers: 1, ...quiet });
+  await render(f, { output: b, format: 'png', workers: 2, ...quiet });
+  const fa = readdirSync(a).sort();
+  assert.equal(fa.length, 90);
+  for (const x of fa) assert.ok(readFileSync(join(a, x)).equals(readFileSync(join(b, x))), 'frame differs: ' + x);
+});
+
+test('gm.onFrame(sel, fn) passes the element; onFrame(fn) inside a later scene is reported with the fix (check shows it)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'of.html');
+  writeFileSync(f, page(`<section id="s0" data-duration="1"><script>gm.onFrame(() => {});</script></section>
+    <section id="s2" data-start="1" data-duration="2"><b id="o"></b><script>
+      gm.onFrame('#s2', (t, info, el) => { el.dataset.t = [t.toFixed(2), el.id, info.time.toFixed(2)].join('|'); });
+      gm.onLayout('#s2', (t, info, el) => { el.dataset.l = el.id; });
+      gm.onFrame((t) => { o.textContent = t.toFixed(2); });</script></section>
+    <script>gm.onFrame('#missing', () => {});</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"'));
+  const [v] = await seekEach(f, [1.5], `[s2.dataset.t, s2.dataset.l, o.textContent]`);
+  assert.deepEqual(v, ['0.50|s2|1.50', 's2', '1.50'], 'local time, info, element; the global callback keeps the video time');
+  const rep = await check(f, { fast: true });
+  const g = rep.issues.filter((i) => i.code === 'onframe-global-time');
+  assert.equal(g.length, 1, 'only the scene that does not start at 0');
+  assert.equal(g[0].severity, 'warning');
+  assert.equal(g[0].selector, '#s2');
+  assert.match(g[0].fix, /gm\.onFrame\('#s2', \(local/);
+  assert.ok(rep.issues.some((i) => i.code === 'onframe-no-target'), 'a selector that matches nothing is reported');
+});
+
+test('render for apps: --cache-dir, onProgress phases, --progress json lines; scale 4/3 gives exact even sizes, 1 worker == 2; 1.333 is refused with the fix', { skip }, async () => {
+  const d = tmp(), f = join(d, 'sc.html');
+  writeFileSync(f, page(`<div id="b" style="position:absolute;left:40px;top:60px;width:120px;height:120px;background:#f80;border-radius:20px"></div>
+    <script>gm.timeline().to('#b', { x: 280, duration: 1.4, ease: 'linear' }, 0);</script>`, 'data-width="480" data-height="270" data-fps="30" data-duration="1.5"'));
+  const phases = [];
+  const out1 = join(d, 'o1', 'v.mp4'), cache = join(d, 'cache');
+  const s = await render(f, { output: out1, workers: 1, scale: '4/3', cacheDir: cache, onProgress: (p) => phases.push(p), ...quiet });
+  assert.equal(s.width, 640); assert.equal(s.height, 360);
+  assert.ok(readdirSync(join(cache, 'v.mp4')).includes('parts.json'), 'parts kept in the cache dir');
+  assert.ok(!readdirSync(join(d, 'o1')).includes('.gm-parts'), 'nothing next to the output');
+  const names = phases.map((p) => p.phase).filter((p, i, a) => p !== a[i - 1]);
+  assert.deepEqual(names, ['open', 'frames', 'encode', 'done']);
+  const last = phases.filter((p) => p.phase === 'frames').pop();
+  assert.equal(last.done, 45); assert.equal(last.total, 45); assert.ok(last.fps > 0);
+  // the CLI: stderr is only JSON lines
+  const out2 = join(d, 'o2', 'v.mp4');
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [join(ROOT, 'src', 'cli.js'), 'render', f, '-o', out2, '--scale', '4/3', '--workers', '2', '--no-cache', '--progress', 'json'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const events = r.stderr.trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(events[0].phase, 'open');
+  assert.equal(events[events.length - 1].phase, 'done');
+  assert.ok(events.some((e) => e.event === 'progress' && e.phase === 'frames' && e.done === 45));
+  assert.ok(readFileSync(out1).equals(readFileSync(out2)), '4/3: 1 worker == 2 workers');
+  await assert.rejects(render(f, { output: join(d, 'x.mp4'), scale: 1.333, ...quiet }), /not whole pixels.*--scale 4\/3 \(640x360\)/);
+});

@@ -14,11 +14,12 @@ Contents
 
 `npx givemotion render video.html -o out/video.mp4 [options]`
 
-`-o out.mp4|.webm|.mov|.gif|out.mp3|folder/` (format from the extension; a folder gives PNG frames; `--format mp4|webm|mov|gif|png`) · `--quality draft|standard|high|max` · `--crf <n>` · `--fps 60` · `--width` / `--height` · `--scale 2` (4K from a 1080p layout) · `--frames 0-90` or `2s-5s` (only that part, as a new file) · `--redo 4s-7s` · `--no-cache` · `--transparent` (with `.mov` ProRes 4444 or `.webm`) · `--muted` · `--motion-blur off|auto|8` (default `off`; `--shutter 0.5` = 180°) · `--codec h265|av1` · `--hardware` (GPU encoder; on a Mac on by default once it checks out, `--no-hardware` to turn off) · `--workers N` · `--data f.json` · `--props '{…}'` · `--seed 7` (seed for `Math.random`, default 1) · `--force` (render even with errors) · `--json`.
+`-o out.mp4|.webm|.mov|.gif|out.mp3|folder/` (format from the extension; a folder gives PNG frames; `--format mp4|webm|mov|gif|png`) · `--quality draft|standard|high|max` · `--crf <n>` · `--fps 60` · `--width` / `--height` · `--scale 2` (4K from a 1080p layout; `4/3` → 1440p) · `--frames 0-90` or `2s-5s` (only that part, as a new file) · `--redo 4s-7s` · `--no-cache` · `--cache-dir <dir>` · `--transparent` (with `.mov` ProRes 4444 or `.webm`) · `--muted` · `--motion-blur off|auto|8` (default `off`; `--shutter 0.5` = 180°) · `--codec h265|av1` · `--hardware` (GPU encoder; on a Mac on by default once it checks out, `--no-hardware` to turn off) · `--workers N` · `--data f.json` · `--props '{…}'` · `--seed 7` (seed for `Math.random`, default 1) · `--force` (render even with errors) · `--json` · `--progress json`.
 
 - `still video.html -t 3.2 -o f.png` (or `--frame <n>`) renders one exact frame; `--transparent` for a PNG with alpha.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack.
 - Motion blur is off by default. `--motion-blur auto` (experimental) gives extra sub-frames only to frames where something moves fast (the render log says how many and the cost); with 2-4 sub-frames very fast text can show stepped copies, so look at those frames. A number forces that many sub-frames on every frame (smooth, but each frame renders n times).
+- **`--scale`** takes a number or a fraction. A whole scale (2, 3) always works. A fractional one must turn the layout into whole pixels, even ones for a video file: `--scale 4/3` makes 1920x1080 into 2560x1440 (also `1.5` → 2880x1620, `1.25` → 2400x1350). `1.333` would give 2559.36x1439.64, which the browser rounds to an odd, slightly stretched 2559x1440, so the render stops before it starts and names the scale that works (`--scale 4/3`). Layout, `var(--px)` and `gm.px` stay those of the composition's own size; text and SVG are drawn sharp at the bigger size, images at their own resolution. 1 worker == N workers holds at any scale.
 - `npx givemotion doctor` checks Chrome, ffmpeg and which encoder is used; `npx givemotion install` downloads the Chrome build used for rendering; `npx givemotion clean` deletes cached frames.
 
 ## Re-rendering is fast (the parts cache)
@@ -28,6 +29,22 @@ A render keeps the video in 1-2 s parts (in `.gm-parts/` next to the output) wit
 - Inside one long scene (a whiteboard, a camera world), editing something that appears later keeps the parts before it, when it is a nested clip (`data-start`), or is held hidden by a delayed `data-enter` and is `position:absolute` or an SVG shape, and no script, camera shot or arrow names it (the log says what changed).
 - Change its length and the scenes after it move, so they are redone too; change shared CSS, a script, a file or the data and everything is redone.
 - The joined video is byte-identical to a full render. `--redo 4s-7s` forces a part to be redone (e.g. when a script reads something the fingerprint cannot see); `--no-cache` keeps nothing.
+- `--cache-dir <dir>` (API: `cacheDir`) keeps the parts in `<dir>/<output file name>/` instead of `.gm-parts/` next to the output: for an app that writes the video to a temporary path and moves it, or keeps caches in one place. The parts are keyed by the output's file name, so render to the same name to reuse them.
+
+## For apps: progress and the API
+
+`--progress json` turns stderr into a stream of JSON lines (one object per line, nothing else on stderr; stdout still gets the `--json` summary if you ask for it):
+```
+{"event":"progress","phase":"open"}
+{"event":"progress","phase":"frames","done":0,"total":450,"fps":0,"eta":null,"frames":450,"reusedParts":3}
+{"event":"progress","phase":"frames","done":120,"total":450,"fps":38.2,"eta":8.6,"frames":450,"reusedParts":3}
+{"event":"progress","phase":"encode"}
+{"event":"progress","phase":"done","output":"/abs/out/video.mp4","seconds":14.2,"frames":450}
+{"event":"warning","code":"text-clipped","message":"…","selector":"#title","fix":"…"}
+```
+Phases: `open` (Chrome and the page load), `frames` (about once a second: `done`/`total` are the frames this render draws, after reused parts; `frames` is the whole video; `fps` is the capture speed; `eta` seconds), `encode` (joining the parts and mixing audio), `done`. Other lines are `{"event":"log","message"}`, `{"event":"warning",…}` (after the render) and `{"event":"error","message","issues"}` (exit code 1).
+
+From Node: `render(file, { output, scale: '4/3', cacheDir, onProgress: (p) => … })`: `onProgress` gets the same objects without `event` (`{ phase, done, total, fps, eta, … }`), and `render` resolves to the summary (`width`, `height`, `frames`, `seconds`, `parts`, `warnings` …).
 
 ## Render cost and speed
 

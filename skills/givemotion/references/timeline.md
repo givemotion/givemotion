@@ -34,9 +34,17 @@ Also `gm.from`, `gm.fromTo`, `gm.set` for one-off tweens.
 ## Positions, props, options
 
 - Positions: number (seconds), `'<'` (with previous), `'>'` (after previous, default), `'+=0.3'`, `'-=0.2'`, `'<0.2'`, labels.
-- Props: `x` `y` `z` `xPercent` `yPercent` `rotate` `rotateX` `rotateY` `scale` `scaleX` `scaleY` `skewX` `skewY` `transformPerspective` (written to `transform`), any CSS property (`backgroundColor`, `clipPath`, `filter`, `borderRadius`, `--css-var` …; colors blend in OKLab; values may use `var(--accent)` and `color-mix()`, read from the element when the tween starts), `autoAlpha`, `attr: {cx: 50}`, `morph`, `draw`, `text` (type a new string), `textContent` (count).
+- Props: `x` `y` `z` `xPercent` `yPercent` `rotate` `rotateX` `rotateY` `scale` `scaleX` `scaleY` `skewX` `skewY` `transformPerspective` (written to `transform`), any CSS property (`backgroundColor`, `clipPath`, `filter`, `borderRadius`, `--css-var` …; colors blend in OKLab; values may use `var(--accent)` and `color-mix()`, read from the element when the tween starts), `autoAlpha`, `attr: {cx: 50}`, `morph`, `draw`, `text` (type a new string), `textContent` (count a number, or swap in a string: see "Text" below).
 - Options: `duration` (default: sized to the distance, about 0.4–0.65 s) `ease` (default: an entrance from opacity/scale 0 springs in, any other tween is a `natural-move` that gathers speed and settles; give one only for a deliberate effect) `arc` (x+y moves bend slightly upward by default; `arc: 0` straight, `arc: 0.2` more) `delay` `stagger` (number, `{each, from: 'center'|'end'|'edges'|'random'|index, amount}` where `amount` spreads the whole stagger over that many seconds, or a function `(i, el) => seconds`) `repeat` `yoyo` `repeatDelay` `keyframes` (an array of steps `[{ y: -80, duration: 0.3, ease: 'sine.out' }, { y: 0, duration: 0.3, ease: 'sine.in' }]`, or `{ x: [0, 300, 600] }` spread evenly over `duration`) `onUpdate(progress, el)`.
 - `tl.set(el, {…}, time)` sets values instantly.
+
+## Text: swap, count, type
+
+The element's text is one track per element (`textContent`, `innerText` and `text` all write it; the latest tween at that time wins). Every frame is worked out from the time alone, so seeking back shows the earlier text and parallel workers agree.
+- **Swap** (words, times, labels): `tl.set('#label', { textContent: 'Shipped' }, 2.4)` shows exactly that string from 2.4 s; before it, the earlier text (or the page's own). A `set()` with a string always writes it as is (`'12:45'`, `'50%'`, `'v2'`). Chain several to step through words: `.set('#t', { textContent: '9:41' }, 1).set('#t', { textContent: '9:42' }, 3)`.
+- **Count**: a number (`textContent: 249`) counts from the number on screen and keeps its look (`000` stays 3 digits, `1,200` keeps its commas, `$0.00` keeps the sign and 2 decimals). A string that is one number with signs around it (`'$4.50'`, `'50%'`, `'1,250'`, `'+=10'`) counts too, in that string's look.
+- **A string in `to()`/`fromTo()`** that is not a number is not interpolated: the old text holds and the new one swaps in when the tween ends (`fromTo('#s', { textContent: 'Draft' }, { textContent: 'Final', duration: 1 }, 2)` shows "Draft" until 3 s). Use `set()` to swap at an exact time.
+- **Type**: `text: 'Hello world'` in `to()` types the string out over the tween (`set()`: all at once). For per-letter animation use `data-split` instead.
 
 ## Overlaps, start values, SVG
 

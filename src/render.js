@@ -8,6 +8,9 @@ import { ensureChrome, FramePage, CACHE_DIR } from './browser.js';
 import { startServer, safeJoin } from './server.js';
 import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
 import { pagePrints } from './parts.js';
+import { parseScale } from './args.js';
+
+export { parseScale };
 
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
 
@@ -28,6 +31,32 @@ function parseRange(range, fps, totalFrames) {
   const a = m[2] ? Math.round(parseFloat(m[1]) * fps) : parseInt(m[1], 10);
   const b = m[3] === '' ? totalFrames : (m[4] ? Math.round(parseFloat(m[3]) * fps) : parseInt(m[3], 10));
   return [Math.max(0, a), Math.min(totalFrames, Math.max(a + 1, b))];
+}
+
+/**
+ * The picture size at a scale. A side that is not a whole number of pixels is rounded by the browser on its own (so
+ * 1.333 turns 1920x1080 into 2559x1440: stretched, and odd), and video encoders need even sizes: both are refused
+ * with the scale that works. (A whole scale keeps the old behaviour: the composition's own size is checked elsewhere.)
+ */
+export function scaledSize(w, h, scale, format) {
+  const W = w * scale, H = h * scale, rw = Math.round(W), rh = Math.round(H);
+  if (scale === Math.round(scale)) return { width: rw, height: rh };
+  const even = format !== 'png' && format !== 'gif';
+  const ok = (x, y) => Math.abs(x - Math.round(x)) < 0.01 && Math.abs(y - Math.round(y)) < 0.01 && (!even || (Math.round(x) % 2 === 0 && Math.round(y) % 2 === 0));
+  if (ok(W, H)) return { width: rw, height: rh };
+  // a fraction near the asked scale that gives whole (even) sizes: a target height over the layout height
+  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+  let hint = '';
+  for (const d of [0, 2, -2, 4, -4, 6, -6, 8, -8]) {
+    const th = Math.round(H / 2) * 2 + d;
+    if (th <= 0 || !Number.isInteger(h) || !ok((w * th) / h, th)) continue;
+    const g = gcd(th, h);
+    hint = ` Use --scale ${h / g === 1 ? th / g : th / g + '/' + h / g} (${Math.round((w * th) / h)}x${th}).`;
+    break;
+  }
+  const r2 = (x) => +x.toFixed(2);
+  if (Math.abs(W - rw) >= 0.01 || Math.abs(H - rh) >= 0.01) throw new Error(`--scale ${+scale.toFixed(4)} turns ${w}x${h} into ${r2(W)}x${r2(H)} px, not whole pixels (the browser would round each side on its own and stretch the picture).${hint || ' Pick a scale that gives whole pixels, or change the composition size.'}`);
+  throw new Error(`--scale ${+scale.toFixed(4)} gives ${rw}x${rh}: video encoders need an even width and height.${hint || ' Pick another scale, or render PNG frames.'}`);
 }
 
 /**
@@ -84,6 +113,7 @@ function defaultWorkers(totalFrames) {
  * Open a page for a composition (used by render, still, snapshot, check).
  */
 export async function openComposition(input, opts = {}) {
+  opts = { ...opts, scale: parseScale(opts.scale) };
   const { file, root, rel } = resolveInput(input);
   // No --data and the page has no data of its own: use data.json next to the HTML if there is one.
   if (opts.data == null && /\.html?$/i.test(file)) {
@@ -175,7 +205,11 @@ const AUDIO_FORMATS = { '.mp3': 'mp3', '.wav': 'wav', '.m4a': 'm4a', '.aac': 'm4
  */
 export async function render(input, opts = {}) {
   const t0 = Date.now();
+  opts = { ...opts, scale: parseScale(opts.scale) };
   const log = opts.log || ((s) => process.stderr.write(s + '\n'));
+  // opts.onProgress({ phase: 'open' | 'frames' | 'encode' | 'done', ... }): frames carries done, total, fps, eta
+  const phase = (p, extra) => { if (opts.onProgress) { try { opts.onProgress({ phase: p, ...extra }); } catch (e) {} } };
+  phase('open');
   const out = resolve(opts.output || 'out.mp4');
   const format = formatFromOutput(out, opts.format);
   const info = format === 'png' ? null : requireFfmpeg();
@@ -188,7 +222,11 @@ export async function render(input, opts = {}) {
   const plan = format === 'png' ? null : encoderPlan({ format, quality: opts.quality, crf: opts.crf, codec: opts.codec, transparent, info, hardware });
   const shutter = opts.shutter ?? 0.5;
 
-  if (AUDIO_FORMATS[extname(out).toLowerCase()] && !opts.format) return renderAudioOnly(input, out, AUDIO_FORMATS[extname(out).toLowerCase()], opts, log, t0);
+  if (AUDIO_FORMATS[extname(out).toLowerCase()] && !opts.format) {
+    const r = await renderAudioOnly(input, out, AUDIO_FORMATS[extname(out).toLowerCase()], opts, log, t0);
+    phase('done', { output: out, seconds: r.seconds, frames: 0 });
+    return r;
+  }
   const ctx = await openComposition(input, { ...opts, mode: 'render', log });
   const cleanup = [];
   const tmp = mkdtempSync(join(opts.tmpdir || tmpdir(), 'gm-render-'));
@@ -196,6 +234,7 @@ export async function render(input, opts = {}) {
   const pages = [ctx.page];
   try {
     const comp = ctx.info;
+    const size = scaledSize(comp.width, comp.height, opts.scale, format);
     const errors = comp.issues.filter((i) => i.severity === 'error');
     if (errors.length && !opts.force) {
       const e = new Error('The composition has errors:\n' + errors.map((i) => `  - [${i.code}] ${i.message}${i.selector ? ' (' + i.selector + ')' : ''}${i.fix ? '\n    fix: ' + i.fix : ''}`).join('\n') + '\nFix them or pass --force.');
@@ -227,7 +266,8 @@ export async function render(input, opts = {}) {
     let ranges, parts = null;
     if (useParts) {
       const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
-      const dir = keepParts ? join(dirname(out), '.gm-parts', basename(out)) : join(tmp, 'parts');
+      // (opts.cacheDir / --cache-dir: keep them there instead, for apps that move the output away)
+      const dir = keepParts ? join(opts.cacheDir ? resolve(opts.cacheDir) : join(dirname(out), '.gm-parts'), basename(out)) : join(tmp, 'parts');
       const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, blur: blur.mode === 'auto' ? AUTO_BLUR : null, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
       const old = keepParts ? readJson(join(dir, 'parts.json')) : null;
@@ -264,7 +304,7 @@ export async function render(input, opts = {}) {
     const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`givemotion: ${comp.width}x${comp.height}${opts.scale > 1 ? ' @' + opts.scale + 'x' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: the page uses requestAnimationFrame' : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale !== 1 ? ' @' + +opts.scale.toFixed(4) + 'x (' + size.width + 'x' + size.height + ')' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: the page uses requestAnimationFrame' : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
@@ -289,16 +329,18 @@ export async function render(input, opts = {}) {
 
     let done = 0, reused = 0;
     let lastLog = 0;
+    const tFrames = Date.now();
     const progress = () => {
       const now = Date.now();
-      if (now - lastLog < 1000 && done < todoFrames) return;
+      if (now - lastLog < 1000 && done < todoFrames && done > 0) return;
       lastLog = now;
-      const el = (now - t0) / 1000;
+      const el = (now - tFrames) / 1000;
       const rate = done / Math.max(0.001, el);
-      const eta = rate > 0 ? (todoFrames - done) / rate : 0;
-      if (opts.onProgress) opts.onProgress({ done, total: todoFrames, fps: rate, eta });
-      else if (!opts.quiet) log(`  ${String(Math.round((done / Math.max(1, todoFrames)) * 100)).padStart(3)}%  ${done}/${todoFrames} frames  ${rate.toFixed(1)} fps  eta ${eta.toFixed(0)}s`);
+      const eta = rate > 0 ? (todoFrames - done) / rate : null;
+      if (opts.onProgress) phase('frames', { done, total: todoFrames, fps: +rate.toFixed(1), eta: eta == null ? null : +eta.toFixed(1), frames: nFrames, reusedParts: parts ? parts.list.filter((p) => p.keep).length : 0 });
+      else if (done > 0 && !opts.quiet) log(`  ${String(Math.round((done / Math.max(1, todoFrames)) * 100)).padStart(3)}%  ${done}/${todoFrames} frames  ${rate.toFixed(1)} fps  eta ${(eta || 0).toFixed(0)}s`);
     };
+    progress();
 
     if (format === 'png') mkdirSync(out.includes('%') ? dirname(out) : out, { recursive: true });
     const jpegQ = q.jpeg;
@@ -365,6 +407,7 @@ export async function render(input, opts = {}) {
     await Promise.all(pages.map((p) => p.close()));
     pages.length = 0;
     if (format !== 'png') {
+      phase('encode');
       mkdirSync(dirname(out), { recursive: true });
       const segments = parts ? parts.list.map((p) => p.file) : groups.flat().map((r) => r.file);
       await finalize({ segments, listFile: join(tmp, 'list.txt'), out, format, duration: nFrames / fps, audio: media.audio.map((a) => ({ ...a, start: a.start - f0 / fps, end: a.end - f0 / fps })).filter((a) => a.end > 0).map((a) => (a.start < 0 ? { ...a, from: a.from + -a.start * a.rate, start: 0 } : a)), fps, plan, transparent });
@@ -377,7 +420,7 @@ export async function render(input, opts = {}) {
     if (process.env.GIVEMOTION_PROFILE) log(`  finalize ${Date.now() - tLoop}ms, total ${Date.now() - t0}ms`);
     const elapsed = (Date.now() - t0) / 1000;
     const summary = {
-      output: out, format, width: comp.width * (opts.scale || 1), height: comp.height * (opts.scale || 1), fps, frames: nFrames, duration: nFrames / fps,
+      output: out, format, width: size.width, height: size.height, fps, frames: nFrames, duration: nFrames / fps,
       seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode, encoder: plan ? plan.vargs[plan.vargs.indexOf('-c:v') + 1] : 'png',
       motionBlur: auto ? { mode: 'auto', frames: todoFrames, blurred: blurStats.blurred, elements: blurStats.samples } : { mode: blur.mode, samples: blurSamples },
       parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
@@ -387,6 +430,7 @@ export async function render(input, opts = {}) {
     };
     if (!opts.quiet && auto && todoFrames) log(`  motion blur: ${blurStats.blurred} of ${todoFrames} frames (${Math.round((blurStats.blurred / todoFrames) * 100)}%) had fast moves, smeared in the same capture (--motion-blur off to skip)`);
     if (!opts.quiet) log(`done in ${elapsed.toFixed(1)}s (${summary.renderFps} fps, ${reused} static frames reused) → ${relativeOut(out)}`);
+    phase('done', { output: out, seconds: summary.seconds, frames: nFrames });
     return summary;
   } finally {
     await Promise.all(pages.map((p) => p.close().catch(() => {})));

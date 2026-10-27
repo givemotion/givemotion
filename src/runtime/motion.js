@@ -461,6 +461,71 @@
     return d / I.PX();
   }
 
+  // textContent / innerText: a number (or a string that is one number with signs around it: '$4.50', '50%', '+=10')
+  // counts. A number keeps the look of the number on screen ('000' stays 3 digits, '1,200' keeps its commas); a
+  // string like '$4.50' or '1,250' counts in its own look. Any other
+  // string is new text: set() swaps it in at that time, to()/fromTo() hold the old text and swap at the tween's end.
+  // A set() with a string always writes that exact string; text: '…' types its string out (set: all at once). They
+  // share one track per element (the latest segment wins). Each segment's text is worked out here from the page's
+  // own text and the earlier segments, so a frame depends only on its time (seeking back shows the earlier text).
+  const NUM_TEXT = /^[^\d\p{L}]*?[-+]?\d[\d,]*(\.\d+)?[^\d\p{L}]*$/u;
+  function numFormat(text) {
+    const m = /^(\D*?)(-?)(\d[\d,]*)(\.(\d+))?(.*)$/s.exec(String(text).trim()) || [];
+    const int = m[3] || '';
+    return { pre: m[1] || '', post: m[6] || '', dec: m[5] ? m[5].length : 0, group: int.includes(','), pad: /^0\d/.test(int) ? int.length : 0 };
+  }
+  function fmtNum(f, n) {
+    if (!isFinite(n)) n = 0;
+    const neg = n < 0 && /[1-9]/.test(Math.abs(n).toFixed(f.dec));
+    let [ip, dp] = Math.abs(n).toFixed(f.dec).split('.');
+    if (f.pad) ip = ip.padStart(f.pad, '0');
+    if (f.group) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return f.pre + (neg ? '\u2212' : '') + ip + (dp ? '.' + dp : '') + f.post;
+  }
+  const numOfText = (v) => { if (typeof v === 'number') return v; const n = parseFloat(String(v).replace(/[^\d.-]/g, '')); return isNaN(n) ? 0 : n; };
+  function textTrack(el, k, segs) {
+    const orig = el.__gmOrig && el.__gmOrig[k] != null ? el.__gmOrig[k] : el.textContent;
+    let cur = { s: String(orig), n: numOfText(orig) }, fmt = numFormat(orig);
+    for (const sg of segs) {
+      const { spec, it } = sg;
+      // an end point: { n } (a number to count to) or { s } (text to show)
+      const end = (v, base) => {
+        if (v === undefined) return base;
+        if (sg.typing) return { s: String(resolveVars(el, v)), n: numOfText(v), text: true };
+        const rel = typeof v === 'string' && /^\s*([-+])=\s*([-+]?[\d.]+)\s*$/.exec(v);
+        if (rel) return { n: base.n + parseFloat(rel[2]) * (rel[1] === '-' ? -1 : 1) };
+        if (typeof v === 'number') return { n: v };
+        v = String(resolveVars(el, v));
+        return it.dur > 0 && NUM_TEXT.test(v.trim()) ? { n: numOfText(v), fmt: /^\s*[-+]?\d+\s*$/.test(v) ? null : numFormat(v) } : { s: v, n: numOfText(v), text: true };
+      };
+      let a, b;
+      if (it.type === 'to') { a = cur; b = end(spec.to, cur); }
+      else if (it.type === 'from') { a = end(spec.from, cur); b = cur; }
+      else { a = spec.from !== undefined ? end(spec.from, cur) : cur; b = spec.to !== undefined ? end(spec.to, a) : a; }
+      if (a.text) fmt = numFormat(a.s);
+      if (b.fmt || a.fmt) fmt = b.fmt || a.fmt; // a number written with signs ('$4.50', '50%') counts in that look
+      const f = fmt;
+      if (sg.typing) {
+        // text: types its string out over the tween (set: all at once)
+        const T = b === cur ? cur.s : b.s;
+        sg.from = ''; sg.to = T;
+        sg.interp = (p) => T.slice(0, Math.round(p * T.length));
+      } else if (!a.text && !b.text) {
+        // count (natural motion may chain it with the next count: from/to stay numbers)
+        sg.from = a.n; sg.to = b.n;
+        sg.interp = (p) => fmtNum(f, a.n + (b.n - a.n) * p);
+      } else {
+        const sa = a.text || a === cur ? a.s : fmtNum(f, a.n), sb = b.text || b === cur ? b.s : fmtNum(f, b.n);
+        sg.from = sa; sg.to = sb; sg.swap = true;
+        sg.interp = (p) => (p >= 1 ? sb : sa);
+      }
+      if (it.type !== 'from') { cur = b.text ? b : { s: sg.interp(1), n: b.n }; if (b.text) fmt = numFormat(b.s); }
+    }
+    if (segs.some((sg) => sg.it.natural)) naturalChain(k, segs);
+    // a swap happens when its tween ends, whatever the ease (a spring reaches 1 before the end)
+    for (const sg of segs) if (sg.swap) sg.ease = (p) => p;
+  }
+
   // Natural motion, per (element, property): a tween without its own ease gets a spring, chosen in _build (an entrance
   // springs in like data-enter, a move gathers speed and settles; a slight overshoot for x/y/scale/rotate, none for
   // opacity, colors and the rest). Back-to-back tweens (one ends where and when
@@ -734,8 +799,11 @@
         let tm = tracks.get(it.el);
         if (!tm) { tm = { el: it.el, props: new Map(), tfBase: null, cache: new Map(), anchor: null }; tracks.set(it.el, tm); }
         for (const k of Object.keys(it.props)) {
-          if (!tm.props.has(k)) tm.props.set(k, []);
-          tm.props.get(k).push({ it, spec: it.props[k] });
+          // text, textContent and innerText all write the element's text: one track, so the latest one wins in any
+          // frame order (text types its string out, see textTrack)
+          const tk = k === 'text' || k === 'innerText' ? 'textContent' : k;
+          if (!tm.props.has(tk)) tm.props.set(tk, []);
+          tm.props.get(tk).push({ it, spec: it.props[k], typing: k === 'text' });
         }
       }
       for (const tm of tracks.values()) {
@@ -772,6 +840,7 @@
           }
         }
         for (const [k, segs] of tm.props) {
+          if (k === 'textContent') { textTrack(el, k, segs); continue; }
           let base = readBase(el, k, tm.tfBase);
           if (tm.inline && !(k in TF) && !k.startsWith('attr:') && !['draw', 'morph', 'text', 'textContent', 'innerText', 'autoAlpha', 'transformPerspective'].includes(k)) tm.inline[k] = el.style.getPropertyValue(kebab(k));
           tm.baseVals = tm.baseVals || {};
@@ -787,7 +856,6 @@
             from = coerceFrom(k, resolveVars(el, from), resolveVars(el, to)); to = resolveVars(el, to);
             sg.from = from; sg.to = to;
             if (k === 'morph') sg.interp = morphInterp(String(from || to), String(to && to.nodeType ? to.getAttribute('d') : to));
-            else if (k === 'text') { const T = String(to); sg.interp = (p) => T.slice(0, Math.round(p * T.length)); }
             else sg.interp = makeInterp(from, to, k);
             prev = to;
           }
@@ -973,26 +1041,9 @@
         continue;
       }
       if (k === 'morph') { if (v !== undefined && setCached(tm, k, v, (d) => el.setAttribute('d', d))) changed = true; continue; }
-      if (k === 'text') { if (v !== undefined && setCached(tm, k, v, (s) => { el.textContent = s; })) changed = true; continue; }
       if (k === 'textContent' || k === 'innerText') {
-        if (v === undefined) continue;
-        // Keep the look of the number that was in the page: "000" stays 3 digits, "1,200" keeps
-        // its commas, "$4.50" keeps the sign and 2 decimals.
-        if (!tm.numFmt) {
-          const m = /^(\D*?)(-?)(\d[\d,]*)(\.(\d+))?(.*)$/s.exec(String(el.textContent).trim()) || [];
-          const int = m[3] || '';
-          tm.numFmt = { pre: m[1] || '', post: m[6] || '', dec: m[5] ? m[5].length : 0, group: int.includes(','), pad: /^0\d/.test(int) ? int.length : 0 };
-        }
-        const f = tm.numFmt;
-        const num = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^\d.-]/g, ''));
-        const fmt = (n) => {
-          const neg = n < 0 && /[1-9]/.test(Math.abs(n).toFixed(f.dec)); let str = Math.abs(n).toFixed(f.dec);
-          let [ip, dp] = str.split('.');
-          if (f.pad) ip = ip.padStart(f.pad, '0');
-          if (f.group) ip = ip.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-          return f.pre + (neg ? '\u2212' : '') + ip + (dp ? '.' + dp : '') + f.post;
-        };
-        if (setCached(tm, k, fmt(isFinite(num) ? num : 0), (txt) => { el.textContent = txt; })) changed = true;
+        // (textTrack made every value the text to show)
+        if (v !== undefined && setCached(tm, k, String(v), (txt) => { el.textContent = txt; })) changed = true;
         continue;
       }
       if (v === undefined) {

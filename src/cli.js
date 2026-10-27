@@ -5,7 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve, dirname, basename, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { parseArgs } from './args.js';
+import { parseArgs, parseScale } from './args.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = resolve(HERE, '..');
@@ -56,11 +56,13 @@ Render options
   --codec <c>            h264 (default) | h265 | av1   (mp4 only)
   --hardware             Use the GPU video encoder (NVENC/VideoToolbox). On a Mac it is on by default once it encodes
                          reproducibly; --no-hardware turns it off
-  --scale <n>            Render at n× resolution (2 → 4K from a 1080p layout)
+  --scale <n>            Render at n× resolution (2 → 4K from a 1080p layout; 4/3 → 1440p). A fraction must give
+                         whole, even pixel sizes, or the render stops and names a scale that does
   --fps <n>  --width <n>  --height <n>   Override the composition settings
   --frames <range>       Part of the video: "0-90" (frames) or "2s-5s" (a new file)
   --redo <range>         Re-render this part ("4s-7s") even if it looks unchanged, keep the rest
   --no-cache             Do not keep or reuse parts (by default only changed parts are re-rendered)
+  --cache-dir <dir>      Keep the parts in <dir>/<output name>/ instead of .gm-parts/ next to the output
   --workers <n>          Parallel browsers (default: based on CPU and memory)
   --transparent          Keep transparency (use --format mov or webm)
   --muted                No audio track
@@ -72,6 +74,8 @@ Render options
   --seed <n>             Seed for Math.random (default 1)
   --force                Render even if the composition has errors
   --json                 Print a JSON summary (good for agents)
+  --progress json        Progress as JSON lines on stderr, for apps: {"event":"progress","phase":"open"|"frames"|
+                         "encode"|"done","done":n,"total":n,"fps":n,"eta":s}, plus log/warning/error events
   --capture <m>          auto | beginframe | screenshot
   --chrome <path>        Use a specific Chrome / chrome-headless-shell
 
@@ -179,7 +183,7 @@ function commonOpts(args) {
   return {
     chrome: args.chrome, capture: args.capture, gl: args.gl, data: loadData(args), seed: args.seed != null ? +args.seed : undefined,
     fps: args.fps ? +args.fps : undefined, width: args.width ? +args.width : undefined, height: args.height ? +args.height : undefined,
-    scale: args.scale ? +args.scale : 1, verbose: args.verbose, timeoutMs: args.timeout ? +args.timeout * 1000 : undefined,
+    scale: parseScale(args.scale), verbose: args.verbose, timeoutMs: args.timeout ? +args.timeout * 1000 : undefined,
     onConsole: args.verbose ? (type, text) => console.error(`[page ${type}] ${text}`) : undefined,
   };
 }
@@ -188,19 +192,28 @@ const inputOf = (args) => args._[0] || 'index.html';
 async function cmdRender(args) {
   const { render } = await import('./render.js');
   const out = args.output || defaultOut(inputOf(args), args.format);
+  // --progress json: stderr carries only JSON lines (progress, log, warning, error events); stdout keeps the --json summary
+  if (args.progress != null && args.progress !== 'json') return fail(new Error(`Bad --progress "${args.progress === true ? '' : args.progress}". Use --progress json (one JSON object per line on stderr).`), args);
+  const jsonl = args.progress === 'json' ? (o) => process.stderr.write(JSON.stringify(o) + '\n') : null;
+  if (args.cacheDir === true) return fail(new Error('--cache-dir needs a folder.'), args);
   try {
     const summary = await render(inputOf(args), {
       ...commonOpts(args), output: out, format: args.format, quality: args.quality, crf: args.crf != null ? +args.crf : undefined, codec: args.codec,
       hardware: args.hardware, workers: args.workers ? +args.workers : undefined, frames: args.frames, transparent: args.transparent, muted: args.muted,
-      motionBlur: args.noMotionBlur ? 'off' : args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json,
-      noReuse: args.reuse === false, lossless: args.lossless, redo: args.redo, cache: args.cache,
+      motionBlur: args.noMotionBlur ? 'off' : args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json || !!jsonl,
+      noReuse: args.reuse === false, lossless: args.lossless, redo: args.redo, cache: args.cache, cacheDir: args.cacheDir,
+      ...(jsonl ? { onProgress: (p) => jsonl({ event: 'progress', ...p }), log: (message) => jsonl({ event: 'log', message: String(message) }) } : {}),
     });
     if (args.json) console.log(JSON.stringify(summary, null, 2));
-    else {
+    if (jsonl) {
+      for (const w of summary.warnings) jsonl({ event: 'warning', code: w.code, message: w.message, selector: w.selector || null, fix: w.fix || null });
+      for (const e of summary.pageErrors) jsonl({ event: 'warning', code: 'page-' + e.code, message: e.message });
+    } else if (!args.json) {
       for (const w of summary.warnings) console.error(`⚠ [${w.code}] ${w.message}${w.selector ? ' (' + w.selector + ')' : ''}`);
       for (const e of summary.pageErrors) console.error(`⚠ page ${e.code}: ${e.message}`);
     }
   } catch (e) {
+    if (jsonl) { jsonl({ event: 'error', message: e.message, issues: e.issues ? e.issues.filter((i) => i.severity === 'error') : undefined }); if (!args.json) { process.exitCode = 1; return; } }
     fail(e, args);
   }
 }

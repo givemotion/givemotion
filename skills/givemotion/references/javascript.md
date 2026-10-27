@@ -11,8 +11,8 @@ Contents
 ## The gm API
 
 ```js
-gm.onFrame((t, info) => { box.style.rotate = `${t * 90}deg`; });        // t = seconds; info.frame, info.progress
-gm.onFrame('#scene2', (local, info) => { /* local time while that clip is on screen; info.time = video time */ });
+gm.onFrame((t, info) => { box.style.rotate = `${t * 90}deg`; });        // t = VIDEO seconds; info.frame, info.progress
+gm.onFrame('#scene2', (local, info, el) => { /* local time while that clip is on screen; info.time = video time; el = #scene2 */ });
 gm.interpolate(t, [0, 1, 2], [0, 300, 0], { easing: 'out-cubic' });     // numbers or colors; clamps by default
 gm.spring(t, { from: 0, to: 1, stiffness: 170, damping: 26, delay: 0.2 });
 gm.noise(t) /* smooth, 0..1 */, gm.lerp(a, b, p), gm.clamp(v), gm.ease.outExpo(p)
@@ -21,12 +21,14 @@ gm.beat(8), gm.bar(2)  // video time of beat 8 / bar 2 from <html data-bpm data-
 gm.width, gm.height, gm.fps, gm.duration, gm.px, gm.time
 gm.timing('#scene2')   // { start, end, duration } of that clip in video time
 gm.wait(promise)   // hold rendering until it resolves (fetch JSON, load a model…)
-gm.onLayout('#scene2', (local) => { /* runs after all animations are placed: measure with getBoundingClientRect, follow or aim at elements */ });
+gm.onLayout('#scene2', (local, info, el) => { /* runs after all animations are placed: measure with getBoundingClientRect, follow or aim at elements */ });
 gm.color.mix('#ff0', 'oklch(60% .2 260)', 0.5), gm.mapRange(v, 0, 1, 10, 50), gm.wrap(v, 0, 360), gm.snap(v, 10)
 gm.random('dot-7')  // the same number in [0,1) for that seed, every frame and every render; gm.rng(seed) → generator; gm.pick(array, seed)
 gm.log('pkg at', x)  // like console.log, but `check` and `inspect --at` print it with the video time (repeats are grouped)
 gm.motion          // 'natural' (default) or 'classic' (<html data-motion="classic">): which motion defaults the engine uses
 ```
+**Which time a callback gets.** With an element (or selector), `onFrame`/`onLayout` call `fn(local, info, el)`: `local` counts from that element's clip start (like `gm.timeline('#scene2')`), `info` also has `time` (video time), `local` and `clipDuration`, and `el` is the element. Without one, `fn(t, info)` gets the **video's** time, wherever the script is. So in a script inside a scene that starts at 12 s, `gm.onFrame((t) => …)` sees 12 at the scene's first frame: write `gm.onFrame('#scene', (local) => …)` instead (`check` warns `onframe-global-time` with that fix; a selector that matches nothing warns `onframe-no-target`). To swap a word or a label at a time, you need no callback: `tl.set('#label', { textContent: 'Done' }, 2)` (`references/timeline.md`).
+
 Shapes, paths and sketch path data (`gm.shape`, `gm.path`, `gm.sketch`): `references/diagrams.md`. Timeline and tweens: `references/timeline.md`. Audio analysis (`gm.audio`): `references/media-audio.md`. Charts (`gm.chart`): `references/charts.md`.
 
 ## Particle bursts

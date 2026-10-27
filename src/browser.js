@@ -100,7 +100,20 @@ function hasGPU() {
   return existsSync('/dev/dri') && !process.env.GIVEMOTION_NO_GPU;
 }
 
-export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
+/**
+ * Tile memory for the page, in MB. Chrome rasters every composited layer into tiles and stops at a memory limit
+ * (512 MB-1 GB on desktop, sized for a browser tab). Past it, the tiles left over are simply not drawn: the frame shows
+ * blank rectangles, or whatever was under them, or a layer's old content (text of a page that a document covers,
+ * the top of a card at its old size). Large composited layers at 4K (crossfading full-frame sections, filter or
+ * opacity animations, big overflow boxes) pass that easily. The limit is a ceiling, not an allocation: a page that
+ * needs less uses less, and the speed is the same. Chrome reads it once per process, so it covers the largest frame
+ * this process may draw: 4K, more for --scale above 2.
+ */
+export function tileMemoryMB(scale = 1) {
+  return 4096 * Math.max(1, Math.ceil((scale * scale) / 4));
+}
+
+export function chromeArgs({ kind, beginFrame, gl = 'auto', scale = 1 }) {
   const args = [
     kind === 'shell' ? '--headless=old' : '--headless=new',
     '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--disable-component-extensions-with-background-pages',
@@ -118,6 +131,8 @@ export function chromeArgs({ kind, beginFrame, gl = 'auto' }) {
     // Checker imaging draws a frame without an image that is not decoded yet and adds it in a later frame: which frame
     // a capture gets would depend on timing.
     '--disable-checker-imaging',
+    // Enough tile memory that no tile of a frame is left undrawn (see tileMemoryMB).
+    `--force-gpu-mem-available-mb=${tileMemoryMB(scale)}`,
   ];
   if (platform() === 'linux' && (process.getuid && process.getuid() === 0 || process.env.GIVEMOTION_NO_SANDBOX)) args.push('--no-sandbox');
   const mode = gl === 'auto' ? (hasGPU() ? 'gpu' : 'swiftshader') : gl;
@@ -161,7 +176,7 @@ export class FramePage {
   async _launch(mode) {
     const { chrome, width, height } = this.opts;
     this.mode = mode;
-    this.browser = launchChrome(chrome.path, [...chromeArgs({ kind: chrome.kind, beginFrame: mode === 'beginframe', gl: this.opts.gl }), `--window-size=${width},${height}`, ...((this.opts.scale || 1) !== 1 ? [`--force-device-scale-factor=${this.opts.scale}`] : []), 'about:blank']);
+    this.browser = launchChrome(chrome.path, [...chromeArgs({ kind: chrome.kind, beginFrame: mode === 'beginframe', gl: this.opts.gl, scale: this.opts.scale || 1 }), `--window-size=${width},${height}`, ...((this.opts.scale || 1) !== 1 ? [`--force-device-scale-factor=${this.opts.scale}`] : []), 'about:blank']);
     const b = this.browser;
     const { targetId } = await b.send('Target.createTarget', { url: 'about:blank', width, height, ...(mode === 'beginframe' ? { enableBeginFrameControl: true } : {}) });
     const { sessionId } = await b.send('Target.attachToTarget', { targetId, flatten: true });

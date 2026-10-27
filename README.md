@@ -44,8 +44,8 @@ updating givemotion; `npx givemotion doctor` tells you when the installed pack i
 
 Other ways to install the skill:
 
-- Claude Code plugin: `/plugin marketplace add leonardogrig/givemotion`, then `/plugin install givemotion@givemotion`
-- Skills CLI (Claude Code, Codex, Cursor and more): `npx skills add leonardogrig/givemotion`
+- Claude Code plugin: `/plugin marketplace add givemotion/givemotion`, then `/plugin install givemotion@givemotion`
+- Skills CLI (Claude Code, Codex, Cursor and more): `npx skills add givemotion/givemotion`
 
 **You need:** Node.js 20+ and ffmpeg. Chrome is downloaded for you (`npx givemotion install`).
 

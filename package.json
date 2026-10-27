@@ -8,9 +8,9 @@
   "homepage": "https://givemotion.org",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/leonardogrig/givemotion.git"
+    "url": "git+https://github.com/givemotion/givemotion.git"
   },
-  "bugs": "https://github.com/leonardogrig/givemotion/issues",
+  "bugs": "https://github.com/givemotion/givemotion/issues",
   "bin": {
     "givemotion": "src/cli.js"
   },

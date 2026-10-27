@@ -14,7 +14,7 @@ Thanks for helping. Issues and pull requests are welcome.
 ## Setup
 
 ```bash
-git clone https://github.com/leonardogrig/givemotion.git
+git clone https://github.com/givemotion/givemotion.git
 cd givemotion
 npx givemotion install   # or use your own Chrome
 npm test                 # needs Chrome and ffmpeg

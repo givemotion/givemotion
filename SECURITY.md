@@ -3,7 +3,7 @@
 ## Reporting a problem
 
 Please do not open a public issue for security problems. Use GitHub's private reporting instead:
-**Security → Report a vulnerability** on [the repository](https://github.com/leonardogrig/givemotion/security/advisories/new).
+**Security → Report a vulnerability** on [the repository](https://github.com/givemotion/givemotion/security/advisories/new).
 You should get an answer within a week. Fixes go into the latest release.
 
 ## What givemotion trusts

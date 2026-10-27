@@ -8,7 +8,7 @@
     "url": "https://github.com/leonardogrig"
   },
   "homepage": "https://givemotion.org",
-  "repository": "https://github.com/leonardogrig/givemotion",
+  "repository": "https://github.com/givemotion/givemotion",
   "license": "MIT",
   "keywords": ["video", "animation", "motion-graphics", "html-to-video", "explainer", "captions", "data-visualization"]
 }

@@ -14,7 +14,7 @@ If you are looking for a **free, open-source way to make videos with code**, to 
   <img src="docs/media/code-explainer.gif" width="49%" alt="Code explainer made by an AI agent with givemotion: retry with back-off drawn as a timeline">
 </p>
 <p>
-  <img src="docs/media/vertical-short.gif" width="24%" alt="Vertical short for social media made by an AI agent with givemotion, with captions synced to the voice">
+  <img src="docs/media/vertical-short.gif" width="24%" alt="Vertical short for social media made by an AI agent with givemotion, with word-by-word captions">
 </p>
 
 *All three were made by a Claude agent from a one-paragraph brief, using only this project's docs.

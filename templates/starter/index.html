@@ -32,16 +32,16 @@
   .card span { font-size: 34px; color: #9aa3b8; line-height: 1.35; }
   .icon { width: 84px; height: 84px; border-radius: 22px; display: grid; place-items: center; font-size: 44px; }
 
-  /* Scene 3: a number that counts up */
+  /* Scene 3: a number that counts up (this video is 10 s at 30 fps: 300 frames) */
   .big { font-size: 220px; font-weight: 800; letter-spacing: -.05em; line-height: .9; font-variant-numeric: tabular-nums; }
   .orb { position: absolute; width: 900px; height: 900px; border-radius: 50%;
          background: radial-gradient(closest-side, #8ea2ff40, transparent); animation: pulse 4s ease-in-out infinite; }
 </style>
 </head>
 <body>
-  <main data-sequence data-transition="fade 0.6">
+  <main data-sequence data-transition="push-up 0.7">
 
-    <section class="scene" data-duration="3.5">
+    <section class="scene" data-duration="4" data-camera="push 1.04">
       <div class="stack">
         <div class="kicker" data-enter="fade-up 0.6">Made with givemotion</div>
         <h1 data-split="words" data-enter="rise 0.9 0.15" data-stagger="0.08">HTML in, <span class="grad">video out</span></h1>
@@ -49,19 +49,19 @@
       </div>
     </section>
 
-    <section class="scene" data-duration="4">
-      <div class="cards" data-enter="pop 0.7" data-stagger="0.14">
+    <section class="scene" data-duration="4.4" data-camera="pull 1.08">
+      <div class="cards" data-enter="pop 0.7 0.1" data-stagger="0.5">
         <div class="card"><div class="icon" style="background:#8ea2ff22">✍️</div><b>Write HTML</b><span>Layout with CSS you already know.</span></div>
         <div class="card"><div class="icon" style="background:#5eead422">🎬</div><b>Animate</b><span>CSS animations, or one attribute.</span></div>
         <div class="card"><div class="icon" style="background:#fbbf2422">🚀</div><b>Render</b><span>Frame-exact MP4, in parallel.</span></div>
       </div>
     </section>
 
-    <section class="scene" data-duration="3.5">
+    <section class="scene" data-duration="3" data-camera="push 1.1">
       <div class="orb"></div>
       <div class="stack">
-        <div class="big grad" data-count="0 60" data-count-suffix=" fps" data-count-duration="1.8"></div>
-        <p data-enter="fade-up 0.6 0.4">Deterministic. Every frame, every time.</p>
+        <div class="big grad" data-count="0 300" data-count-suffix=" frames" data-count-delay="0.5" data-count-duration="1.8"></div>
+        <p data-enter="fade-up 0.6 0.4">The same 300 frames, every time.</p>
       </div>
     </section>
 

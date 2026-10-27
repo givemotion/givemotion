@@ -61,6 +61,17 @@ Other ways to install the skill:
 - Many personalized videos from one template (a different name, number or logo in each)
 - Transparent overlays to drop into Premiere, DaVinci Resolve or Final Cut
 
+## Same brief, four models
+
+Each model got the same one-page brief ("The last lighthouse": a 15 s cinematic title sequence, night sea, a light
+beam that carries into the title) and only this project's docs.
+
+| Claude Opus 5.5 | Claude Sonnet 5.5 |
+|---|---|
+| <img src="docs/media/lighthouse-opus.gif" width="100%" alt="The last lighthouse, made by Claude Opus 5.5 with givemotion"> | <img src="docs/media/lighthouse-sonnet.gif" width="100%" alt="The last lighthouse, made by Claude Sonnet 5.5 with givemotion"> |
+| **Claude Haiku 5.5** | **Gemini 4 Argon** |
+| <img src="docs/media/lighthouse-haiku.gif" width="100%" alt="The last lighthouse, made by Claude Haiku 5.5 with givemotion"> | <img src="docs/media/lighthouse-gemini.gif" width="100%" alt="The last lighthouse, made by Gemini 4 Argon with givemotion"> |
+
 ## Why it works so well with AI
 
 Most video tools were made for people. AI agents work differently, so we built this one around how they

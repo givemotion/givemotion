@@ -93,6 +93,7 @@ Built-in fonts (no files needed): `Inter`, `JetBrains Mono`, `Playfair Display`,
 - **Transitions:** `push-left/right/up/down` (new pushes old out) `cover-left/right/up/down` (new slides over) `whip-left/right/up/down` (fast, blurred) `wipe-left/right/up/down` `diagonal` `clock` `iris` `zoom` `zoom-through` (the old scene flies past the camera) `flip` (3D) `dip` (through black) `blur` `fade-up` `fade`, and **`morph`**: elements with the same `data-morph="name"` in both scenes fly and resize from the old place to the new one while the rest crossfades. Use it to carry a logo, card, number or shape into the next scene. Inside one scene, use `gm.fly` instead.
 - **CSS animations run on clip time.** `animation: fade-up .6s .4s both` starts .4s after its clip appears. Use `both` (or `backwards`) fill so the element is hidden before its delay.
 - **Something appears later inside a long scene** (one camera world, one whiteboard): the delay in `data-enter` counts from the start of the element's clip, so `data-enter="write 0.8 11.9"` writes a label 11.9 s into the scene and keeps it hidden until then. No extra clip needed.
+- `gm.onFrame(fn)` gets the **video's** time, even inside a scene; `gm.onFrame('#s', (local, info, el) => …)` counts from `#s`'s start, like `gm.timeline('#s')`.
 - Timers, `requestAnimationFrame`, `Date.now()`, `performance.now()` are virtual and `Math.random()` is seeded. Normal web animation code just works.
 
 ## Timeline: precise choreography (GSAP-style, built in)

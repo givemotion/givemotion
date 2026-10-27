@@ -22,3 +22,12 @@ export function parseArgs(argv, { boolean = [], alias = {} } = {}) {
   }
   return out;
 }
+
+/** --scale: a number (2, 1.5) or a fraction ("4/3": 1440p from a 1080p layout). */
+export function parseScale(v) {
+  if (v == null || v === '' || v === true) return 1;
+  const m = typeof v === 'number' ? null : /^\s*(\d*\.?\d+)\s*(?:\/\s*(\d*\.?\d+))?\s*x?\s*$/i.exec(String(v));
+  const n = typeof v === 'number' ? v : m ? parseFloat(m[1]) / (m[2] ? parseFloat(m[2]) : 1) : NaN;
+  if (!(n > 0) || !isFinite(n)) throw new Error(`Bad --scale "${v}". Use a number like 2 or 1.5, or a fraction like 4/3.`);
+  return n;
+}

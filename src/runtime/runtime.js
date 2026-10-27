@@ -1557,6 +1557,29 @@
   function info(T) {
     return { time: T, frame: Math.round(T * comp.fps), fps: comp.fps, duration: comp.duration, progress: comp.duration ? T / comp.duration : 0, width: comp.width, height: comp.height };
   }
+  // A frame callback without an element, registered by a <script> inside a clip that does not start at 0, gets the
+  // video's time while gm.timeline('#scene') in the same script counts from the scene's start: say so in check.
+  // (Checked once the clips are known; the callback keeps the video time, as it always had.)
+  const frameFnScripts = [];
+  function addFrameFn(list, name, a, b) {
+    if (typeof a === 'function') {
+      list.push({ fn: a });
+      const s = document.currentScript;
+      if (s) { frameFnScripts.push({ script: s, name }); if (initialized) lintFrameFnScripts(); }
+    } else if (a && typeof b === 'function') {
+      const el = typeof a === 'string' ? document.querySelector(a) : a;
+      if (!el && typeof a === 'string') report('warning', 'onframe-no-target', `gm.${name}('${a}', fn): the selector matched nothing, so fn gets the video's time.`, null, 'Check the selector, and put the <script> after the element (or inside it).');
+      list.push({ el, fn: b });
+    } else throw new Error(`gm.${name}(fn) or gm.${name}(element, fn)`);
+  }
+  function lintFrameFnScripts() {
+    for (const { script, name } of frameFnScripts.splice(0)) {
+      const c = nearestClip(script);
+      if (!c || !(c.start > 1e-6)) continue;
+      const sel = selectorOf(c.el);
+      report('warning', 'onframe-global-time', `gm.${name}(fn) in a <script> inside ${sel} gets the video's time, not ${sel}'s own time: ${sel} starts at ${round(c.start)} s, while gm.timeline('${sel}') counts from 0 there.`, c.el, `Pass the scene: gm.${name}('${sel}', (local, info, el) => …) counts from its start and runs only while it is on screen. If you meant the video's time, move the script out of the clip.`);
+    }
+  }
   function runFrameFns(T, list = frameFns) {
     if (!list.length) return false;
     inFrameCallbacks = true;
@@ -1570,7 +1593,7 @@
           if (vis < s || vis >= e) continue;
           const tt = hasRemap ? mapT(f.el, T) : T;
           ran = true;
-          f.fn(tt - s, Object.assign(info(T), { local: tt - s, clipDuration: e - s }));
+          f.fn(tt - s, Object.assign(info(T), { local: tt - s, clipDuration: e - s }), f.el);
         } else { ran = true; f.fn(T, info(T)); }
       } catch (e) { pageError(e); }
     }
@@ -1640,6 +1663,7 @@
     setupCountersAndTypers();
     applyEnterExit();
     for (const h of hooks.init) { try { h(); } catch (e) { pageError(e); } }
+    lintFrameFnScripts();
     { const md = document.getElementById('gm-missing-data'); if (md) { try { const j = JSON.parse(md.textContent); report('warning', 'data-missing', (j.keys.length === 1 ? '{{data.' + j.keys[0] + '}} is' : j.keys.slice(0, 5).map((k) => '{{data.' + k + '}}').join(', ') + (j.keys.length > 5 ? ' and ' + (j.keys.length - 5) + ' more are' : ' are')) + ' empty: ' + (j.noData ? 'no data was given.' : 'the data has no value there.'), null, j.noData ? 'Pass --data data.json (or --props \'{...}\'), or put a data.json next to the HTML, or add <script type="application/json" id="gm-data">{...}</script> with default data, or write {{data.title|Default text}}.' : 'Check the path, or give a default: {{data.title|Default text}}.'); } catch (e) {} } }
     for (const el of document.querySelectorAll('[data-gm-include-error]')) report('error', 'include-not-found', `<gm-include src="${el.getAttribute('data-gm-include-error')}"> was not found.`, null, 'The path is relative to the HTML file that contains the include. Check the spelling, or run `npx givemotion add <block>` to copy a block into ./blocks.');
     if (comp.background && !document.body.style.background) document.body.style.background = comp.background;
@@ -1854,18 +1878,12 @@
     // 'natural' (default): physical easing, operator camera, adaptive motion blur, arcs.
     // 'classic': the older motion (fixed beziers, cameras that stop between shots). <html data-motion="classic">.
     get motion() { return motionStyle(); },
-    onFrame(a, b) {
-      if (typeof a === 'function') frameFns.push({ fn: a });
-      else if (a && typeof b === 'function') frameFns.push({ el: typeof a === 'string' ? document.querySelector(a) : a, fn: b });
-      else throw new Error('gm.onFrame(fn) or gm.onFrame(element, fn)');
-    },
+    // gm.onFrame(fn): fn(videoTime, info). gm.onFrame(el | selector, fn): fn(localTime, info, el), only while el's
+    // clip is on screen, with the time counted from that clip's start.
+    onFrame(a, b) { addFrameFn(frameFns, 'onFrame', a, b); },
     // Like onFrame, but runs after all animations are applied for this frame, so
     // getBoundingClientRect() returns where things really are. Use it to follow or aim at elements.
-    onLayout(a, b) {
-      if (typeof a === 'function') layoutFns.push({ fn: a });
-      else if (a && typeof b === 'function') layoutFns.push({ el: typeof a === 'string' ? document.querySelector(a) : a, fn: b });
-      else throw new Error('gm.onLayout(fn) or gm.onLayout(element, fn)');
-    },
+    onLayout(a, b) { addFrameFn(layoutFns, 'onLayout', a, b); },
     wait(p) { waits.push(typeof p === 'function' ? p() : p); return p; },
     // Beat grid from <html data-bpm data-beat-offset data-bar-offset data-beats-per-bar> (printed by `givemotion audio`).
     beat(n = 0) { const g = beatGrid(); return g.offset + n * g.period; },

@@ -218,3 +218,21 @@ test('server: the audio analysis page cannot be used to inject a script', async 
     assert.ok(!body.includes('<script>alert(1)'));
   } finally { await s.close(); }
 });
+
+test('--scale: numbers and fractions; a fractional scale must give whole, even sizes (with the scale that does)', async () => {
+  const { parseScale } = await import('../src/args.js');
+  const { scaledSize } = await import('../src/render.js');
+  assert.equal(parseScale(undefined), 1);
+  assert.equal(parseScale('2'), 2);
+  assert.equal(parseScale('4/3'), 4 / 3);
+  assert.equal(parseScale(1.5), 1.5);
+  assert.throws(() => parseScale('big'), /Bad --scale/);
+  assert.throws(() => parseScale('0'), /Bad --scale/);
+  assert.deepEqual(scaledSize(1920, 1080, 4 / 3, 'mp4'), { width: 2560, height: 1440 });
+  assert.deepEqual(scaledSize(1920, 1080, 1.5, 'mp4'), { width: 2880, height: 1620 });
+  assert.deepEqual(scaledSize(1920, 1080, 2, 'mp4'), { width: 3840, height: 2160 });
+  assert.throws(() => scaledSize(1920, 1080, 1.333, 'mp4'), /2559\.36x1439\.64.*--scale 4\/3 \(2560x1440\)/);
+  // whole but odd: fine for PNG frames, not for a video encoder
+  assert.deepEqual(scaledSize(1000, 1000, 1.001, 'png'), { width: 1001, height: 1001 });
+  assert.throws(() => scaledSize(1000, 1000, 1.001, 'mp4'), /even/);
+});

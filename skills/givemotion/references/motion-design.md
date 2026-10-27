@@ -35,7 +35,8 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 | First frame | Something on screen at 0.0 s and moving by 0.3 s; first message readable by ~1 s |
 | Rhythm | A new change (entrance, move, cut, emphasis) every 0.5–1.5 s |
 | Scene length | One idea per scene, 2.5–5 s (shorter for social, up to 6–8 s for one camera world step) |
-| Reading hold | After text lands: 0.5 s + 0.3 s per word (~3 words/s). A 4-word headline holds ~1.7 s; never under 1 s |
+| Reading hold | After text lands: ~1 s + 0.25 s per word. A 4-word headline holds ~2 s; never under 1 s |
+| Element life | Plan it per element in the shot list: **in** (its entrance), **hold** (≥ 1 s + 0.25 s per word, ≥ 1 s for an icon or a picture, counted from fully in until it starts to leave or is covered), **out** (an exit, the scene's transition, or a hand-over: morph, `gm.fly`, the next element born from it). A card that lands on a word and is covered or cut a second later was never seen; something that blinks off with no exit cannot be transitioned out of (`check`: `short-hold`, `cut-exit`) |
 | Holding is not freezing | During a hold keep a slow motion alive: camera `push 1.04–1.08`, `float`, a counter, a drifting background |
 | End card | 1.5–2 s, with motion (slow push, a shine, the last word landing late); `still` fires at 1.9 s at the very end |
 | Small element entrance (icon, chip, label) | 0.25–0.45 s |
@@ -67,6 +68,8 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
     .to('#ball', { keyframes: [{ y: -160, duration: 0.45, ease: 'sine.out' }, { y: 0, duration: 0.45, ease: 'sine.in' }] }, 2);
   ```
   For longer routes use `gm.path.travel` with `rotate: true` (`references/camera.md`).
+- **Start states hide completely.** A `from`/`fromTo` start state is on screen from the clip's first frame until the entrance: `opacity: 0`, `scale: 0` or `clipPath: 'inset(50%)'` (`inset(50% 0)` / `inset(0 50%)` to open from the middle line). `inset(45% 0)` leaves a 10% sliver sitting there, which reads as a glitch (`check`: `sliver-start`).
+- **Stepped motion only on small things.** `steps(n)` is a fine brand language for a counter, a blinking caret or text typing, but on a window, a card or the camera (more than ~15% of the frame) at 30 fps viewers read it as dropped frames (`check`: `stepped-move`). Give big moves a smooth ease.
 - **Squash and stretch, lightly.** A landing can flatten for 0.08–0.12 s (`scaleX: 1.08, scaleY: 0.92`) and recover; skip it for text and UI.
 - **Contrast of speed.** Fast in, slow drift while it is read, fast out. Constant medium speed everywhere reads as software.
 - **Emphasis.** To make a word or number matter: scale it 1.1–1.3, change its color to the accent, add a mark (`data-sketch-mark`), a flash or a small shake. One emphasis per beat.
@@ -164,4 +167,6 @@ Before rendering, none of these should be true:
 - [ ] The camera crosses empty space, or a wide shot holds for long with tiny labels.
 - [ ] Particles, arrows or shapes crossing key text.
 - [ ] The end card sits still for 2 s or more.
+- [ ] Something that lands and is gone, covered or cut a second later; an element with no planned way out.
+- [ ] A start state that leaves a sliver showing before the entrance; `steps()` on a big panel or the camera.
 - [ ] The video drifts from the brief (a required part missing, a claim on screen that does not match what is shown, a dropped word from a required line).

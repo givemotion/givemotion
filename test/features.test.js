@@ -972,3 +972,59 @@ test('timeline draw on a data-sketch shape (a <g> of rough strokes) draws it on 
   assert.ok(rows[1].every((x) => +x > 0.3 && +x < 0.7), `half drawn: ${rows[1]}`);
   assert.ok(rows[2].every((x) => +x === 1), `done: ${rows[2]}`);
 });
+
+test('check: pacing per element: short-hold and cut-exit; transitions, the last scene, exits, counters, quick-ok and swaps in place pass', { skip }, async () => {
+  const d = tmp(), f = join(d, 'p.html');
+  writeFileSync(f, page(`<style>h1,h2,p{margin:0;position:absolute}.card{position:absolute;background:#2a3a6a;padding:10px;border-radius:8px}</style>
+    <main data-sequence data-transition="push-left 0.5"><section class="scene" id="s1" data-duration="4">
+      <h1 id="short" style="left:20px;top:20px;font-size:36px">Five words are here now</h1>
+      <h1 id="good" style="left:20px;top:90px;font-size:36px">This one stays</h1>
+      <div class="card" id="popcard" data-start="0.5" data-duration="1.8" style="left:20px;top:170px"><b style="font-size:28px">Cut card</b></div>
+      <div class="card" id="exitcard" data-start="0.5" data-duration="1.8" data-exit="fade 0.3" style="left:220px;top:170px"><b style="font-size:28px">Exit card</b></div>
+      <b id="send" data-start="0.5" data-duration="1.5" style="position:absolute;left:440px;top:170px;font-size:28px">Send</b><b id="sent" data-start="2" style="position:absolute;left:440px;top:170px;font-size:28px">Sent</b>
+      <p id="count" style="left:20px;top:260px;font-size:30px" data-count="0 100 0.8">0</p>
+      <p id="quick" data-check="quick-ok" style="left:320px;top:260px;font-size:30px">Flash word</p>
+      <p id="setoff" style="left:20px;top:310px;font-size:30px">Set off</p>
+    </section><section class="scene" data-duration="3" style="background:#222"><h2 id="end" style="left:20px;top:20px;font-size:40px">Last scene text</h2></section></main>
+    <script>gm.timeline('#s1').from('#short', { opacity: 0, y: 20, duration: 0.5 }, 0.3).to('#short', { opacity: 0, y: -20, duration: 0.3 }, 1.2)
+      .from('#good', { opacity: 0, y: 20, duration: 0.5 }, 0.3).from('#quick', { opacity: 0, duration: 0.2 }, 1).to('#quick', { opacity: 0, duration: 0.2 }, 1.4)
+      .set('#setoff', { opacity: 0 }, 2.6);</script>`));
+  const rep = await check(f);
+  const of = (code) => rep.issues.filter((i) => i.code === code).map((i) => i.selector);
+  assert.deepEqual(of('short-hold'), ['#short']);
+  assert.match(rep.issues.find((i) => i.code === 'short-hold').message, /5-word text needs/);
+  assert.deepEqual(of('cut-exit').sort(), ['#popcard', '#setoff']);
+  assert.ok(Math.abs(rep.issues.find((i) => i.selector === '#popcard' && i.code === 'cut-exit').time - 2.27) < 0.15);
+});
+
+test('check: a hand-made push-in that crops text is a warning (stuck text stays an error); ellipsis rows; display: contents tweens; steps() on big things; sliver start states', { skip }, async () => {
+  const d = tmp(), f = join(d, 'c.html');
+  writeFileSync(join(d, 'part.html'), '<p id="partp" style="position:absolute;margin:0;left:20px;top:200px;font-size:24px">From the include</p>');
+  writeFileSync(f, page(`<style>h1{margin:0;position:absolute;white-space:nowrap;font-size:40px}.row{position:absolute;width:220px;white-space:nowrap;overflow:hidden;font-size:24px}</style>
+    <section class="scene" data-duration="4">
+      <div id="stage" style="position:absolute;inset:0"><h1 id="wide" style="left:30px;top:40px">A wide title that the push crops</h1><h1 id="stuck" style="left:540px;top:120px">Stuck out</h1></div>
+      <div class="row" id="ell" style="left:400px;top:250px;text-overflow:ellipsis">A long mail subject line cut with an ellipsis</div>
+      <div class="row" id="cut" style="left:400px;top:300px">A long line that is cut without an ellipsis</div>
+      <gm-include src="part.html"></gm-include>
+      <div id="win" style="position:absolute;left:300px;top:150px;width:300px;height:140px;background:#345"></div>
+      <div id="caret" style="position:absolute;left:20px;top:150px;width:4px;height:30px;background:#fff"></div>
+      <div id="grain" style="position:absolute;inset:-50%;opacity:.07;mix-blend-mode:overlay;background:#888;animation:gr .5s steps(5) infinite"></div>
+      <div id="slv" style="position:absolute;left:20px;top:240px;width:250px;height:50px;background:#c84"></div>
+      <div id="hid" style="position:absolute;left:20px;top:300px;width:250px;height:50px;background:#4c8"></div>
+    </section><style>@keyframes gr{to{transform:translate(10%,5%)}}</style>
+    <script>gm.timeline('.scene').to('#stage', { scale: 1.5, duration: 0.6, ease: 'power2.inOut' }, 0.5)
+      .to('[data-gm-include]', { opacity: 0, duration: 0.5 }, 3)
+      .fromTo('#win', { x: -200 }, { x: 0, duration: 1.5, ease: 'steps(5)' }, 0.5).fromTo('#caret', { x: 0 }, { x: 60, duration: 1, ease: 'steps(6)' }, 0.5)
+      .fromTo('#slv', { clipPath: 'inset(45% 0% 45% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.6 }, 1.0)
+      .fromTo('#hid', { clipPath: 'inset(50% 0% 50% 0%)' }, { clipPath: 'inset(0% 0% 0% 0%)', duration: 0.6 }, 1.0);</script>`));
+  const rep = await check(f);
+  const of = (code, sev) => rep.issues.filter((i) => i.code === code && (!sev || i.severity === sev)).map((i) => i.selector).sort();
+  assert.deepEqual(of('text-offscreen', 'error'), ['#stuck']);
+  assert.deepEqual(of('text-offscreen', 'warning'), ['#wide']);
+  assert.ok(rep.issues.find((i) => i.selector === '#wide' && i.code === 'text-offscreen').time >= 1.0, 'not while the push moves');
+  assert.deepEqual(of('text-clipped'), ['#cut']);
+  assert.equal(of('contents-no-box').length, 1);
+  assert.match(rep.issues.find((i) => i.code === 'contents-no-box').message, /gm-include/);
+  assert.deepEqual(of('stepped-move', 'info'), ['#win']);
+  assert.deepEqual(of('sliver-start'), ['#slv']);
+});

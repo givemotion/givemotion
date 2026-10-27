@@ -33,6 +33,7 @@ The engine gives you any HTML/CSS/SVG/canvas and a frame-exact timeline; the loo
 6. **Things come from things.** A new element is born from one already on screen, not spawned from nowhere: three circles squeeze out of the main circle; one of the rectangles on screen slides over and becomes the underline; a card grows out of the button that was clicked; the logo's mark becomes the end card's mark. Reuse and transform before you add.
 7. **A camera move means "look here".** Push in only toward something the viewer should read next. Never zoom into empty space or into the old scene as a way to transition: to leave a scene, move sideways (push, whip, wipe) or carry an element across (morph, the rule above).
 8. **Animate** `transform`/`translate`/`scale`/`rotate`/`opacity`/`filter`/`clip-path`, not `width`/`top`/`left`.
+9. **Every element gets a planned life:** in, a hold long enough to read (~1 s + 0.25 s per word), then an exit or a hand-over. The shot list gives each its hold.
 
 ## Hierarchy: one thing matters at a time
 

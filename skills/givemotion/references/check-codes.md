@@ -2,7 +2,7 @@
 
 Purpose: what each `check` code means and how to fix it, how `check` decides, and how to mark intentional cases with `data-check`. (Every issue in the `check` output already prints a message and a fix; read this when one is unclear.)
 
-Three levels: ✖ error (broken: must fix), ⚠ warning (a real fault such as cut-off, overlapping or unreadable text: fix it unless it is on purpose), ℹ style note (`straight-move`, `camera-stop`, `fast-no-blur`, `same-ease`, `empty-frame`: a hint about taste; look at the frames and ignore it when the move is what you meant).
+Three levels: ✖ error (broken: must fix), ⚠ warning (a real fault such as cut-off, overlapping or unreadable text: fix it unless it is on purpose), ℹ style note (`straight-move`, `camera-stop`, `fast-no-blur`, `same-ease`, `empty-frame`, `stepped-move`: a hint about taste; look at the frames and ignore it when the move is what you meant).
 
 Contents
 - Layout and readability codes
@@ -14,8 +14,8 @@ Contents
 
 | Code | Meaning / fix |
 |---|---|
-| `text-offscreen` | Text runs past the frame edge for 0.2 s or more (✖). Smaller font, `max-width`, or move it. Inside a camera world it is a ⚠ when a label is cut by the frame edge while the shot holds (even if most of it is out: "st works" of a title reads as a mistake); frame the shot so labels are fully in or fully out. |
-| `text-clipped` | Text cut by an `overflow:hidden` box. Make it fit or let it wrap. |
+| `text-offscreen` | Text runs past the frame edge for 0.2 s or more (✖). Smaller font, `max-width`, or move it. Inside a camera world it is a ⚠ when a label is cut by the frame edge while the shot holds (even if most of it is out: "st works" of a title reads as a mistake); frame the shot so labels are fully in or fully out. The same for a hand-made camera (a big layer zoomed or panned with a transform: a timeline push-in, `data-camera`): no report while it moves fast, a ⚠ when the crop lasts 0.3 s+ through a hold, and ✖ only when the text would be off the frame without that transform too (stuck off screen). |
+| `text-clipped` | Text cut by an `overflow:hidden` box. Make it fit or let it wrap. Rows that end in an ellipsis (`text-overflow: ellipsis`, `line-clamp`) are cut on purpose and not reported. |
 | `text-overflows-box` | Text spills out of its card/background. Add padding/width or shorten. |
 | `text-overlap` | Two texts on top of each other while settled. Move one or change timing. |
 | `moving-overlap` | Two readable texts (both above half opacity) on top of each other for 0.2 s+ while one of them moves: an exit and the next entrance at the same time ("Your" still under "Copy."). Let the old text leave (or fade below half) before the new one arrives. Crossfades, morph pairs and the letters of one split word are not reported. |
@@ -37,6 +37,10 @@ Contents
 | `fast-no-blur` | Something moves 40+ px per frame (at 1080p) in classic mode or with `data-motion-blur="off"`: it will strobe. Render with `--motion-blur 8`, or slow the move. |
 | `straight-move` | A long dead-straight diagonal move of an element (25%+ of the frame width), measured in its camera world (a camera move is not the element moving). Leave `arc` at its default, or travel along a curved path. |
 | `css-scale-vs-tween` | An element has a CSS `scale` (e.g. `scale: 0`) and a `gm.timeline` tween on `scale`: the timeline writes `transform`, and the browser multiplies the two, so `scale: 0` stays 0. Give the start value to the timeline (`fromTo`, `from`, `gm.set`) instead. |
+| `short-hold` | A text or a mark (an icon, a picture, 40 px+ square) is readable for less time than it takes to read it: from fully in (landed, settled, not covered) until it starts to leave, is covered, is cut away, or its scene or the video ends. It needs ~1 s + 0.25 s per word (1 s for an icon); it is reported under ~70% of that. Hold it longer (start its exit, the cover or the scene change later; bring it in sooner) or cut words. Not judged: text under 24 px (see `tiny-text`), text that changes on screen (counters, typing, scramble), small things riding an endless loop (a floating label, a particle), texts that take turns in one place (captions, a word-by-word kinetic line: three or more, each replaced within ~0.4 s), and `data-check="quick-ok"`. A line that builds word by word counts from its first word; a copy that carries the same text on (a morph, a ghost flying off) counts as one hold. |
+| `cut-exit` | Something was fully on screen and then vanished in one frame (its clip ended, or it was set to opacity 0) while its scene goes on: nothing to transition out of, it just blinks off. Give it a `data-exit` or an exit tween (0.2–0.4 s), carry it into the next scene (`data-morph`, `gm.fly`), or hold it to the end of its scene. Not reported: a scene change or transition carrying the whole scene out, a layer as big as the frame going away (a cut of the whole picture), the end of the video, something covered, and a swap where something new appears in the same place (a button label changing). |
+| `sliver-start` | An element with a `clip-path` start state (`inset(45% 0)`) shows a thin sliver from its first frame until its entrance opens it: it reads as a glitch. Start fully hidden: `inset(50%)` (`inset(50% 0)` / `inset(0 50%)` to open from the middle), `opacity: 0` or `scale: 0`. |
+| `stepped-move` | ℹ A `steps()` ease on something bigger than ~15% of the frame (a window, a card, the camera) that moves, resizes or clips: at video frame rates it reads as dropped frames. Keep `steps()` for small things (a counter, a blinking caret, text typing); see-through textures (grain) are not reported. |
 | `same-ease` | 8+ animations and more than 90% use the same bezier curve: drop the explicit eases (the natural defaults vary by role) or vary them (springs for arrivals, `in-*` for exits, `in-out-sine` for long moves). |
 | `camera-late` | A camera shot arrives (its time + duration) after its scene starts its exit transition, so it is never seen at rest. Start it earlier or shorten it. |
 | `camera-no-target`, `camera-padding` | A shot's target matched nothing in the world; a `padding` too big for the frame was clamped. |
@@ -51,6 +55,7 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 | `bad-time`, `bad-enter`, `bad-exit`, `bad-transition`, `bad-camera`, `bad-count`, `sequence-missing-duration`, `no-duration`, `cuts-short` | Fix the attribute as the message says. |
 | `odd-size` | Width or height is odd; video codecs need even sizes (1920x1080). |
 | `non-seekable-animation` | A CSS animation started inside `onFrame`; use `data-start` or set styles from `t`. |
+| `contents-no-box` | A tween or style gives opacity, transform, filter or clip-path to an element with `display: contents` (a `<gm-include>` without class or style is one): it draws no box, so nothing happens. Give the include a class or a style (`style="display:block"`), or animate the elements inside it. |
 | `timeline-no-target`, `cursor-target`, `fly-no-from`, `connect-no-target`, `burst-no-target` | A selector matched nothing. |
 | `morph-no-pairs` | `morph` transition without matching `data-morph` names in both scenes. |
 | `audio-not-found`, `audio-no-beats`, `audio-late` | `gm.audio()` found no file/element, found no steady beat, or was called after the video started. |
@@ -65,6 +70,7 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 ## How check decides; data-check
 
 - It compares frames, so anything moving or fading (CSS, timeline, React, onFrame, a camera follow) is skipped by the layout checks while it moves, and a problem must last ~0.2-0.3 s to count. "Moving" means: an entrance/exit/short animation is running on it or a parent, it moves more than ~40 px/s (at 1080p) inside the biggest moving layer around it, or it moves faster than ~600 px/s on screen whatever carries it (a full-frame panel pushed in, a fast camera move). A slow camera drift does not make text "moving". Only `moving-overlap` and `ghost-overlap` look at moving text.
+- `short-hold` and `cut-exit` follow each reading unit (a line with its inline parts or its word spans, a split headline, an SVG label) over the whole pass: it is readable while what is on screen of it is above 40% opacity, not fading, not covered, mostly in frame and slower than ~600 px/s (at 1080p) in its layer, so a camera drift, a slow travel or a small emphasis pop does not end its hold (breaks under 0.5 s while it stays on screen are bridged). Something that keeps moving on screen (a cursor, a ball) is not leaving.
 - Text that is fully hidden (outside the frame, behind a mask or clip-path, waiting to slide in) or covered by something solid is not judged (except camera-world text under an overlay, see `text-covered`). Overlap tests use each text's visible part (its own and its parents' `clip-path`: inset, polygon, circle, ellipse).
 - `data-check` takes one or more space-separated values, on the element or any parent (its whole subtree):
 
@@ -74,6 +80,7 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 | `crop-ok` | Being cut by the frame edge is meant: no `text-offscreen`, `text-clipped`, `unsafe-zone` (a film strip, a ticker, a big word bleeding off, zoomed into one line of code). |
 | `overlap-ok` | Overlapping is the point (a pile of cards, a collage): no `text-covered`, `text-overlap`, `moving-overlap`, `ghost-overlap` or `text-over-line` for text inside it, or for things inside it covering other text. Every other check still runs. |
 | `safe-ok` | Text meant to sit in a vertical-video safe zone: no `unsafe-zone`. |
+| `quick-ok` | Meant to flash by (a rapid word montage, a subliminal frame): no `short-hold` or `cut-exit`. |
 
 - Re-check one moment fast with `check --at 7.5`, or part of the video with `--from 6 --to 9`. Problems list every time range they happen in, and times also say how far into the scene the problem is. (`snapshot --times` with `--from/--to` keeps only the times inside that range.)
 - Exit code 1 when there are errors; warnings do not fail.

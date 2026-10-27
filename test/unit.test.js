@@ -161,6 +161,55 @@ test('motionIssues: a camera that stops between shots, fast moves without blur, 
   assert.equal(motionIssues(samples, names, classic, info, 0.25).filter((i) => i.code === 'camera-stop').length, 0);
 });
 
+test('pacingIssues: short holds by word count, breaks that keep it on screen, counters, quick-ok, ranges; cut-exit; sliver-start', async () => {
+  const { pacingIssues } = await import('../src/check.js');
+  const meta = {
+    1: { sel: '#short', kind: 'text', words: 6, text: 'six words that leave too soon' },
+    2: { sel: '#long', kind: 'text', words: 2, text: 'stays here' },
+    3: { sel: '#count', kind: 'text', words: 1, live: true },
+    4: { sel: '#flash', kind: 'text', words: 1, quick: true },
+    5: { sel: '#icon', kind: 'mark', words: 0 },
+    6: { sel: '#pop', kind: 'text', words: 2 },
+    c7: { sel: '#slv', cp: 'inset(45% 0%)' }, c8: { sel: '#ok', cp: 'inset(50%)' },
+  };
+  // 0..4 s every 0.1 s: #short readable 0.5-1.3 s; #long 0.3-4 s with a 0.3 s emphasis pop at 2 s; #icon 1-1.4 s, then covered
+  const samples = [];
+  for (let k = 0; k <= 40; k++) {
+    const t = k / 10, units = [];
+    if (t >= 0.2 && t < 1.6) units.push([1, t >= 0.5 && t <= 1.3 ? 2 : 1, t > 1.3 ? 'moving' : 'fading', 1, 0]);
+    if (t >= 0.3) units.push([2, t >= 2 && t <= 2.3 ? 1 : 2, 'moving', 1, 0]);
+    units.push([3, 2, '', 1, 1], [4, t >= 1 && t <= 1.4 ? 2 : 1, '', 1, 0]);
+    if (t >= 1) units.push([5, t <= 1.4 ? 2 : 1, 'covered', 1, 0]);
+    units.push([6, 2, '', 1, 0]);
+    samples.push({ t, units, clips: [[7, t < 0.5 ? 0.1 : t < 1 ? 0.5 : 1, 1], [8, t < 0.5 ? 0 : 1, 1]] });
+  }
+  const range = { from: 0, to: 4, lastT: 4, duration: 4.03 };
+  const list = pacingIssues(samples, meta, [{ sel: '#pop', text: 'pop', t: 2.5, scene: '#s1', sceneStart: 0 }], range);
+  const of = (code) => list.filter((i) => i.code === code).map((i) => i.selector).sort();
+  assert.deepEqual(of('short-hold'), ['#icon', '#short']);
+  const sh = list.find((i) => i.selector === '#short');
+  assert.match(sh.message, /6-word text needs ~2\.5 s/);
+  assert.match(sh.message, /starts to move away/);
+  assert.deepEqual(sh.ranges, [[0.5, 1.3]]);
+  assert.deepEqual(of('cut-exit'), ['#pop']);
+  assert.equal(list.find((i) => i.code === 'cut-exit').scene, '#s1');
+  assert.deepEqual(of('sliver-start'), ['#slv']);
+  // a check of part of the video does not judge a hold that may go on outside it
+  assert.deepEqual(pacingIssues(samples.slice(0, 13), meta, [], { from: 0, to: 1.2, lastT: 4, duration: 4.03 }).filter((i) => i.code === 'short-hold').map((i) => i.selector), []);
+  // captions taking turns in one place (0.8 s each) are read on; the same phrases in different places are not
+  const caps = (dy) => {
+    const m2 = {}, s2 = [];
+    for (let c = 0; c < 4; c++) m2[c + 1] = { sel: '#cap' + c, kind: 'text', words: 3, text: 'caption number ' + c };
+    for (let k = 0; k <= 40; k++) {
+      const t = k / 10, c = Math.floor(t / 0.8);
+      s2.push({ t, units: c < 4 ? [[c + 1, 2, '', 1, 0, 100, 800 + c * dy, 600, 80]] : [] });
+    }
+    return pacingIssues(s2, m2, [], range).filter((i) => i.code === 'short-hold').length;
+  };
+  assert.equal(caps(0), 0);
+  assert.equal(caps(200), 4);
+});
+
 test('server: no hidden files, no cross-origin reads, only localhost Host headers', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'gm-srv-'));
   writeFileSync(join(dir, '.env'), 'SECRET=1');

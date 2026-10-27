@@ -109,7 +109,7 @@
   </section>
 
   <!-- 2. Users -->
-  <section id="users" class="scene" data-duration="5.6" data-transition="zoom-through 0.7">
+  <section id="users" class="scene" data-duration="6" data-transition="zoom-through 0.7">
     <div id="world">
       <svg id="chart" viewBox="0 0 1920 1080"></svg>
       <div id="tip"></div>
@@ -250,7 +250,7 @@ tl2.to('#tip', { scale: 0, duration: 0.3, ease: 'power2.in' }, T1 + 0.05)
    .fromTo('#lastRing', { scale: 0.5, autoAlpha: 1 }, { scale: 3, autoAlpha: 0, duration: 1.1, ease: 'expo.out', immediateRender: false }, T1 + 0.05)
    .fromTo('.readout', { scale: 1 }, { keyframes: [{ scale: 1.12, duration: 0.15 }, { scale: 1, duration: 0.5, ease: 'back.out(3)' }], transformOrigin: '0% 50%' }, T1)
    .from('.growth b', { scale: 2.6, autoAlpha: 0, rotate: -8, duration: 0.55, ease: 'expo.in' }, T1 + 0.2)
-   .from('.growth span', { autoAlpha: 0, y: 20, duration: 0.5, ease: 'expo.out' }, T1 + 0.75);
+   .from('.growth span', { autoAlpha: 0, y: 20, duration: 0.5, ease: 'expo.out' }, T1 + 0.45);
 
 gm.camera('#world')
   .shot(0, { follow: '#tip', zoom: 1.9, offset: [120, -60] })

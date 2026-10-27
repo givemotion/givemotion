@@ -76,6 +76,26 @@ test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF c
   assert.deepEqual(diff, []);
 });
 
+test('4K with many composited layers: every tile is drawn (still and render match the same page on one layer)', { skip }, async () => {
+  // 48 full-frame layers at --scale 2 need more tile memory than Chrome gives a tab by default; past the
+  // limit the frame came out with blank or stale rectangles. The same page without will-change paints into one layer.
+  const d = tmp();
+  const layers = (deep) => Array.from({ length: 48 }, (_, i) => `<div style="position:absolute;inset:0;opacity:.9;${deep ? 'will-change:transform;' : ''}background:repeating-linear-gradient(${(i * 37) % 180}deg,hsl(${(i * 53) % 360} 80% 50%) 0 ${7 + (i % 5)}px,hsl(${(i * 53 + 180) % 360} 80% 40%) 0 ${14 + (i % 7)}px)"></div>`).join('');
+  const attrs = 'data-width="1920" data-height="1080" data-fps="30" data-duration="0.1"';
+  const deep = comp(d, 'deep.html', layers(true), attrs), flat = comp(d, 'flat.html', layers(false), attrs);
+  const rgb = (buf) => execFileSync(ffmpegPath(), ['-v', 'error', '-i', '-', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { input: buf, maxBuffer: 1 << 26 });
+  const off = (a, b) => { let n = 0; for (let i = 0; i < a.length; i += 3) if (Math.max(Math.abs(a[i] - b[i]), Math.abs(a[i + 1] - b[i + 1]), Math.abs(a[i + 2] - b[i + 2])) > 24) n++; return n / (a.length / 3); };
+  const ref = rgb((await stills(flat, [0], { scale: 2 })).buffers[0]);
+  const still = rgb((await stills(deep, [0], { scale: 2 })).buffers[0]);
+  assert.ok(off(still, ref) < 0.001, `still: ${(off(still, ref) * 100).toFixed(1)}% of the pixels are wrong`);
+  const out = join(d, 'frames');
+  await render(deep, { output: out, format: 'png', scale: 2, frames: '0-2', workers: 1, cache: false, ...quiet });
+  for (const fr of readdirSync(out).filter((x) => x.endsWith('.png'))) {
+    const got = rgb(readFileSync(join(out, fr)));
+    assert.ok(off(got, ref) < 0.001, `render ${fr}: ${(off(got, ref) * 100).toFixed(1)}% of the pixels are wrong`);
+  }
+});
+
 test('video frames are exact and <video> keeps its CSS', { skip }, async () => {
   const d = tmp();
   mkdirSync(join(d, 'media'));

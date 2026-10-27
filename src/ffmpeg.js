@@ -63,6 +63,7 @@ export function qualitySettings(q = 'standard') { return QUALITY[q] || QUALITY.s
 /**
  * Describe how frames are encoded for a given output format.
  * Returns { segExt, finalExt, vargs(fpsOut) , alpha, needsFinalTranscode }
+ * @param {{ format: string, quality?: string, crf?: number, codec?: string, transparent?: boolean, info: any, hardware?: boolean | 'auto' }} o
  */
 export function encoderPlan({ format, quality = 'standard', crf, codec, transparent, info, hardware }) {
   const q = qualitySettings(quality);
@@ -278,6 +279,8 @@ export async function finalize({ segments, listFile, out, format, duration, audi
  * Should this render use the GPU video encoder? `hardware: true/false` decides; left unset ("auto") it is used on macOS
  * (VideoToolbox) for H.264/HEVC MP4 and MKV, unless the output is transparent or --quality max. Returns true, false or
  * 'auto' (use it if encoderIsReproducible() says so).
+ * @param {{ hardware?: boolean | 'auto', format: string, transparent?: boolean, quality?: string, codec?: string, info: any, platform?: NodeJS.Platform }} o
+ * @returns {boolean | 'auto'}
  */
 export function wantsHardware({ hardware, format, transparent, quality, codec, info, platform = process.platform }) {
   if (hardware === true || hardware === false) return hardware;
@@ -291,6 +294,10 @@ export function wantsHardware({ hardware, format, transparent, quality, codec, i
  * Does this encoder give the same bytes for the same frames on this machine? Renders must be reproducible (and a
  * re-render patches parts into an earlier video byte for byte), so a hardware encoder is only used after it encodes a
  * short test clip twice, in two processes, identically. The answer is kept per ffmpeg version, OS release and settings.
+ * @param {{ segExt: string, vf: string[], vargs: string[] }} plan
+ * @param {{ version: string }} info
+ * @param {{ cacheFile?: string, tmp?: string }} [opts]
+ * @returns {boolean}
  */
 export function encoderIsReproducible(plan, info, { cacheFile, tmp } = {}) {
   const key = [info.version, process.platform, osRelease(), plan.vargs.join(' ')].join('|');

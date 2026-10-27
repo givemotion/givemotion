@@ -162,10 +162,10 @@ async function main() {
     case 'blocks': return cmdBlocks(args);
     case 'add': return cmdAdd(args);
     case 'skill': return cmdSkill(args);
-    case 'install': return cmdInstall(args);
-    case 'doctor': return cmdDoctor(args);
+    case 'install': return cmdInstall();
+    case 'doctor': return cmdDoctor();
     case 'bench': return cmdBench(args);
-    case 'clean': return cmdClean(args);
+    case 'clean': return cmdClean();
     default:
       console.error(`Unknown command "${cmd}".\n`);
       console.log(HELP);
@@ -419,7 +419,7 @@ function blockList() {
     const meta = /<!--\s*block:\s*([\s\S]*?)-->/.exec(txt);
     let m = {};
     if (meta) for (const line of meta[1].split('\n')) { const i = line.indexOf(':'); if (i > 0) m[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
-    return { name: f.replace(/\.html$/, ''), file: join(dir, f), ...m };
+    return /** @type {{ name: string, file: string, description?: string, params?: string, usage?: string }} */ ({ name: f.replace(/\.html$/, ''), file: join(dir, f), ...m });
   });
 }
 async function cmdBlocks(args) {

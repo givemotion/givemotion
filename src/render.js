@@ -12,6 +12,8 @@ import { parseScale } from './args.js';
 
 export { parseScale };
 
+/** @typedef {import('./types/api.js').RenderOptions} RenderOptions @typedef {import('./types/api.js').RenderResult} RenderResult @typedef {import('./types/api.js').OpenOptions} OpenOptions @typedef {import('./types/api.js').Composition} Composition @typedef {import('./types/api.js').Input} Input */
+
 const FORMATS = { '.mp4': 'mp4', '.webm': 'webm', '.mov': 'mov', '.gif': 'gif', '.mkv': 'mkv' };
 
 export function formatFromOutput(out, fmt) {
@@ -84,6 +86,7 @@ export function resolveMotionBlur(value, { motion = 'natural' } = {}) {
 }
 
 /** Resolve the HTML file and the folder that will be served. */
+/** @param {Input} input */
 export function resolveInput(input) {
   let file = resolve(input || 'index.html');
   if (existsSync(file) && statSync(file).isDirectory()) file = ['index.html', 'index.jsx', 'index.tsx'].map((n) => join(file, n)).find((f) => existsSync(f)) || join(file, 'index.html');
@@ -111,6 +114,9 @@ function defaultWorkers(totalFrames) {
 
 /**
  * Open a page for a composition (used by render, still, snapshot, check).
+ * @param {Input} input
+ * @param {OpenOptions & { mode?: string }} [opts]
+ * @returns {Promise<Composition>}
  */
 export async function openComposition(input, opts = {}) {
   opts = { ...opts, scale: parseScale(opts.scale) };
@@ -203,6 +209,11 @@ const AUDIO_FORMATS = { '.mp3': 'mp3', '.wav': 'wav', '.m4a': 'm4a', '.aac': 'm4
  * Render a composition to a video file.
  * Returns a summary object.
  */
+/**
+ * @param {Input} input
+ * @param {RenderOptions} [opts]
+ * @returns {Promise<RenderResult>}
+ */
 export async function render(input, opts = {}) {
   const t0 = Date.now();
   opts = { ...opts, scale: parseScale(opts.scale) };
@@ -238,7 +249,7 @@ export async function render(input, opts = {}) {
     const errors = comp.issues.filter((i) => i.severity === 'error');
     if (errors.length && !opts.force) {
       const e = new Error('The composition has errors:\n' + errors.map((i) => `  - [${i.code}] ${i.message}${i.selector ? ' (' + i.selector + ')' : ''}${i.fix ? '\n    fix: ' + i.fix : ''}`).join('\n') + '\nFix them or pass --force.');
-      e.issues = comp.issues;
+      /** @type {any} */ (e).issues = comp.issues;
       throw e;
     }
     const fps = comp.fps;
@@ -304,7 +315,7 @@ export async function render(input, opts = {}) {
     const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
     const nWorkers = Math.max(1, groups.length);
     if (!opts.quiet) {
-      log(`givemotion: ${comp.width}x${comp.height}${opts.scale !== 1 ? ' @' + +opts.scale.toFixed(4) + 'x (' + size.width + 'x' + size.height + ')' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: the page uses requestAnimationFrame' : ''}${hardware ? ', GPU encoder' : ''}]`);
+      log(`givemotion: ${comp.width}x${comp.height}${opts.scale !== 1 ? ' @' + +(/** @type {number} */ (opts.scale)).toFixed(4) + 'x (' + size.width + 'x' + size.height + ')' : ''} ${fps}fps ${(nFrames / fps).toFixed(2)}s (${nFrames} frames) → ${relativeOut(out)} [${format}, ${nWorkers} worker${nWorkers > 1 ? 's' : ''}, ${ctx.page.mode}${blurSamples > 1 ? ', motion blur x' + blurSamples : auto ? ', motion blur auto' : blur.why ? ', no motion blur: the page uses requestAnimationFrame' : ''}${hardware ? ', GPU encoder' : ''}]`);
       if (parts && parts.list.some((p) => p.keep)) {
         const kept = parts.list.filter((p) => p.keep).length;
         log(`  reusing ${kept} of ${parts.list.length} parts from the last render; redoing ${parts.list.length - kept}${parts.redo ? ' (--redo)' : ''}${parts.changedClips.length ? ' (changed: ' + parts.changedClips.slice(0, 4).join(', ') + (parts.changedClips.length > 4 ? ', …' : '') + ')' : ''}`);
@@ -562,7 +573,7 @@ export async function velocityBlur(t, dt, o = {}) {
       if (!svgChild && !(e instanceof SVGElement && !(e instanceof SVGSVGElement))) m = linear(s).multiply(m);
     }
     if (svgChild) {
-      const q = el.getScreenCTM && el.getScreenCTM();
+      const q = /** @type {SVGGraphicsElement} */ (el).getScreenCTM && /** @type {SVGGraphicsElement} */ (el).getScreenCTM();
       if (!q) continue;
       m = new DOMMatrix([q.a, q.b, q.c, q.d, 0, 0]); ox = q.e; oy = q.f;
     }
@@ -721,6 +732,11 @@ function relativeOut(p) {
 }
 
 /** Render single frames to image files. times: seconds[] */
+/**
+ * @param {Input} input
+ * @param {number[]} times
+ * @param {import('./types/api.js').StillOptions} [opts]
+ */
 export async function stills(input, times, opts = {}) {
   const ctx = await openComposition(input, { ...opts, mode: 'render' });
   try {

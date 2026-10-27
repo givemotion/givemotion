@@ -577,7 +577,7 @@
     if (el instanceof SVGElement) {
       // in the shape's own user space. An outer <svg> holds it inside; a <g> or a shape gets it right after itself
       // (with its transform attribute), so the mark never grows the group's own box (arrows and camera shots use it)
-      let b; try { b = el.getBBox(); } catch (e) { return false; }
+      let b; try { b = /** @type {SVGGraphicsElement} */ (el).getBBox(); } catch (e) { return false; }
       if (!b.width && !b.height) return false;
       box = { x: b.x, y: b.y, w: b.width, h: b.height };
       if (el instanceof SVGSVGElement && !(el.parentNode instanceof SVGElement)) host = el;

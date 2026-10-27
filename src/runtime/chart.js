@@ -11,6 +11,7 @@
   const I = gm.__internal;
   const PX = I.PX;
   const SVGNS = 'http://www.w3.org/2000/svg';
+  /** @type {(x: number) => any} */
   const r2 = (x) => Math.round(x * 100) / 100;
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const charts = [];
@@ -63,6 +64,7 @@
   }
   function compact(v) {
     const a = Math.abs(v);
+    /** @type {[number, string]} */
     const s = a >= 1e9 ? [1e9, 'B'] : a >= 1e6 ? [1e6, 'M'] : a >= 1e3 ? [1e3, 'k'] : [1, ''];
     const x = v / s[0];
     return (Math.round(x * 100) / 100).toString().replace('-', '−') + s[1];
@@ -294,7 +296,7 @@
       for (const t of document.querySelectorAll('[data-chart-text]')) {
         const tk = t.getAttribute('data-chart-text').trim().split(/\s+/);
         let owner = null, kind = tk[tk.length - 1];
-        if (tk.length > 1) { const r = document.querySelector(tk[0]); owner = r && (r.__gmChart || (r.querySelector('.gm-chart') || {}).__gmChart); }
+        if (tk.length > 1) { const r = document.querySelector(tk[0]); owner = r && (r.__gmChart || (r.querySelector('.gm-chart') || /** @type {any} */ ({})).__gmChart); }
         else { const r = t.closest('.gm-chart'); owner = r && r.__gmChart; }
         if (owner === this) this.texts.push({ el: t, kind });
       }
@@ -412,7 +414,7 @@
         lab.className = 'gm-chart-tick';
         lab.textContent = this.tickFormat(x);
         this.tickBox.appendChild(lab);
-        return { v: x, line, lab, onBase };
+        return /** @type {{ v: number, line: SVGLineElement | null, lab: HTMLDivElement, onBase: boolean, slot?: number }} */ ({ v: x, line, lab, onBase });
       });
       if (this.opts.axis === 'none' || this.opts.axis === false) this.tickBox.style.display = 'none';
     }

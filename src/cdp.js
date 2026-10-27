@@ -1,13 +1,18 @@
 // Minimal Chrome DevTools Protocol client over --remote-debugging-pipe. No dependencies.
 import { spawn } from 'node:child_process';
 
+/**
+ * @param {string} executable
+ * @param {string[]} args
+ * @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ */
 export function launchChrome(executable, args, { env } = {}) {
   const proc = spawn(executable, ['--remote-debugging-pipe', ...args], {
     stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
     env: env || process.env,
     detached: process.platform !== 'win32',
   });
-  const writer = proc.stdio[3];
+  const writer = /** @type {import('node:stream').Writable} */ (proc.stdio[3]);
   const reader = proc.stdio[4];
   let nextId = 0;
   const pending = new Map();

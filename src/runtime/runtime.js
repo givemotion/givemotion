@@ -40,13 +40,13 @@
   performance.now = () => now * 1000;
   function VDate(...args) {
     if (!new.target) return new real.Date(EPOCH + now * 1000).toString();
-    return args.length ? new real.Date(...args) : new real.Date(EPOCH + now * 1000);
+    return args.length ? new real.Date(.../** @type {[any]} */ (args)) : new real.Date(EPOCH + now * 1000);
   }
   VDate.prototype = real.Date.prototype;
   VDate.now = () => EPOCH + now * 1000;
   VDate.parse = real.Date.parse;
   VDate.UTC = real.Date.UTC;
-  window.Date = VDate;
+  window.Date = /** @type {any} */ (VDate);
 
   function addTimer(fn, ms, args, interval) {
     if (typeof fn === 'string') { const code = fn; fn = () => (0, eval)(code); }
@@ -56,8 +56,8 @@
     timers.set(id, { due: now + delay, delay, fn, args, interval: interval ? Math.max(delay, 0.001) : 0, seq: timerSeq++ });
     return id;
   }
-  window.setTimeout = (fn, ms, ...args) => addTimer(fn, ms, args, false);
-  window.setInterval = (fn, ms, ...args) => addTimer(fn, ms, args, true);
+  window.setTimeout = /** @type {any} */ ((fn, ms, ...args) => addTimer(fn, ms, args, false));
+  window.setInterval = /** @type {any} */ ((fn, ms, ...args) => addTimer(fn, ms, args, true));
   window.clearTimeout = window.clearInterval = (id) => { timers.delete(id); };
   window.requestAnimationFrame = (fn) => { usedRAF = true; rafs.set(++rafId, fn); return rafId; };
   window.cancelAnimationFrame = (id) => { rafs.delete(id); };
@@ -708,7 +708,7 @@
   function trimFill(a) {
     try {
       if (typeof CSSAnimation === 'undefined' || !(a instanceof CSSAnimation) || !a.effect) return;
-      const eff = a.effect, tm = eff.getTiming();
+      const eff = /** @type {KeyframeEffect} */ (a.effect), tm = eff.getTiming();
       if ((tm.fill !== 'both' && tm.fill !== 'forwards') || tm.direction !== 'normal' || tm.iterationStart || !Number.isInteger(tm.iterations) || eff.composite !== 'replace') return;
       const end = keyframesEnd(a.animationName);
       if (!end) return;
@@ -1175,7 +1175,7 @@
       while (walker.nextNode()) texts.push(walker.currentNode);
       let wi = 0, ci = 0;
       for (const tn of texts) {
-        const parts = tn.data.split(/(\s+)/);
+        const parts = /** @type {Text} */ (tn).data.split(/(\s+)/);
         const frag = document.createDocumentFragment();
         for (const p of parts) {
           if (!p) continue;
@@ -1285,7 +1285,7 @@
       el.__gmType = true;
       const nodes = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      while (walker.nextNode()) nodes.push({ node: walker.currentNode, text: walker.currentNode.data });
+      while (walker.nextNode()) nodes.push({ node: walker.currentNode, text: /** @type {Text} */ (walker.currentNode).data });
       const total = nodes.reduce((s, n) => s + n.text.length, 0);
       const v = el.getAttribute('data-type').trim();
       const cps = v ? parseFloat(v) : 30;
@@ -1293,7 +1293,7 @@
       if (caret) caret.className = 'gm-caret';
       // Reserve the final size so the layout doesn't jump while typing (block-level elements).
       const disp = getComputedStyle(el).display;
-      if (disp !== 'inline' && el.offsetHeight > 0 && !el.style.minHeight) el.style.minHeight = el.offsetHeight + 'px';
+      if (disp !== 'inline' && /** @type {HTMLElement} */ (el).offsetHeight > 0 && !el.style.minHeight) el.style.minHeight = /** @type {HTMLElement} */ (el).offsetHeight + 'px';
       // data-type-caret="0.8": the caret goes away 0.8 s after the typing is done (without a number it keeps blinking)
       const keep = caret ? parseFloat(el.getAttribute('data-type-caret')) : NaN;
       typers.push({ el, nodes, total, cps: cps > 0 ? cps : 30, delay: parseTime(el.getAttribute('data-type-delay'), el, 'data-type-delay') ?? 0, caret, keep: isFinite(keep) ? keep : null, last: -1 });
@@ -1537,10 +1537,10 @@
     window.addEventListener('message', async (e) => {
       const m = e.data;
       if (!m || typeof m !== 'object' || !m.gm) return;
-      const reply = (x) => { try { e.source && e.source.postMessage(Object.assign({ gmReply: m.id }, x), '*'); } catch (er) {} };
+      const reply = (x) => { try { e.source && /** @type {Window} */ (e.source).postMessage(Object.assign({ gmReply: m.id }, x), '*'); } catch (er) {} };
       try {
         if (m.gm === 'ready') reply({ info: await ready() });
-        else if (m.gm === 'seek') { let r = seek(m.t); if (r && r.then) r = await r; if (m.playing != null) syncMedia(m.playing, m.t, m); reply({ t: m.t }); }
+        else if (m.gm === 'seek') { let r = /** @type {any} */ (seek(m.t)); if (r && r.then) r = await r; if (m.playing != null) syncMedia(m.playing, m.t, m); reply({ t: m.t }); }
         else if (m.gm === 'media') { syncMedia(m.playing, m.t, m); reply({}); }
       } catch (er) { reply({ error: String(er && er.message || er) }); }
     });
@@ -1638,7 +1638,7 @@
     root.style.setProperty('--stage-w', comp.width + 'px');
     root.style.setProperty('--stage-h', comp.height + 'px');
     root.style.setProperty('--px', PX() + 'px');
-    root.style.setProperty('--stage-px', PX());
+    root.style.setProperty('--stage-px', /** @type {any} */ (PX()));
   }
 
   function readSettings() {

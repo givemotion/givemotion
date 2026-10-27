@@ -410,6 +410,10 @@ const report = await check('video.html');           // { ok, errors, warnings, i
 const { sheet } = await snapshot('video.html');     // path to the contact sheet
 ```
 
+TypeScript types ship with the package (`RenderOptions`, `RenderResult`, `CheckReport`, `Issue`, ...), so your
+editor and your agent see every option and catch a misspelled one. givemotion itself is plain JavaScript checked by
+TypeScript from JSDoc, so there is no build step.
+
 ### Blocks
 
 Plain-HTML building blocks you copy into your project and edit freely (`npx givemotion add <name>`):

@@ -60,6 +60,12 @@ The README now promises these; do them or soften the README:
 - Benchmark givemotion, HyperFrames and Remotion on one Linux machine and on an Apple Silicon Mac; no Mac speed claim until then.
 - Re-check the comparison table (licenses, features, versions) before each release; it is dated 27 October 2026.
 
+## Type checking (started 2026-10-27)
+`npm run typecheck` is clean with `strict: false`. Next, one flag at a time, file by file, without behaviour changes:
+`strictNullChecks` (most useful; start with `src/render.js`, `src/check.js`, `src/server.js`), then `noImplicitAny`
+for exported functions. Types for `window.gm` (the composition API agents write against) would also let `check` or an
+editor flag a misspelled `gm.timline()`; today `gm` is `any` (`typings/env.d.ts`).
+
 ## N7. Natural, real-world motion (Leo's request; start here)
 Videos still move like software: every move eases from a dead stop to a dead stop, consecutive moves and camera shots
 brake to zero between them, a `follow` shot locks rigidly onto its target, and everything uses the same bezier

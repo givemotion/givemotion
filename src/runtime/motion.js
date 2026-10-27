@@ -1029,7 +1029,7 @@
         const len = Math.max(0, b - a);
         // a group (a data-sketch shape becomes a <g> of rough strokes, or any <g>/<svg>): draw every stroke in it at
         // once, and let solid fills come in over the last 40%, like data-enter="draw" does
-        const parts = el.getTotalLength ? [el] : (tm.drawParts || (tm.drawParts = [...el.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')].filter((n) => !n.closest('[data-gm-sketch-guide],defs,clipPath,mask,marker,pattern'))));
+        const parts = /** @type {any} */ (el).getTotalLength ? [el] : (tm.drawParts || (tm.drawParts = [...el.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')].filter((n) => !n.closest('[data-gm-sketch-guide],defs,clipPath,mask,marker,pattern'))));
         // at zero length, round line caps would still paint a dot: hide the stroke then
         if (setCached(tm, k, r4(a) + ' ' + r4(len), () => {
           for (const n of parts) {
@@ -1292,12 +1292,12 @@
   // yet are shown for a moment, and the animations on both and on their parents (entrances, camera pushes) are taken
   // off for the measure. Returns the x/y (in the target's own parent units) and scaleX/scaleY that put it on `src`.
   function flyOffset(el, src, size) {
-    const hidden = [], held = [], tfs = [];
+    const hidden = [], held = /** @type {any[]} */ ([]), tfs = [];
     for (const e of [el, src]) for (let p = e; p; p = p.parentElement) if (p.hasAttribute && p.hasAttribute('data-gm-hidden')) { hidden.push(p); p.removeAttribute('data-gm-hidden'); }
     try {
       try {
         for (const a of document.getAnimations()) {
-          const tg = a.effect && a.effect.target;
+          const tg = a.effect && /** @type {KeyframeEffect} */ (a.effect).target;
           if (tg && (tg.contains(el) || tg.contains(src))) { held.push([a, a.effect, a.currentTime]); a.effect = null; }
         }
       } catch (e) {}
@@ -1308,7 +1308,7 @@
       let k = 1, ox = H.left + H.width / 2, oy = H.top + H.height / 2;
       if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) {
         // SVG shapes: units are the parent's user units; the timeline scales them around their own center
-        const m = el.parentNode && el.parentNode.getScreenCTM && el.parentNode.getScreenCTM();
+        const m = el.parentNode && /** @type {any} */ (el.parentNode).getScreenCTM && /** @type {any} */ (el.parentNode).getScreenCTM();
         if (m) k = Math.hypot(m.a, m.b) || 1;
       } else {
         k = ancestorScale(el) || 1;
@@ -1515,7 +1515,7 @@
       let b = this.opts.bounds;
       const sh = this._cur;
       if (sh && sh.bounds !== undefined) b = sh.bounds;
-      if (b === undefined) b = this.__autoBounds ? 'world' : null;
+      if (b === undefined) b = /** @type {any} */ (this).__autoBounds ? 'world' : null;
       if (b == null || b === false) return null;
       if (b === 'world' || b === true) b = 'all';
       if (typeof b === 'object' && !Array.isArray(b) && !(b instanceof Element) && 'x' in b) return b;
@@ -1542,7 +1542,7 @@
       const w = this.world;
       if (!w || !this.shots.length) return false;
       const c = I.nearestClip(w);
-      if (c) { const vt = I.mapT(c.parent || null, T); if (vt < c.start - 1e-9 || vt >= c.end - 1e-9) { if (this.__bg) for (const b of this.__bg) if (b.el.style.transform) b.el.style.transform = ''; return false; } }
+      if (c) { const vt = I.mapT(c.parent || null, T); if (vt < c.start - 1e-9 || vt >= c.end - 1e-9) { if (/** @type {any} */ (this).__bg) for (const b of /** @type {any} */ (this).__bg) if (b.el.style.transform) b.el.style.transform = ''; return false; } }
       const t = I.mapT(w, T) - (this.opts.global ? 0 : I.clipStartOf(w));
       const parent = w.offsetParent || w.parentElement;
       const view = { w: parent.clientWidth || I.comp.width, h: parent.clientHeight || I.comp.height };
@@ -1611,9 +1611,9 @@
         if (it.el.style.translate !== v) { it.el.style.translate = v; changed = true; }
       }
       // depth (natural motion): background layers next to the world drift a little with the camera, as if far away
-      if (natural && this.__bg && this.__ref) {
-        const ref = this.__ref;
-        for (const b of this.__bg) {
+      if (natural && /** @type {any} */ (this).__bg && /** @type {any} */ (this).__ref) {
+        const ref = /** @type {any} */ (this).__ref;
+        for (const b of /** @type {any} */ (this).__bg) {
           const dx = -b.f * st.zoom * (st.cx - ref.cx), dy = -b.f * st.zoom * (st.cy - ref.cy);
           let ptf;
           if (b.cell) ptf = `translate(${p8((((dx % b.cell) - b.cell) % b.cell))}px, ${p8((((dy % b.cell) - b.cell) % b.cell))}px)`; // a repeating grid: any shift, no edge
@@ -1665,7 +1665,7 @@
     // runs of back-to-back moves (each starts at most CAM_GAP after the one before arrives) and the moves that settle
     _getPlan() {
       if (this._plan) return this._plan;
-      const S = this.shots, runs = [], settles = [];
+      const S = this.shots, runs = /** @type {{ keys: number[], tau: number[], prep?: any[] }[]} */ ([]), settles = [];
       let run = null;
       for (let k = 1; k < S.length; k++) {
         const s = S[k], d = Math.max(0, +s.duration || 0), prev = S[k - 1], pe = prev.at + Math.max(0, +prev.duration || 0);
@@ -2251,12 +2251,13 @@
   // data-pulse="[beat|bar|half|<n beats>] [amount] [decay]": scales up on the <html data-bpm> beat grid and falls back
   // (default: every beat, 0.06, 0.25 s). Also sets --beat (1 on the beat → 0) on the element, for your own CSS.
   // ---------------------------------------------------------------------------
+  /** @type {any} */
   let pulses = null;
   function updatePulses(T) {
     if (!pulses) {
       pulses = [...document.querySelectorAll('[data-pulse]')].map((el) => {
         const tk = (el.getAttribute('data-pulse') || '').trim().split(/\s+/).filter(Boolean);
-        let every = 1;
+        let every = /** @type {number | string} */ (1);
         if (tk[0] && /^[a-z]/i.test(tk[0])) { const w = tk.shift().toLowerCase(); every = w.startsWith('bar') ? 'bar' : w.startsWith('half') ? 0.5 : 1; }
         else if (tk.length === 3) every = parseFloat(tk.shift()) || 1;
         return { el, every, amount: tk[0] != null ? parseFloat(tk[0]) : 0.06, decay: tk[1] != null ? parseFloat(tk[1]) : 0.25, last: null };
@@ -2296,7 +2297,7 @@
       const natural = () => {
         const sv = [el.style.width, el.style.whiteSpace, el.style.display];
         el.style.width = 'max-content'; el.style.whiteSpace = 'nowrap'; if (cs.display === 'inline') el.style.display = 'inline-block';
-        const w = el.getBoundingClientRect().width / (el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : 1);
+        const w = el.getBoundingClientRect().width / (/** @type {HTMLElement} */ (el).offsetWidth ? el.getBoundingClientRect().width / /** @type {HTMLElement} */ (el).offsetWidth : 1);
         [el.style.width, el.style.whiteSpace, el.style.display] = sv;
         return w - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
       };
@@ -2309,7 +2310,7 @@
       } else {
         // shrink until it fits: width always; height only when the box has a fixed height
         const fixedH = el.style.height || (cs.height !== 'auto' && el.parentElement && getComputedStyle(el.parentElement).display !== 'flex' && el.scrollHeight > el.clientHeight + 0.25 * fs0);
-        const over = () => el.scrollWidth > el.clientWidth + 1 || (fixedH && el.scrollHeight > el.clientHeight + 0.25 * parseFloat(el.style.fontSize || fs0));
+        const over = () => el.scrollWidth > el.clientWidth + 1 || (fixedH && el.scrollHeight > el.clientHeight + 0.25 * parseFloat(/** @type {any} */ (el.style.fontSize || fs0)));
         if (!over()) continue;
         let lo = fs0 * 0.15, hi = fs0;
         for (let i = 0; i < 16; i++) { const mid = (lo + hi) / 2; el.style.fontSize = mid + 'px'; if (over()) hi = mid; else lo = mid; }
@@ -2330,7 +2331,7 @@
       const dur = I.parseTime(el.getAttribute('data-scramble'), el, 'data-scramble') || 1;
       const delay = I.parseTime(el.getAttribute('data-scramble-delay'), el, 'data-scramble-delay') || 0;
       const chars = el.getAttribute('data-scramble-chars') || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*+=?';
-      if (getComputedStyle(el).display !== 'inline' && !el.style.minWidth) el.style.minWidth = el.offsetWidth + 'px';
+      if (getComputedStyle(el).display !== 'inline' && !el.style.minWidth) el.style.minWidth = /** @type {HTMLElement} */ (el).offsetWidth + 'px';
       scramblers.push({ el, text, dur, delay, chars, last: null });
     }
   }
@@ -2446,7 +2447,7 @@
       if (/px/.test(cs.backgroundImage) || cs.boxShadow !== 'none' || cs.backdropFilter !== 'none' || (cs.borderStyle !== 'none' && parseFloat(cs.borderWidth) > 0)) continue;
       // skip if something animates its look (not just transform/opacity)
       let animated = false;
-      try { for (const an of el.getAnimations()) { const kf = an.effect && an.effect.getKeyframes ? an.effect.getKeyframes() : []; for (const k of kf) for (const p of Object.keys(k)) if (!/^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|left|top|right|bottom|offsetDistance|offsetPath)$/.test(p)) animated = true; } } catch (e) {}
+      try { for (const an of /** @type {any[]} */ (el.getAnimations())) { const kf = an.effect && an.effect.getKeyframes ? an.effect.getKeyframes() : []; for (const k of kf) for (const p of Object.keys(k)) if (!/^(offset|easing|composite|computedOffset|transform|translate|rotate|scale|opacity|left|top|right|bottom|offsetDistance|offsetPath)$/.test(p)) animated = true; } } catch (e) {}
       if (animated) continue;
       const moves = movesByItself(el);
       const k = Math.min(8, Math.max(2, Math.floor(r / 10)));
@@ -2469,7 +2470,7 @@
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
       const done = img.decode().then(() => {
         cv.getContext('2d').drawImage(img, 0, 0);
-        let out = cv;
+        let out = /** @type {any} */ (cv);
         if (!moves) { out = new Image(); out.alt = ''; out.src = cv.toDataURL('image/png'); }
         out.setAttribute('data-gm-internal', '');
         out.style.cssText = box;
@@ -2584,7 +2585,7 @@
     });
   });
   // what the current shot of each camera frames (its fit/follow target), in screen px; for check
-  gm.__cameraFocus = () => cameras.flatMap((c) => {
+  gm.__cameraFocus = () => /** @type {any} */ (cameras).flatMap((c) => {
     const sh = c._cur, target = sh && (sh.fit ?? sh.follow ?? sh.center);
     if (!c.world || !c.world.isConnected || c.world.closest('[data-gm-hidden]')) return [];
     if (sh && sh.overview) return [{ world: c.world, overview: true }]; // a wide shot of everything on purpose: small text is fine

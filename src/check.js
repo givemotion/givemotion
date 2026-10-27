@@ -3,6 +3,8 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, basename, dirname } from 'node:path';
 import { openComposition } from './render.js';
 
+/** @typedef {import('./types/api.js').Input} Input */
+
 /** If neither <html> nor <body> paints a background, treat the composition as an overlay (alpha). */
 async function autoTransparent(ctx, opts) {
   if (opts.transparent) return true;
@@ -1136,7 +1138,7 @@ export function pacingIssues(samples, meta, pops, range) {
       // (how long it stays on screen while it moves on: a cursor, a ball, a card travelling on is not leaving)
       let c = b + 1; while (c < n && tr.st[c] === 1 && tr.why[c] === 'moving') c++;
       const stay = (c >= n ? range.duration : T[c]) - s0, swapped = c < n && tr.st[c] === 0 && tr.why[c] === 'swap';
-      if (!best || e0 - s0 > best.d) best = { d: e0 - s0, s0, e0, why, a, b, stay, swapped, first: tr.box[a], last: tr.box[b] };
+      if (!best || e0 - s0 > best.d) best = { d: e0 - s0, s0, e0, why, a, b, stay, swapped, first: tr.box[a], last: tr.box[b], skip: false, inTurns: false };
     }
     holds.push({ id, m, open, ...best });
   }
@@ -1325,6 +1327,11 @@ function keyTimes(info, max = 12) {
 
 /**
  * Check a composition for problems. Returns { ok, errors, warnings, issues, info }.
+ */
+/**
+ * @param {Input} input
+ * @param {import('./types/api.js').CheckOptions} [opts]
+ * @returns {Promise<import('./types/api.js').CheckReport>}
  */
 export async function check(input, opts = {}) {
   const ctx = await openComposition(input, { ...opts, mode: 'render' });
@@ -1586,6 +1593,7 @@ export function motionStrip(m) {
   return ['motion  |' + marks + '|  (one mark = ' + m.every + ' s, taller = more of the picture changing)', '        ' + ' ' + ruler + 's'];
 }
 
+/** @param {import('./types/api.js').CheckReport} rep @param {{ file?: string }} [opts] */
 export function formatReport(rep, { file } = {}) {
   const lines = [];
   const i = rep.info;
@@ -1611,6 +1619,11 @@ export function formatReport(rep, { file } = {}) {
 
 /**
  * Snapshot: render key moments into PNGs plus one contact sheet image.
+ */
+/**
+ * @param {Input} input
+ * @param {import('./types/api.js').SnapshotOptions} [opts]
+ * @returns {Promise<import('./types/api.js').SnapshotResult>}
  */
 export async function snapshot(input, opts = {}) {
   const ctx = await openComposition(input, { ...opts, mode: 'render' });

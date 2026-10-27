@@ -76,7 +76,7 @@ export async function installChrome({ log = console.error } = {}) {
   const zip = join(tmp, 'chrome.zip');
   const r = await fetch(dl.url);
   if (!r.ok) throw new Error(`Download failed (${r.status}): ${dl.url}`);
-  await pipeline(Readable.fromWeb(r.body), createWriteStream(zip));
+  await pipeline(Readable.fromWeb(/** @type {any} */ (r.body)), createWriteStream(zip));
   log(`Extracting Chrome ${stable.version}…`);
   if (platform() === 'win32') execFileSync('tar', ['-xf', zip, '-C', dir]);
   else execFileSync('unzip', ['-q', '-o', zip, '-d', dir]);
@@ -254,7 +254,8 @@ export class FramePage {
   /** Evaluate and await a promise; keeps the compositor ticking in beginFrame mode so loads can finish. */
   async evaluate(expression, { timeoutMs = this.opts.timeoutMs || 60000 } = {}) {
     const p = this.s('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true, userGesture: true });
-    let done = false, result, error;
+    let done = false, error;
+    /** @type {any} */ let result;
     p.then((r) => { done = true; result = r; }, (e) => { done = true; error = e; });
     const t0 = Date.now();
     // fast path

@@ -1,0 +1,19 @@
+{
+  // Type-checks the JavaScript source from its JSDoc (`npm run typecheck`, part of `npm test`). Nothing is compiled:
+  // the files run as they are. Public types live in src/types/api.d.ts.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": false,
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/**/*.js", "src/types/*.d.ts", "typings/*.d.ts", "test/types/*.ts"]
+}

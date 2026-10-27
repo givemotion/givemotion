@@ -236,11 +236,11 @@ export async function pagePrints() {
       const svgChild = l instanceof SVGElement && !!l.ownerSVGElement;
       if (svgChild) {
         // an SVG group's box, filter or mask region grows with what is inside it
-        for (let a = l.parentElement; a; a = a.parentElement) {
+        for (let a = /** @type {Element} */ (l.parentElement); a; a = a.parentElement) {
           if (SVG_DEFS.has(a.localName.toLowerCase())) return null;
           const cs = getComputedStyle(a);
           if (cs.filter !== 'none' || cs.clipPath !== 'none' || cs.maskImage !== 'none') return null;
-          if (a.getAnimations().some((x) => x.effect && x.effect.getKeyframes().some((k) => k.filter != null || k.clipPath != null || k.maskImage != null || k.mask != null))) return null;
+          if (a.getAnimations().some((x) => x.effect && /** @type {KeyframeEffect} */ (x.effect).getKeyframes().some((k) => k.filter != null || k.clipPath != null || k.maskImage != null || k.mask != null))) return null;
           if (a === l.ownerSVGElement) break; // (the outer <svg> box is its CSS box, whatever is inside)
           if (named(toSrc.get(a), a, () => false)) return null;
         }

@@ -11,11 +11,13 @@ export async function bench(input, opts = {}) {
   const file = input ? resolve(input) : join(HERE, '..', 'examples', 'bench', 'index.html');
   if (!existsSync(file)) throw new Error('Benchmark composition not found: ' + file);
   const tmp = mkdtempSync(join(tmpdir(), 'gm-bench-'));
+  /** @type {{ name: string, opts: import('./types/api.js').RenderOptions }[]} */
   const runs = [
     { name: 'naive: 1 browser, screenshots, PNG, no frame reuse', opts: { workers: 1, capture: 'screenshot', lossless: true, noReuse: true } },
     { name: 'givemotion, 1 worker', opts: { workers: 1 } },
     { name: `givemotion, ${opts.workers || 'auto'} workers`, opts: { workers: opts.workers } },
   ];
+  /** @type {{ name: string, seconds: number, fps: number, realtime: number, workers: number, capture: string, reused: number, frames: number, size: string, speedup?: number }[]} */
   const results = [];
   const log = (s) => process.stderr.write(s + '\n');
   log(`machine: ${cpus().length} cores (${cpus()[0] ? cpus()[0].model.trim() : '?'}), ${(totalmem() / 2 ** 30).toFixed(1)} GB RAM`);
@@ -24,7 +26,7 @@ export async function bench(input, opts = {}) {
   catch (e) { log(`(layer report failed: ${e.message})\n`); }
   for (const r of runs) {
     const out = join(tmp, `b${results.length}.mp4`);
-    const s = await render(file, { ...r.opts, output: out, quiet: true, chrome: opts.chrome, log: () => {} });
+    const s = /** @type {import('./types/api.js').VideoRenderResult} */ (await render(file, { ...r.opts, output: out, quiet: true, chrome: opts.chrome, log: () => {} }));
     results.push({ name: r.name, seconds: s.seconds, fps: s.renderFps, realtime: +(s.duration / s.seconds).toFixed(2), workers: s.workers, capture: s.capture, reused: s.reusedFrames, frames: s.frames, size: `${s.width}x${s.height}@${s.fps}` });
     log(`${r.name.padEnd(56)} ${String(s.seconds).padStart(6)}s  ${String(s.renderFps).padStart(6)} fps  (${s.capture}, ${s.workers}w, ${s.reusedFrames} reused)`);
   }
@@ -39,6 +41,7 @@ export async function bench(input, opts = {}) {
 // Without a GPU, Chrome draws every composited layer pixel by pixel on the CPU, once per frame, and an offscreen
 // pass (a filter, a mask, a blur move) is drawn and then drawn again. So the cost of a frame grows with how much
 // of the frame its layers cover ("1.0" = one full frame of pixels) and with the number of passes.
+/** @type {[RegExp, string][]} */
 const REASONS = [
   [/Animation/, 'animated'], [/Canvas/, 'canvas'], [/Video/, 'video'], [/WillChange/, 'will-change'],
   [/3D|Perspective|Backface/, '3d'], [/Overlap|Squash|Assumed/, 'overlaps a layer'], [/Filter|Backdrop/, 'filter'],
@@ -85,7 +88,7 @@ async function nodeInfo(p, backendNodeId) {
 // elements cost most.
 export async function layerReport(input, opts = {}) {
   const ctx = await openComposition(input, { mode: 'render', chrome: opts.chrome, data: opts.data });
-  const p = ctx.page, b = p.browser;
+  const p = /** @type {any} */ (ctx.page), b = p.browser;
   const { width: W, height: H, fps, duration } = ctx.info;
   try {
     let last = null;

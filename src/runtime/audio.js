@@ -76,6 +76,7 @@
     // onsets: peaks above a local average
     const W = Math.round(0.3 / dt), gap = Math.round(0.08 / dt);
     let fmax = 0; for (const v of flux) if (v > fmax) fmax = v;
+    /** @type {{ time: number, strength: number, low: number, w?: number }[]} */
     const onsets = [];
     let last = -1e9;
     for (let f = 2; f < n - 2; f++) {

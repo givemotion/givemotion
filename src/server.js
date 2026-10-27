@@ -101,6 +101,7 @@ export function applyData(html, data) {
 
 const URL_ATTR_START = /\b(?:src|href|xlink:href|action|formaction|poster|data|srcdoc)\s*=\s*["']?$/i;
 
+/** @param {string} html @param {{ inlineConfig?: Record<string, any> }} [opts] */
 export function injectRuntime(html, { inlineConfig } = {}) {
   const tags = `<link rel="stylesheet" href="/__gm/preset.css" data-gm-preset><script>window.__GM_CONFIG = window.__GM_CONFIG || ${scriptJSON(inlineConfig || { mode: 'preview' })};</script><script src="/__gm/runtime.js"></script>`;
   const head = /<head\b[^>]*>/i.exec(html);
@@ -165,7 +166,11 @@ class FrameExtractor {
  * Start the server for a project root.
  * Returns { url(pathname), port, close, events }.
  */
-export async function startServer({ root, maxW = 3840, maxH = 2160, studio = false, inlineConfig, port: wantPort = 0, host = '127.0.0.1', data = null } = {}) {
+/**
+ * @param {import('./types/api.js').ServerOptions} opts
+ * @returns {Promise<import('./types/api.js').Server>}
+ */
+export async function startServer({ root, maxW = 3840, maxH = 2160, studio = false, inlineConfig, port: wantPort = 0, host = '127.0.0.1', data = null }) {
   root = resolve(root);
   const runtime = () => readRuntime();
   const extractor = new FrameExtractor(maxW, maxH);
@@ -254,8 +259,8 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       send(res, 500, 'text/plain', String(e && e.message || e));
     }
   });
-  await new Promise((r, j) => { server.once('error', j); server.listen(wantPort, host, r); });
-  const port = server.address().port;
+  await new Promise((r, j) => { server.once('error', j); server.listen(wantPort, host, () => r(undefined)); });
+  const port = /** @type {import('node:net').AddressInfo} */ (server.address()).port;
   let watcher = null;
   if (studio) {
     let t = null;

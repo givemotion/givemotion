@@ -4,6 +4,10 @@ import { platform } from 'node:os';
 import { resolveInput } from './render.js';
 import { startServer } from './server.js';
 
+/**
+ * @param {string} input
+ * @param {{ port?: number, open?: boolean, data?: any }} [opts]
+ */
 export async function dev(input, { port, open, data } = {}) {
   const { root, rel } = resolveInput(input);
   let srv;

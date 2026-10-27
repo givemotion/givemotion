@@ -15,8 +15,12 @@
     "givemotion": "src/cli.js"
   },
   "main": "src/api.js",
+  "types": "./src/types/api.d.ts",
   "exports": {
-    ".": "./src/api.js",
+    ".": {
+      "types": "./src/types/api.d.ts",
+      "default": "./src/api.js"
+    },
     "./react": "./src/react/index.jsx",
     "./runtime": "./src/runtime/runtime.js",
     "./preset.css": "./src/runtime/preset.css",
@@ -39,7 +43,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/unit.test.js test/e2e.test.js test/features.test.js",
+    "test": "tsc -p . && node --test --test-concurrency=1 test/unit.test.js test/e2e.test.js test/features.test.js",
+    "typecheck": "tsc -p .",
     "bench": "node src/cli.js bench"
   },
   "keywords": [
@@ -88,8 +93,10 @@
     }
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "esbuild": "^0.28.2",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.3"
   }
 }

@@ -8,7 +8,13 @@ import { ffmpegPath, ffprobePath } from './ffmpeg.js';
 
 const GW = 96, GH = 54; // analysis grid (16:9); other aspect ratios keep 96 on the long side
 
-/** ffprobe: duration, fps, size, audio. */
+/** @typedef {{ duration: number, fps: number, width: number, height: number, hasAudio: boolean, codec: string }} VideoMeta */
+
+/**
+ * ffprobe: duration, fps, size, audio.
+ * @param {string} file
+ * @returns {VideoMeta}
+ */
 export function probeVideo(file) {
   const r = spawnSync(ffprobePath(), ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { encoding: 'utf8' });
   if (r.error || r.status !== 0) throw new Error(`ffprobe could not read ${file}${r.stderr ? ': ' + r.stderr.trim().split('\n').pop() : ''}`);
@@ -45,7 +51,12 @@ function decodeSmall(file, { w, h, fps, gray = false }, onFrame) {
   });
 }
 
-/** Grab chosen frames (by time) as JPEGs in one decoding pass. */
+/**
+ * Grab chosen frames (by time) as JPEGs in one decoding pass.
+ * @param {string} file
+ * @param {number[]} times
+ * @param {{ fps?: number, width?: number }} [opts]
+ */
 export function grabFrames(file, times, { fps, width = 480 } = {}) {
   const nums = [...new Set(times.map((t) => Math.max(0, Math.round(t * fps))))].sort((a, b) => a - b);
   if (!nums.length) return Promise.resolve(new Map());
@@ -630,6 +641,7 @@ export async function analyzeVideo(input, opts = {}) {
       const all3 = [group((q) => dS[q]), group((q) => dE[q]), group((q) => !dS[q] && !dE[q])], groups = all3.map((g) => (g && g.lump <= 0.75 ? g : null));
       if (info) info.groups = all3.map((g) => g && { corr: g.corr.map(r2), lump: r2(g.lump) });
       // the clearest order decides; no other group may clearly say the opposite
+      /** @type {{ s: number, i: number, v: number, gi: number } | null} */
       let pick = null;
       groups.forEach((g, gi) => g && g.corr.forEach((v, i) => { const s = i === 3 ? v : Math.abs(v); if (!pick || s > pick.s) pick = { s, i, v, gi }; }));
       if (pick && pick.s >= (pick.gi === 2 ? 0.5 : 0.6) && !groups.some((g) => g && Math.sign(g.corr[pick.i]) !== Math.sign(pick.v) && Math.abs(g.corr[pick.i]) >= 0.4)) {
@@ -666,6 +678,7 @@ export async function analyzeVideo(input, opts = {}) {
     : { type: classify(t.S, t.E), start: r3((t.S + 1) / fps), end: r3(t.E / fps), at: r3(halfway(t.S, t.E) / fps) }).sort((a, b) => a.start - b.start);
 
   // 5. Shots between transitions
+  /** @type {{ start: number, end: number, into: string | null, length?: number, camera?: { move: number[], zoom: number, moving: number, label?: string }, activity?: number, colors?: string[], brightness?: number }[]} */
   const shots = [];
   let s0 = 0;
   for (const tr of transitions) {
@@ -1339,6 +1352,8 @@ export function formatMotion(m) {
 /**
  * Frame strips of the busiest moments: the `count` 1 s windows with the most motion (no overlap), each as one sheet of
  * frames at 10 fps with their times. For judging smoothness from pictures. Returns [{ file, start, end, motion }].
+ * @param {string} input
+ * @param {{ output?: string, count?: number, window?: number, rate?: number, energy?: number[], meta?: VideoMeta, chrome?: string, fps?: number }} [opts]
  */
 export async function motionStrips(input, { output, count = 4, window: win = 1, rate = 10, energy, meta, chrome, fps: efps } = {}) {
   const file = resolve(input);
@@ -1406,7 +1421,11 @@ async function layoutSheet(page, { title, rows, cols, cellW, cellH }) {
   return renderHtmlToPng(page, html, sheetW, sheetH);
 }
 
-/** One picture every `every` seconds, in one sheet (the judges' view). Returns the file path. */
+/**
+ * One picture every `every` seconds, in one sheet (the judges' view). Returns the file path.
+ * @param {string} input
+ * @param {{ output?: string, every?: number, cols?: number, width?: number, meta?: VideoMeta, chrome?: string, title?: string, from?: number, to?: number }} [opts]
+ */
 export async function videoSheet(input, { output, every = 0.5, cols, width, meta, chrome, title, from = 0, to } = {}) {
   const file = resolve(input);
   meta = meta || probeVideo(file);

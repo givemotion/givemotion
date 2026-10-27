@@ -17,12 +17,16 @@ Thanks for helping. Issues and pull requests are welcome.
 git clone https://github.com/givemotion/givemotion.git
 cd givemotion
 npx givemotion install   # or use your own Chrome
-npm test                 # needs Chrome and ffmpeg
+npm install              # dev tools only: TypeScript (type checking) and React (React compositions)
+npm run typecheck        # fast: type-checks the JavaScript from its JSDoc
+npm test                 # type check + all tests; needs Chrome and ffmpeg
 ```
 
 ## A good pull request
 
-- `npm test` passes.
+- `npm test` passes (it starts with `npm run typecheck`, which must report zero errors).
+- New or changed functions have JSDoc types for their options and results; public API changes update
+  `src/types/api.d.ts`.
 - Rendering stays deterministic: 1 worker and N workers give byte-identical output.
 - If you changed something visual (a block, the runtime, an example), run `node src/cli.js check <file>` and
   `node src/cli.js snapshot <file>` and look at the frames.

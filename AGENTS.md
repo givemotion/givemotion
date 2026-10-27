@@ -2,6 +2,17 @@
 
 - Using givemotion to make a video? Read `skills/givemotion/SKILL.md` instead (and the `references/` files it points to).
 - Zero runtime dependencies. Node 20+ built-ins only. Keep it that way.
+- Plain JavaScript, type-checked from JSDoc: no build step, the files run (and the runtime is injected into Chrome) as
+  they are. `npm run typecheck` (`tsc -p .`, also the first step of `npm test`) must stay at zero errors. TypeScript
+  and `@types/node` are dev dependencies only.
+  - Public API types: `src/types/api.d.ts` (shipped; `package.json` `types`). Change it together with the function;
+    `test/types/api.test-types.ts` fails when `src/api.js` and the declarations drift apart.
+  - Inside `src/`, refer to those types in JSDoc: `@param {import('./types/api.js').RenderOptions} [opts]`. Type new
+    functions' options and return values; that is the context the next agent reads.
+  - Fix type errors with JSDoc types or casts (`/** @type {any} */ (x)`), never `@ts-ignore`/`@ts-nocheck`. A cast must
+    not change behaviour; if the checker found a real bug, fix the bug.
+  - `typings/env.d.ts` (not shipped) declares what the browser runtime adds to the DOM: `__gm*` state on elements,
+    `window.gm`, and `gm` inside functions that run in the page.
 - Layout:
   - `src/runtime/runtime.js` — injected into every page: virtual clock, clips/sequences, seeking animations, enter/exit, split/count/type, media, `window.gm`.
   - `src/runtime/preset.css` — injected first; easings, keyframes, `.scene`, built-in font faces.

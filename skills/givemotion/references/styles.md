@@ -39,6 +39,11 @@ a file declared only for 400 gives you your 400, and `font-weight: 700` or itali
 That is fine when your file is the same font. If it is a different font, give it its own name (`font-family: 'Brand'`)
 so nothing mixes, and declare every weight you use (or one variable file with `font-weight: 100 900`).
 
+Text weight: the preset draws text with grayscale antialiasing and `text-rendering: geometricPrecision` (exact glyph
+sizes, so text that scales or zooms does not jump between sizes). It looks a little lighter than a browser or app on
+a desktop. To match a brand's own screenshots or renders, set `body { -webkit-font-smoothing: auto; text-rendering: auto; }`
+(or use the next weight up); keep the default for text the camera zooms.
+
 Numbers that change (`data-count`, clocks, scores): in natural motion a `data-count` element gets
 `font-variant-numeric: tabular-nums` (all digits as wide) unless your CSS sets `font-variant-numeric`. That matters: Inter and
 Space Grotesk digits are proportional by default (a 1 is a third narrower than an 8) and have tabular forms; JetBrains Mono,

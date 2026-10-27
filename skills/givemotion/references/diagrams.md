@@ -64,6 +64,11 @@ Options: `data-sketch="1.5"` (roughness, default 1), `data-sketch-seed`, `data-s
 
 ## Shapes and path morphs
 
+Pixel-exact shapes: half pixels do not render as half pixels. An HTML box of 72.5 px is snapped to a solid 73 px, and an
+SVG shape of 72.5 px gets a half-lit edge pixel (it reads as 73 px, a little soft). When a shape must match a reference
+exactly, use whole-pixel sizes and positions (at the size you render: with `--scale 2`, half pixels of the layout are whole),
+and keep an SVG's viewBox at the same scale as its box (`width="72" viewBox="0 0 72 …"`).
+
 - `gm.shape.circle(r)` `.rect(w, h, {r})` `.polygon(sides, r)` `.star(points, outer, inner)` `.heart(size)` `.wave(width, {amp, freq, phase})` `.blob(r, {t, wobble, points, seed})` return SVG path data centered on 0,0 (`{cx, cy}` to move). Animate a living blob: `gm.onFrame(t => path.setAttribute('d', gm.shape.blob(200, { t })))`.
 - Morph any path into any other: timeline `{ morph: '#other' or 'M…' }`, or `const f = gm.path.morph(a, b); f(0.5)`.
 - Point on a path: `gm.path.point(d, 0.3)` → `{x, y, angle}`; `gm.path.length(d)`. Or plain CSS: `offset-path: path('M…'); offset-rotate: auto;` and animate `offset-distance` from `0%` to `100%`.

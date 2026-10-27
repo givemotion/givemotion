@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use givemotion in your work, you can cite it like this."
+title: "givemotion"
+abstract: "A free, open-source (MIT) engine that turns HTML, CSS and JavaScript into video, built for AI coding agents."
+type: software
+authors:
+  - family-names: "Grigorio"
+    given-names: "Leonardo"
+license: MIT
+repository-code: "https://github.com/givemotion/givemotion"
+url: "https://givemotion.org"
+keywords:
+  - video
+  - motion graphics
+  - html to video
+  - ai agents
+  - claude code

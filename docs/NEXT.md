@@ -53,6 +53,13 @@ second. Do not reformat files you are not changing.
 - Open: tile memory is now 4 GB per Chrome (a ceiling, not an allocation). With many workers on a very heavy 4K page,
   watch memory; the worker count could take it into account.
 
+## README claims that need data (2026-10-27)
+The README now promises these; do them or soften the README:
+- Publish the givemotion vs Remotion agent test (method, versions, prompts, raw scores), like `benchmarks/vs-hyperframes`.
+- Put HyperFrames through the same 9-brief agent test.
+- Benchmark givemotion, HyperFrames and Remotion on one Linux machine and on an Apple Silicon Mac; no Mac speed claim until then.
+- Re-check the comparison table (licenses, features, versions) before each release; it is dated 27 October 2026.
+
 ## N7. Natural, real-world motion (Leo's request; start here)
 Videos still move like software: every move eases from a dead stop to a dead stop, consecutive moves and camera shots
 brake to zero between them, a `follow` shot locks rigidly onto its target, and everything uses the same bezier

@@ -33,6 +33,7 @@ The engine gives you any HTML/CSS/SVG/canvas and a frame-exact timeline; the loo
 6. **Things come from things.** A new element is born from one already on screen, not spawned from nowhere: three circles squeeze out of the main circle; one of the rectangles on screen slides over and becomes the underline; a card grows out of the button that was clicked; the logo's mark becomes the end card's mark. Reuse and transform before you add.
 7. **A camera move means "look here".** Push in only toward something the viewer should read next. Never zoom into empty space or into the old scene as a way to transition: to leave a scene, move sideways (push, whip, wipe) or carry an element across (morph, the rule above).
 8. **Animate** `transform`/`translate`/`scale`/`rotate`/`opacity`/`filter`/`clip-path`, not `width`/`top`/`left`.
+9. **Every element gets a planned life:** in, a readable hold (~1 s + 0.25 s a word), then an exit or hand-over. The shot list gives each hold.
 
 ## Hierarchy: one thing matters at a time
 
@@ -90,11 +91,11 @@ Built-in fonts (no files needed): `Inter`, `JetBrains Mono`, `Playfair Display`,
 - **Clips.** An element with `data-start`, `data-duration` or `data-end` only exists (is `display`ed) from start to start+duration. Times are relative to its parent clip. Elements without timing are always there.
 - **Video length** = `data-duration` on `<html>`, otherwise the end of the last clip.
 - **Sequences.** `data-sequence` on a container plays its children one after another. Every child needs `data-duration`, or give the container `data-cuts="0 2.13 4.27"` (when each child starts; also `"beats: 0 4 8"` / `"bars: 0 1 2"`). `data-gap="0.2"` (negative = overlap). `data-transition="<name> <seconds> [easing]"` overlaps neighbours and animates the change; a child can set its own `data-transition` (how it comes in). **Each transition takes its length off the total**: 3 scenes of 4s with `fade 0.5` last 11s. Cuts on the beat, `data-cut-align`, and where a scene's time 0 then sits: `references/timeline.md`.
-- **Transitions:** `push-left/right/up/down` (new pushes old out) `cover-left/right/up/down` (new slides over) `whip-left/right/up/down` (fast, blurred) `wipe-left/right/up/down` `diagonal` `clock` `iris` `zoom` `zoom-through` (the old scene flies past the camera) `flip` (3D) `dip` (through black) `blur` `fade-up` `fade`, and **`morph`**: elements with the same `data-morph="name"` in both scenes fly and resize from the old place to the new one while the rest crossfades. Use it to carry a logo, card, number or shape into the next scene. Inside one scene, use `gm.fly` instead.
+- **Transitions:** `push-`/`cover-`/`whip-`/`wipe-` + `left/right/up/down` (push: new pushes old out; cover: new slides over; whip: fast, blurred) `diagonal` `clock` `iris` `zoom` `zoom-through` (old scene flies past) `flip` (3D) `dip` (through black) `blur` `fade-up` `fade`, and **`morph`**: elements with the same `data-morph="name"` in both scenes fly and resize from the old place to the new one while the rest crossfades. Carries a logo, card or number across; in one scene use `gm.fly`.
 - **CSS animations run on clip time.** `animation: fade-up .6s .4s both` starts .4s after its clip appears. Use `both` (or `backwards`) fill so the element is hidden before its delay.
 - **Something appears later inside a long scene** (one camera world, one whiteboard): the delay in `data-enter` counts from the start of the element's clip, so `data-enter="write 0.8 11.9"` writes a label 11.9 s into the scene and keeps it hidden until then. No extra clip needed.
-- `gm.onFrame(fn)` gets the **video's** time, even inside a scene; `gm.onFrame('#s', (local, info, el) => …)` counts from `#s`'s start, like `gm.timeline('#s')`.
-- Timers, `requestAnimationFrame`, `Date.now()`, `performance.now()` are virtual and `Math.random()` is seeded. Normal web animation code just works.
+- `gm.onFrame(fn)` gets the **video's** time, even in a scene; `gm.onFrame('#s', (local, info, el) => …)` counts from `#s`'s start, like `gm.timeline('#s')`.
+- Timers, `requestAnimationFrame`, `Date.now()`, `performance.now()` are virtual and `Math.random()` is seeded. Normal web animation code works.
 
 ## Timeline: precise choreography (GSAP-style, built in)
 

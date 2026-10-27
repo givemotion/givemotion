@@ -118,10 +118,10 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const box = { cx: bx, cy: by, k, w: (u.right - u.left) / k, h: (u.bottom - u.top) / k, op, cam, sx: (u.left + u.right) / 2, sy: (u.top + u.bottom) / 2, sw: u.right - u.left };
     next.set(el, box);
     const p = prev.get(el);
-    let speedMoving = false;
+    let speedMoving = false, cv = 0;
     if (p && dt > 0) {
       if (p.cam === box.cam) {
-        const v = (Math.hypot(box.cx - p.cx, box.cy - p.cy) * box.k) / dt;
+        const v = cv = (Math.hypot(box.cx - p.cx, box.cy - p.cy) * box.k) / dt;
         const sz = Math.abs(box.w - p.w) / Math.max(1, p.w) / dt + Math.abs(box.h - p.h) / Math.max(1, p.h) / dt;
         const fo = Math.abs(box.op - p.op) / dt;
         speedMoving = v > 40 * PX || sz > 0.25 || fo > 0.4;
@@ -131,9 +131,50 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       const sv = Math.hypot(box.sx - p.sx, box.sy - p.sy) / dt, ssz = Math.abs(Math.log(Math.max(1, box.sw) / Math.max(1, p.sw))) / dt;
       if (sv > 600 * PX || ssz > 0.5) speedMoving = true;
     }
-    texts.push({ el, rs, u, op, moving: inAnim(el) || speedMoving, fading: !!(p && Math.abs(box.op - p.op) > 0.02) });
+    texts.push({ el, rs, u, op, cam, moving: inAnim(el) || speedMoving, fading: !!(p && Math.abs(box.op - p.op) > 0.02),
+      cv: p && p.cam === box.cam ? cv : p && dt > 0 ? Math.hypot(box.sx - p.sx, box.sy - p.sy) / dt : 0, sv: p && dt > 0 ? Math.hypot(box.sx - p.sx, box.sy - p.sy) / dt : 0, ssz: p && dt > 0 ? Math.abs(Math.log(Math.max(1, box.sw) / Math.max(1, p.sw))) / dt : 0, fo: p && dt > 0 ? Math.abs(box.op - p.op) / dt : 0 });
   }
   window.__gmPrevBoxes = next;
+  // Big transformed layers around text (hand-made cameras: a zoomed or panned stage, data-camera on a scene): which
+  // of them move fast right now (like a gm.camera world between shots), compared with the previous sample.
+  const prevLayer = window.__gmPrevLayers || new Map(), nextLayer = new Map(), layerMoving = new Set();
+  for (const t of texts) {
+    const c = t.cam;
+    if (!c || nextLayer.has(c)) continue;
+    const r = c.getBoundingClientRect(), b = { x: r.left, y: r.top, s: r.width / (c.offsetWidth || r.width || 1) };
+    nextLayer.set(c, b);
+    const p = prevLayer.get(c);
+    if (p && dt > 0 && (Math.hypot(b.x - p.x, b.y - p.y) / dt > 60 * PX || Math.abs(Math.log(b.s / p.s)) / dt > 0.03)) layerMoving.add(c);
+  }
+  window.__gmPrevLayers = nextLayer;
+  // Text cut by the frame edge inside such a layer: is the transform the cause? (A world bigger than the frame is
+  // panned on purpose; otherwise the text must fit in the frame with the layer's transform undone.)
+  const camCropOf = (t, tu) => {
+    const c = t.cam;
+    if (!c) return null;
+    const res = { cam: c, moving: layerMoving.has(c) };
+    if (c.offsetWidth > 1.1 * W || c.offsetHeight > 1.1 * H) return res;
+    const cs = getComputedStyle(c);
+    let M;
+    try { M = new DOMMatrix(cs.transform); } catch (e) { return res; }
+    if (!M.is2D || Math.abs(M.b) > 1e-3 || Math.abs(M.c) > 1e-3 || M.a <= 0 || M.d <= 0) return res; // rotated or 3D: cannot tell, lenient
+    const [ox, oy] = cs.transformOrigin.split(' ').map(parseFloat);
+    const r = c.getBoundingClientRect();
+    // screen = L + o + M(p - o): the layer's untransformed top-left L, then a screen point back to layout
+    const Lx = r.left - ox + M.a * ox - M.e, Ly = r.top - oy + M.d * oy - M.f;
+    const bx = (x) => Lx + ox + (x - Lx - ox - M.e) / M.a, by = (y) => Ly + oy + (y - Ly - oy - M.f) / M.d;
+    const fits = bx(tu.left) >= -2 && by(tu.top) >= -2 && bx(tu.right) <= W + 2 && by(tu.bottom) <= H + 2;
+    return fits ? res : null;
+  };
+  // An ellipsis (text-overflow, line-clamp) on the text or a parent up to the clipping box: cut on purpose.
+  const ellipsized = (el, box) => {
+    for (let a = el; a && a !== document.body; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.textOverflow && cs.textOverflow !== 'clip' || cs.webkitLineClamp && cs.webkitLineClamp !== 'none') return true;
+      if (a === box) break;
+    }
+    return false;
+  };
   // Is a camera world moving right now? Labels the camera passes over on its way to the next shot are not framing mistakes.
   const focus = (window.gm && gm.__cameraFocus) ? gm.__cameraFocus() : [];
   const prevCam = window.__gmPrevCam || new Map(), nextCam = new Map(), camMoving = new Set();
@@ -305,8 +346,12 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     // Inside a camera world (or data-check="crop-ok"), being cut by the frame edge is framing, not a mistake.
     const cropOk = !!el.closest('[data-gm-camera-world],[data-check~="crop-ok"]');
     // 1. Text partly outside the frame (fully outside = not shown, which is fine)
-    const outX = Math.max(0, -tu.left) + Math.max(0, tu.right - W);
-    const outY = Math.max(0, -tu.top) + Math.max(0, tu.bottom - H);
+    //    (an ellipsis row whose own box is inside the frame is judged on what that box shows: a list cut on purpose)
+    //    (and so is any text whose clipping box sits inside the frame: being cut there is text-clipped's business)
+    const boxIn = cb.by && cb.r.left >= -2 && cb.r.top >= -2 && cb.r.right <= W + 2 && cb.r.bottom <= H + 2 && area(cb.r) < 0.95 * W * H;
+    const vu = boxIn || cb.by && ellipsized(el, cb.by) ? inter(tu, cb.r) : tu;
+    const outX = area(vu) > 0 ? Math.max(0, -vu.left) + Math.max(0, vu.right - W) : 0;
+    const outY = area(vu) > 0 ? Math.max(0, -vu.top) + Math.max(0, vu.bottom - H) : 0;
     // In a camera world, text passing by the edge while the camera moves is fine, but a label cut by the edge of a shot
     // at rest is worth a look (even when most of it is out of frame: "st works" of a title reads as a mistake).
     const visFrac = area(inter(tu, frame)) / Math.max(1, area(tu));
@@ -316,9 +361,15 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     //  half-cut label as a mistake, whatever the shot is about)
     const overview = camWorld && focus.some((f) => f.world === camWorld && f.overview);
     if ((outX > 2 || outY > 2) && cropOk && !cropMeant && visFrac >= 0.1 && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the camera is on it.', minSpan: 0.3, fix: 'Frame the shot so labels are fully in view or fully out (more padding, a slightly different center, or move the label); a neighbour half in frame reads as a mistake. If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
-    if ((outX > 2 || outY > 2) && !cropOk) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', minSpan: 0.2, fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
+    // A hand-made camera (a big layer zoomed or panned with a transform: a timeline push-in, data-camera) that crops
+    // the text: while it moves that is composition; when the shot holds it is framing (a warning). Only text that is
+    // off the frame without that transform (or in no such layer) is stuck off screen (an error).
+    const camCrop = (outX > 2 || outY > 2) && !cropOk ? camCropOf(t, tu) : null;
+    if (camCrop && !camCrop.moving) out.push({ severity: 'warning', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text is cut by the frame edge while the shot holds (the zoom or pan on ' + sel(camCrop.cam) + ' crops it).', minSpan: 0.3, fix: 'Frame the shot so the text is fully in view or fully out (zoom a little less, or center the push on it); a word half in frame reads as a mistake. If the crop is on purpose, add data-check="crop-ok" to that text or a parent.' });
+    if ((outX > 2 || outY > 2) && !cropOk && !camCrop) out.push({ severity: 'error', code: 'text-offscreen', selector: sel(el), text: snippet(el), message: 'Text runs past the edge of the frame by ' + Math.round(Math.max(outX, outY)) + 'px.', minSpan: 0.2, fix: 'Reduce font-size, allow wrapping (max-width), or move it inside the frame.' });
     // 2. Partly cut by a box with overflow hidden (fully hidden = waiting to enter, which is fine)
-    else if (cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by)) {
+    //    (an ellipsis is the design: a mail list, a file list)
+    else if (!camCrop && cb.by && !cropOk && area(inter(tu, cb.r)) < area(tu) - 2 * Math.max(1, tu.height) && !reportedBox.has(cb.by) && !ellipsized(el, cb.by)) {
       reportedBox.add(cb.by);
       out.push({ severity: 'error', code: 'text-clipped', selector: sel(el), text: snippet(el), message: 'Text is partly cut off by ' + sel(cb.by) + ' (overflow: hidden).', fix: 'Make the text smaller, let it wrap, or make the container bigger.' });
     }
@@ -559,6 +610,25 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     if (sig && tNow != null) { const g = window.__gmSigs[s0]; if (g && g.sig === sig) { g.times.push(tNow); } else window.__gmSigs[s0] = { sig, text: snippet(t.el), times: [tNow] }; }
     return { sel: s0, text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, backed, large, sig };
   });
+  // 7. A tween or style on an element with display: contents (a <gm-include> without class or style is one): it draws
+  //    no box, so its opacity, transform, filter and clip-path do nothing. Noted once, the first time it is seen.
+  if (!window.__gmNoBox) window.__gmNoBox = new Map();
+  {
+    const cands = new Set(document.body.querySelectorAll('[style]'));
+    for (const a of document.getAnimations()) { const tg = a.effect && a.effect.target; if (tg && tg.nodeType === 1) cands.add(tg); }
+    for (const el of cands) {
+      if (window.__gmNoBox.has(el) || ignored(el)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.display !== 'contents') continue;
+      const props = [];
+      if (parseFloat(cs.opacity) < 0.999) props.push('opacity');
+      // (a box-less element may report its transform as none: read what was written on it too)
+      for (const k of ['transform', 'translate', 'scale', 'rotate']) if (cs[k] && cs[k] !== 'none' || el.style[k] && !/^(none|matrix\(1, 0, 0, 1, 0, 0\)|translate\(0px(, 0px)?\)|scale\(1\))$/.test(el.style[k])) props.push(k);
+      if (cs.filter !== 'none') props.push('filter');
+      if (cs.clipPath !== 'none') props.push('clip-path');
+      if (props.length) window.__gmNoBox.set(el, { t: tNow, props, sel: sel(el), inc: el.getAttribute('data-gm-include') });
+    }
+  }
   // where each issue's element sits: its scene and when that scene starts (for scene-local times)
   for (const i of out) {
     try { const e = i.selector && document.querySelector(i.selector); const sc = e && (e.closest('.scene') || e.closest('[data-start],[data-duration]')); if (sc) { i.scene = sel(sc); i.sceneStart = gm.timing(sc).start; } } catch (er) {}
@@ -566,8 +636,234 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   // the biggest readable text on screen (an "empty" frame with a heading on it is not empty)
   let maxFont = 0;
   for (const t of texts) { if (t.hidden || t.covered) continue; const k = t.el.offsetHeight ? t.el.getBoundingClientRect().height / t.el.offsetHeight : 1; maxFont = Math.max(maxFont, parseFloat(getComputedStyle(t.el).fontSize) * (isFinite(k) && k > 0 ? k : 1)); }
+  window.__gmTexts = texts; window.__gmTransitioning = transitioning;
   return { issues: out, textCount: texts.length, maxFont: maxFont / PX, boxes: window.__gmTextBoxes.length, busy: animating.size > 0 || texts.some((t) => t.moving && !t.hidden) };
 })`;
+
+// ---------------------------------------------------------------------------
+// Pacing per element (page side, after PAGE_ANALYZE in the same sample): is each text (one reading unit: a line, a
+// split headline) and each mark (an icon, a picture) readable right now, which of them vanished by a cut since the
+// previous sample, which big things move with a steps() ease, and how much of a clip-path's element shows.
+// Per unit: [id, state (2 readable, 1 on screen but moving / fading / covered, 0 just went away), reason, big (24 px+),
+// live (changes on screen), and its box when readable: x, y, w, h]
+// ---------------------------------------------------------------------------
+const PAGE_PACING = String.raw`((dt, tNow) => {
+  const W = gm.width, H = gm.height, PX = gm.px;
+  const S = window.__gmPace || (window.__gmPace = { id: 0, ids: new WeakMap(), prev: new Map(), txt: new Map(), live: new Set(), clipEls: new Map(), steps: new Map() });
+  const out = { units: [], meta: {}, pops: [], clips: [] };
+  const ignored = (el) => !!el.closest('[data-check~="ignore"],[aria-hidden="true"],[data-gm-internal]');
+  // quick on purpose: captions, data-check="quick-ok"
+  const quick = (el) => !!el.closest('[data-check~="quick-ok"],.gmb-cap');
+  const sel = (el) => gm.__selector(el);
+  const isTextEl = (el) => { for (const n of el.childNodes) if (n.nodeType === 3 && n.data.trim() && !/^[\s\p{Extended_Pictographic}‍️⃣]+$/u.test(n.data)) return true; return false; };
+  const vis = (el) => {
+    let op = 1;
+    for (let c = el; c && c.nodeType === 1; c = c.parentElement) {
+      const cs = getComputedStyle(c);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse') return 0;
+      op *= parseFloat(cs.opacity);
+      if (cs.filter !== 'none' && cs.filter.includes('opacity(')) for (const m of cs.filter.matchAll(/opacity\(([\d.]+)(%?)\)/g)) op *= parseFloat(m[1]) / (m[2] ? 100 : 1);
+      if (op < 0.04) return 0;
+    }
+    return op;
+  };
+  const isClip = (e) => e.hasAttribute('data-start') || e.hasAttribute('data-duration') || e.hasAttribute('data-end') || e.classList.contains('scene') || !!(e.parentElement && e.parentElement.hasAttribute('data-sequence'));
+  // the scene: the outermost clip around it (a top-level section, a scene of a sequence), else the whole page
+  const sceneOf = (el) => { let s = null; for (let c = el; c && c !== document.body; c = c.parentElement) if (isClip(c)) s = c; return s; };
+  const shown = (el) => { const r = el.getBoundingClientRect(), a = Math.max(1, r.width * r.height); return (Math.max(0, Math.min(r.right, W) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, H) - Math.max(r.top, 0))) / a; };
+  const idOf = (el, kind) => {
+    let id = S.ids.get(el);
+    if (id) return id;
+    id = ++S.id; S.ids.set(el, id);
+    // its own words: text inside it that belongs to this unit (not to a block of its own nested in it)
+    let own = '';
+    // (word spans laid out with a gap and no spaces between them are still separate words; the letters of a split
+    //  word are not)
+    if (kind === 'text') {
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let last = null;
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+        if (!n.parentElement || unitOf(n.parentElement) !== el) continue;
+        if (last && last !== n.parentElement && !last.closest('.gm-char') && getComputedStyle(last).display !== 'inline') own += ' ';
+        own += n.data; last = n.parentElement;
+      }
+    }
+    const words = (own.match(/[\p{L}\p{N}][\p{L}\p{N}'’.,%$€£×-]*/gu) || []).length;
+    // live: text that changes by design (counters, typing, scramble); ambient: it rides an endless loop (a floating
+    // label, a particle) and is not meant to be read on a schedule
+    // (a big layer that drifts in a loop, a stage or a scene, does not make its text ambient)
+    const loops = (e) => { for (let c = e; c && c !== document.body && c.offsetWidth * c.offsetHeight < 0.4 * W * H; c = c.parentElement) for (const a of c.getAnimations()) { try { const it = a.effect.getTiming().iterations; if (it === Infinity || it > 1) return true; } catch (er) {} } return false; };
+    const live = kind === 'text' && !!(el.closest('[data-count],[data-type],[data-scramble]') || el.querySelector('[data-count],[data-type],[data-scramble]')) || loops(el);
+    const sc = sceneOf(el);
+    out.meta[id] = { sel: sel(el), kind, words, live, quick: quick(el), text: kind === 'text' ? own.trim().replace(/\s+/g, ' ').slice(0, 40) : '', scene: sc ? sel(sc) : null, sceneStart: sc ? gm.timing(sc).start : 0, overlapOk: !!el.closest('[data-check~="overlap-ok"]') };
+    return id;
+  };
+  // 1. Reading units: a line of text with its inline parts (an <em> in a headline, the words of a split line); SVG
+  //    text on its own. The unit is readable when every part of it that is on screen is settled (a line that builds
+  //    word by word is read as it builds, so its hold starts with its first word).
+  //    (a flex row of single words, a caption line made of word spans, is one line too)
+  const lineOfWords = (p) => {
+    const cs = getComputedStyle(p);
+    if (!/flex/.test(cs.display) || /column/.test(cs.flexDirection) || p.children.length < 2) return false;
+    return [...p.children].every((c) => !c.querySelector('div,p,h1,h2,h3,h4,h5,h6,ul,ol,li,img,svg,section') && (c.textContent.match(/\S+/g) || []).length <= 2);
+  };
+  if (!S.units) S.units = new WeakMap();
+  const unitOf = (el) => {
+    if (S.units.has(el)) return S.units.get(el);
+    let u = el;
+    if (el instanceof SVGElement) u = el.closest('text') || el;
+    else if (el.closest('[data-split]')) u = el.closest('[data-split]');
+    else while (u.parentElement && u.parentElement !== document.body && (/^inline/.test(getComputedStyle(u).display) || lineOfWords(u.parentElement))) u = u.parentElement;
+    S.units.set(el, u);
+    return u;
+  };
+  // the boxes around a readable unit up to its scene, with their sizes (to tell later what went away with it)
+  const layers = (el) => { const a = []; const sc = sceneOf(el); for (let c = el.parentElement; c && c !== document.body; c = c.parentElement) { a.push([c, c.offsetWidth * c.offsetHeight]); if (c === sc) break; } return a; };
+  const texts = window.__gmTexts || [];
+  const units = new Map();
+  for (const t of texts) { const u = unitOf(t.el); if (!units.has(u)) units.set(u, []); units.get(u).push(t); }
+  const now = new Map(); // id -> { el, state, rect, op }
+  for (const [u, parts] of units) {
+    const id = idOf(u, 'text');
+    let state = 2, reason = '', big = false;
+    for (const t of parts) {
+      const cs = getComputedStyle(t.el), k = t.el.offsetHeight ? t.el.getBoundingClientRect().height / t.el.offsetHeight : 1;
+      if (parseFloat(cs.fontSize) * (isFinite(k) && k > 0 ? k : 1) >= 24 * PX) big = true;
+      const r = t.rs.length ? t.u : null;
+      let why = '';
+      if (t.hidden) why = 'hidden';
+      else if (t.covered) why = 'covered';
+      else if (t.op < 0.4 || t.fo > 0.8) why = 'fading';
+      else if ((t.cam ? t.cv : t.sv) > 600 * PX || t.sv > 1000 * PX || t.ssz > 0.6) why = 'moving';
+      else if (r && (Math.max(0, Math.min(r.right, W) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, H) - Math.max(r.top, 0))) < 0.7 * (r.right - r.left) * (r.bottom - r.top)) why = 'cropped';
+      if (why) { state = 1; reason = reason || why; }
+    }
+    // text that changes while on screen (a counter, a clock, typing) is not judged for its hold
+    const tc = u.textContent;
+    if (S.txt.has(id) && S.txt.get(id) !== tc) S.live.add(id);
+    S.txt.set(id, tc);
+    // (its box: where its letters are, not the box around them: a caption's box can be much taller than its line)
+    const rect = parts.reduce((a, t) => ({ left: Math.min(a.left, t.u.left), top: Math.min(a.top, t.u.top), right: Math.max(a.right, t.u.right), bottom: Math.max(a.bottom, t.u.bottom) }), { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity });
+    rect.width = rect.right - rect.left; rect.height = rect.bottom - rect.top;
+    now.set(id, { el: u, state, rect, op: Math.min(...parts.map((t) => t.op)), anc: state === 2 ? layers(u) : null });
+    out.units.push([id, state, reason, big ? 1 : 0, S.live.has(id) ? 1 : 0, ...(state === 2 ? [rect.left, rect.top, rect.width, rect.height].map(Math.round) : [])]);
+  }
+  // 2. Marks: an icon, a logo, a picture (an <img> or an outer <svg>) between ~40 px square and a fifth of the frame
+  for (const el of document.body.querySelectorAll('img,svg')) {
+    if (el.tagName.toLowerCase() === 'svg' && el.parentElement && el.parentElement.closest('svg')) continue;
+    // (the cursor block's pointer is a pointer, not something to read)
+    if (el.closest('[data-gm-hidden],.gmb-cursor') || ignored(el) || el.querySelector('text')) continue;
+    const op = vis(el);
+    if (!op) continue;
+    const r = el.getBoundingClientRect(), a = r.width * r.height;
+    if (a < (40 * PX) ** 2 || a > 0.2 * W * H) continue;
+    const id = idOf(el, 'mark');
+    const p = S.prev.get(id);
+    let state = 2, reason = '';
+    const sv = p && dt > 0 ? Math.hypot(r.left + r.width / 2 - (p.rect.left + p.rect.width / 2), r.top + r.height / 2 - (p.rect.top + p.rect.height / 2)) / dt : 0;
+    const ssz = p && dt > 0 ? Math.abs(Math.log(Math.max(1, r.width) / Math.max(1, p.rect.width))) / dt : 0;
+    const fo = p && dt > 0 ? Math.abs(op - p.op) / dt : 0;
+    if (op < 0.4 || fo > 0.8) { state = 1; reason = 'fading'; }
+    else if (sv > 600 * PX || ssz > 0.6) { state = 1; reason = 'moving'; }
+    else if (shown(el) < 0.7) { state = 1; reason = 'cropped'; }
+    else {
+      // covered: something opaque drawn over its middle
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (cx >= 0 && cy >= 0 && cx <= W && cy <= H) for (const c of document.elementsFromPoint(cx, cy)) {
+        if (c === el || el.contains(c) || c.contains(el)) break;
+        if (c.closest('[data-gm-internal]')) continue;
+        const cs = getComputedStyle(c), m = /rgba?\(([^)]+)\)/.exec(cs.backgroundColor), al = m ? (m[1].split(',')[3] != null ? parseFloat(m[1].split(',')[3]) : 1) : 0;
+        if (al > 0.85 || /^(IMG|VIDEO)$/.test(c.tagName)) { state = 1; reason = 'covered'; }
+        break;
+      }
+    }
+    now.set(id, { el, state, rect: r, op, anc: state === 2 ? layers(el) : null });
+    out.units.push([id, state, reason, 1, 0, ...(state === 2 ? [r.left, r.top, r.width, r.height].map(Math.round) : [])]);
+  }
+  // 3. Units that were readable at the previous sample and are gone now (display: none or opacity 0 in one step)
+  //    while their scene goes on: a cut with no exit. (A replacement in the same place, a scene change, a scene
+  //    transition, a removed element are not.)
+  const trans = !!window.__gmTransitioning;
+  const ov = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  for (const [id, p] of S.prev) {
+    if (now.has(id)) continue;
+    const el = p.el;
+    const sc = sceneOf(el);
+    const sceneOn = !sc || vis(sc) > 0;
+    let why = !el.isConnected ? 'moving' : !sceneOn ? 'scene' : vis(el) === 0 ? 'cut' : 'hidden';
+    // replaced in place (a state swap: a label or an icon changing, a fly taking off from it): something new is on
+    // screen over its box
+    if (why === 'cut') for (const [id2, q] of now) {
+      if (S.prev.has(id2) && S.prev.get(id2).state > 0) continue;
+      if (ov(p.rect, q.rect) >= 0.3 * Math.min(p.rect.width * p.rect.height, q.rect.width * q.rect.height)) { why = 'swap'; break; }
+    }
+    out.units.push([id, 0, why, 0, 0]);
+    // (only between close samples: a fast exit could fit between two samples further apart)
+    if (why !== 'cut' || p.state !== 2 || p.op < 0.85 || trans || !(dt > 0 && dt <= 0.135)) continue;
+    if (el.closest('[data-morph],[data-check~="quick-ok"],.gmb-cap')) continue;
+    // the highest box below the scene that went away (a card that is a clip, a group set to opacity 0); a layer as
+    // big as the frame going away is a cut of the whole picture (an edit, like a scene change), not this element
+    let cause = el, area = p.rect.width * p.rect.height;
+    for (let c = el.parentElement; c && c !== sc && c !== document.body; c = c.parentElement) { const cs = getComputedStyle(c); if (cs.display === 'none' || cs.visibility !== 'visible' || parseFloat(cs.opacity) < 0.04) { cause = c; const k = (p.anc || []).find((x) => x[0] === c); if (k) area = k[1]; } }
+    if (area >= 0.5 * W * H) continue;
+    out.pops.push({ id, sel: sel(cause), text: (cause.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 40), t: tNow - dt, scene: sc ? sel(sc) : null, sceneStart: sc ? gm.timing(sc).start : 0 });
+  }
+  S.prev = now;
+  // 4. steps() eases on big things (more than ~15% of the frame): CSS animations and transitions, and the tween
+  //    targets PAGE_EASES found with a steps() ease. Opacity-only steps (a blinking caret) and see-through textures
+  //    (grain) are fine.
+  const MOVE = /^(transform|translate|scale|rotate|left|top|right|bottom|width|height|clipPath|clip-path|inset|offsetDistance|offset-distance|x|y|scaleX|scaleY|xPercent|yPercent)$/;
+  const big = (el) => {
+    const op = vis(el);
+    if (op < 0.3) return 0;
+    const cs = getComputedStyle(el);
+    if (cs.mixBlendMode !== 'normal' || parseFloat(cs.opacity) < 0.3) return 0;
+    const r = el.getBoundingClientRect(), a = (Math.max(0, Math.min(r.right, W) - Math.max(r.left, 0)) * Math.max(0, Math.min(r.bottom, H) - Math.max(r.top, 0))) / (W * H);
+    return a;
+  };
+  const noteStep = (el, how) => { if (!el || el.nodeType !== 1 || ignored(el)) return; const a = big(el); if (a >= 0.15) { const cur = S.steps.get(el); if (!cur || cur.area < a) S.steps.set(el, { sel: sel(el), area: a, how, t: tNow }); } };
+  for (const a of document.getAnimations()) {
+    try {
+      const tg = a.effect && a.effect.target, tm = a.effect.getTiming(), kf = a.effect.getKeyframes();
+      const stepped = /steps\(|step-(start|end)/.test(tm.easing) || kf.some((k) => /steps\(|step-(start|end)/.test(k.easing || ''));
+      if (!stepped) continue;
+      const props = new Set(); for (const k of kf) for (const key of Object.keys(k)) props.add(key);
+      if (![...props].some((k) => MOVE.test(k))) continue;
+      noteStep(tg, 'CSS animation');
+    } catch (e) {}
+  }
+  for (const s of window.__gmStepTweens || []) { try { for (const el of document.querySelectorAll(s)) noteStep(el, 'tween'); } catch (e) {} }
+  // 5. Elements with a clip-path shape: what fraction of their box shows (a start state that leaves a sliver)
+  const cands = new Set(document.body.querySelectorAll('[style*="clip-path"]'));
+  for (const a of document.getAnimations()) { const tg = a.effect && a.effect.target; if (tg && tg.nodeType === 1) cands.add(tg); }
+  for (const el of cands) { if (!S.clipEls.has(el) && !ignored(el) && getComputedStyle(el).clipPath !== 'none') S.clipEls.set(el, ++S.id); }
+  for (const [el, id] of S.clipEls) {
+    if (!el.isConnected) continue;
+    const op = vis(el);
+    const w = el.offsetWidth, h = el.offsetHeight;
+    if (!op || op < 0.5 || w * h < 0.01 * W * H || shown(el) < 0.5) { out.clips.push([id, -1]); continue; }
+    const cp = getComputedStyle(el).clipPath;
+    let f = 1, minDim = Infinity;
+    const len = (v, size) => (/%$/.test(v) ? (parseFloat(v) / 100) * size : parseFloat(v) || 0);
+    const m = /^(inset|circle|ellipse)\((.*)\)/.exec(cp.trim());
+    if (m && m[1] === 'inset') {
+      const v = m[2].replace(/\s+round\s.*$/, '').trim().split(/\s+/), [t0, r0 = t0, b0 = t0, l0 = r0] = v;
+      const fw = Math.max(0, w - len(l0, w) - len(r0, w)), fh = Math.max(0, h - len(t0, h) - len(b0, h));
+      f = (fw * fh) / (w * h); minDim = Math.min(fw, fh);
+    } else if (m) {
+      const rs = m[2].split(/\s+at\s+/)[0].trim().split(/\s+/);
+      const rx = m[1] === 'circle' ? len(rs[0] || '50%', Math.hypot(w, h) / Math.SQRT2) : len(rs[0] || '50%', w), ry = m[1] === 'circle' ? rx : len(rs[1] || rs[0] || '50%', h);
+      if (/side/.test(rs[0] || '')) { f = 1; } else { f = Math.min(1, (Math.PI * rx * ry) / (w * h)); minDim = 2 * Math.min(rx, ry); }
+    } else if (cp !== 'none') f = 1; // polygon, path, url(): not judged
+    out.clips.push([id, Math.round(f * 1000) / 1000, minDim >= 1.5 ? 1 : 0]);
+    if (!S.clipSeen) S.clipSeen = new Set();
+    if (!S.clipSeen.has(id) && S.clipSeen.add(id)) out.meta['c' + id] = { sel: sel(el), cp, scene: sceneOf(el) ? sel(sceneOf(el)) : null, sceneStart: sceneOf(el) ? gm.timing(sceneOf(el)).start : 0 };
+  }
+  return out;
+})`;
+
+// Collected once at the end of the pass: big things stepped by a steps() ease.
+const PAGE_PACING_END = String.raw`(() => { const S = window.__gmPace; return S ? [...S.steps.values()] : []; })()`;
 
 // ---------------------------------------------------------------------------
 // Robotic motion (page side): where the things that move are, per sample, and which easing curves the page uses
@@ -615,6 +911,7 @@ const PAGE_EASES = String.raw`(async () => {
   const blurExplicitOff = !classic && blurOff;
   const canon = (name) => { try { return I.cssEasing(name); } catch (e) { return String(name); } };
   const list = []; // { ease: canonical or 'natural', name }
+  const stepTweens = window.__gmStepTweens = [];
   const add = (name, natural) => list.push(natural ? { ease: 'natural', name: 'default' } : { ease: canon(name), name: String(name) });
   // 1. entrances and exits (data-enter="name [duration] [delay] [easing]")
   for (const el of document.querySelectorAll('[data-enter],[data-exit]')) {
@@ -623,6 +920,7 @@ const PAGE_EASES = String.raw`(async () => {
       const v = el.getAttribute(attr);
       if (!v || /^\s*(none)?\s*$/.test(v)) continue;
       const toks = v.trim().split(/\s+/).slice(1), e = toks.find((t) => I.isEasingName(t));
+      if (e && /^steps\(/.test(e)) stepTweens.push(gm.__selector(el));
       if (e) { add(e); continue; }
       if (!classic) { add(null, true); continue; }
       // classic default: the curve the entrance animation really has
@@ -660,6 +958,9 @@ const PAGE_EASES = String.raw`(async () => {
       const args = code.slice(re.lastIndex, i - 1);
       if (!/\{/.test(args)) continue;
       const em = /\bease\s*:\s*(['"\x60])([^'"\x60]+)\1/.exec(args);
+      // (a steps() ease: remember the target, to see later how big it is on screen)
+      const tg = /^\s*(['"\x60])([^'"\x60]+)\1/.exec(args);
+      if (em && tg && /^steps\(|^step-(start|end)$/.test(em[2].trim())) stepTweens.push(tg[2]);
       if (em) add(em[2]);
       else if (/\bease\s*:/.test(args)) continue; // computed: unknown
       else if (def) add(def);
@@ -785,6 +1086,118 @@ export function motionIssues(samples, names, setup, info, step) {
       out.push({ severity: 'warning', code: 'same-ease', time: null, message: `${top[1]} of ${eases.length} tweens and entrances use the same curve (${name}): everything moves like one machine${classicNote}.`,
         fix: setup.classic ? "drop data-motion=\"classic\" (natural motion gives moves springs), or vary the eases: 'spring'/'out-back' for arrivals, 'in-*' for exits, 'in-out-sine' for long moves." : "leave ease out for the natural spring default, or vary it: 'spring'/'out-back' for arrivals, 'in-*' for exits, 'in-out-sine' for long moves." });
     }
+  }
+  return out;
+}
+
+/**
+ * Pacing per element, from the PAGE_PACING samples. Returns issues:
+ * short-hold (a text or mark readable for less time than it takes to read it), cut-exit (fully on screen, then gone in
+ * one step while its scene goes on), sliver-start (a clip-path start state that leaves a sliver showing before the
+ * entrance). `range`: { from, to, lastT, duration } of the pass.
+ */
+export function pacingIssues(samples, meta, pops, range) {
+  const out = [];
+  if (!samples.length) return out;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const T = samples.map((s) => s.t), n = T.length;
+  const startOpen = range.from > 1e-6, endOpen = range.to < range.lastT - 1e-6;
+  const where = (m) => (m && m.scene ? { scene: m.scene, sceneStart: m.sceneStart } : {});
+  // 1. short-hold
+  const tracks = new Map();
+  samples.forEach((s, i) => {
+    for (const [id, state, reason, big, live, x, y, w, h] of s.units) {
+      if (!tracks.has(id)) tracks.set(id, { st: new Array(n).fill(0), why: new Array(n).fill(''), box: new Array(n).fill(null), big: false, live: false });
+      const tr = tracks.get(id); tr.st[i] = state; tr.why[i] = reason; if (w != null) tr.box[i] = { x, y, w, h };
+      if (state === 2 && big) tr.big = true; if (live) tr.live = true;
+    }
+  });
+  const ENDS = { moving: 'it starts to move away', fading: 'it starts to fade', hidden: 'it is wiped or moved out of view', cropped: 'it goes out of frame', covered: 'something covers it', cut: 'it is cut away', swap: 'it is swapped for something else in its place', scene: 'its scene ends', end: 'the video ends' };
+  const holds = [];
+  for (const [id, tr] of tracks) {
+    const m = meta[id];
+    if (!m || m.quick || m.live || (m.kind === 'text' && (tr.live || !tr.big || m.words < 1))) continue;
+    // runs of readable samples; short breaks while it stays on screen (an emphasis pop, a nudge) do not end them
+    const runs = [];
+    for (let i = 0; i < n; i++) {
+      if (tr.st[i] !== 2) continue;
+      let j = i; while (j + 1 < n && tr.st[j + 1] === 2) j++;
+      const last = runs[runs.length - 1];
+      if (last && T[i] - T[last[1]] <= 0.5 && tr.st.slice(last[1] + 1, i).every((s, k) => s === 1 && tr.why[last[1] + 1 + k] !== 'covered')) last[1] = j;
+      else runs.push([i, j]);
+      i = j;
+    }
+    if (!runs.length) continue;
+    let best = null, open = false;
+    for (const [a, b] of runs) {
+      if ((a === 0 && startOpen) || (b === n - 1 && endOpen)) open = true; // it may go on outside the range
+      const s0 = a === 0 ? T[0] : (T[a - 1] + T[a]) / 2, e0 = b === n - 1 ? range.duration : (T[b] + T[b + 1]) / 2;
+      const why = b === n - 1 ? 'end' : tr.st[b + 1] === 0 ? tr.why[b + 1] || 'cut' : tr.why[b + 1] || 'moving';
+      // (how long it stays on screen while it moves on: a cursor, a ball, a card travelling on is not leaving)
+      let c = b + 1; while (c < n && tr.st[c] === 1 && tr.why[c] === 'moving') c++;
+      const stay = (c >= n ? range.duration : T[c]) - s0, swapped = c < n && tr.st[c] === 0 && tr.why[c] === 'swap';
+      if (!best || e0 - s0 > best.d) best = { d: e0 - s0, s0, e0, why, a, b, stay, swapped, first: tr.box[a], last: tr.box[b] };
+    }
+    holds.push({ id, m, open, ...best });
+  }
+  // A copy that carries the same text on (the next scene's first frame, a ghost that flies off): one hold.
+  const norm = (x) => (x || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  for (const a of holds) for (const b of holds) {
+    if (a === b || a.skip || b.skip || !norm(a.m.text) || norm(a.m.text) !== norm(b.m.text)) continue;
+    if (b.s0 >= a.e0 - 0.3 && b.s0 <= a.e0 + 0.15) { a.d += b.d; a.why = b.why; b.skip = true; }
+  }
+  // Texts that take turns in one place (captions, a word-by-word kinetic line, a ticker of words): the eye stays
+  // there and reads on, so a quick pace is the point. Three or more in a row, each replaced within ~0.4 s.
+  // (a caption of two lines replaces one of one line: the boxes overlap, the heights are within about 2x)
+  const overlap = (p, q) => !!(p && q) && Math.max(0, Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x)) * Math.max(0, Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y)) >= 0.3 * Math.min(p.w * p.h, q.w * q.h) && Math.min(p.h, q.h) / Math.max(p.h, q.h) >= 0.45;
+  const root = new Map(), find = (x) => { while (root.get(x) !== x) x = root.get(x); return x; };
+  for (const h of holds) root.set(h, h);
+  for (const a of holds) for (const b of holds) {
+    if (a === b || a.m.kind !== 'text' || b.m.kind !== 'text') continue;
+    if (b.s0 > a.s0 && b.s0 >= a.e0 - 0.3 && b.s0 <= a.e0 + 0.4 && overlap(a.last, b.first)) root.set(find(b), find(a));
+  }
+  const size = new Map();
+  for (const h of holds) size.set(find(h), (size.get(find(h)) || 0) + 1);
+  for (const h of holds) if (size.get(find(h)) >= 3) h.inTurns = true;
+  for (const h of holds) {
+    const { m } = h;
+    // (cropped by the frame: text-offscreen speaks for it)
+    // (swapped in place: a state change, read as one thing changing)
+    if (h.skip || h.inTurns || h.open || h.swapped || (h.why === 'covered' && m.overlapOk) || h.why === 'cropped') continue;
+    const need = m.kind === 'text' ? 1 + 0.25 * Math.min(m.words, 12) : 1;
+    if (h.d >= need * 0.7 || h.d >= need - 0.25 || (h.why === 'moving' && h.stay >= need)) continue;
+    const what = m.kind === 'text' ? `a ${m.words}-word text` : 'an icon or picture';
+    out.push({ severity: 'warning', code: 'short-hold', selector: m.sel, ...(m.text ? { text: m.text } : {}), ...where(m), time: r2(T[h.a]), until: r2(T[h.b]), ranges: [[r2(T[h.a]), r2(T[h.b])]],
+      message: `Readable for only ~${h.d.toFixed(1)} s (from ${h.s0.toFixed(1)} s, when it is in, until ${ENDS[h.why] || 'it leaves'}); ${what} needs ~${need.toFixed(1)} s to be read.`,
+      fix: 'Give it a planned life: in, a hold long enough to read (~1 s + 0.25 s per word, 1 s for an icon), then its way out. Start its exit (or what covers it, or the scene change) later, bring it in sooner, or cut words. If it is meant to flash by, add data-check="quick-ok".' });
+  }
+  // 2. cut-exit
+  const seen = new Set();
+  for (const p of pops) {
+    const k = p.sel + '|' + p.t.toFixed(2);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ severity: 'warning', code: 'cut-exit', selector: p.sel, ...(p.text ? { text: p.text } : {}), ...where(p), time: r2(p.t), ranges: [[r2(p.t), r2(p.t)]],
+      message: `Was fully on screen, then vanishes by a cut (no exit) at ~${p.t.toFixed(1)} s while its scene goes on.`,
+      fix: 'Give it a data-exit (or an exit tween: out over 0.2-0.4 s), move it into the next scene (data-morph, gm.fly), or hold it to the end of its scene.' });
+  }
+  // 3. sliver-start
+  const clips = new Map();
+  samples.forEach((s, i) => { for (const [id, f, dimOk] of s.clips || []) { if (!clips.has(id)) clips.set(id, new Array(n).fill(null)); clips.get(id)[i] = f < 0 ? null : { f, dimOk }; } });
+  for (const [id, fs] of clips) {
+    const i0 = fs.findIndex((x) => x);
+    if (i0 < 0 || (i0 === 0 && startOpen)) continue;
+    const f0 = fs[i0];
+    if (!(f0.f > 0 && f0.f <= 0.1 && f0.dimOk)) continue;
+    let j = i0; while (j + 1 < n && fs[j + 1] && Math.abs(fs[j + 1].f - f0.f) <= 0.02) j++;
+    if (T[j] - T[i0] < 0.2 - 1e-6) continue;
+    let opens = false;
+    for (let k = j + 1; k < n && fs[k]; k++) if (fs[k].f >= 0.9) { opens = true; break; }
+    if (!opens) continue;
+    const m = meta['c' + id] || {};
+    out.push({ severity: 'warning', code: 'sliver-start', selector: m.sel, ...where(m), time: r2(T[i0]), until: r2(T[j]), ranges: [[r2(T[i0]), r2(T[j])]],
+      message: `Before its entrance, ${Math.max(1, Math.round(f0.f * 100))}% of it already shows (its start state clip-path: ${m.cp || '…'} leaves a sliver): it reads as a glitch.`,
+      fix: 'Make the start state hide it completely: inset(50%) (or inset(50% 0) / inset(0 50%) to open from the middle), opacity: 0 or scale: 0, until the entrance.' });
   }
   return out;
 }
@@ -950,11 +1363,13 @@ export async function check(input, opts = {}) {
     const watchMotion = opts.at == null && opts.motion !== false;
     let moSetup = null;
     const moSamples = [], moNames = {};
+    const paceSamples = [], paceMeta = {}, pops = []; // pacing per element (short holds, cuts with no exit, slivers)
     if (watchMotion) { try { moSetup = await ctx.page.evaluate(PAGE_EASES); } catch (e) { moSetup = null; } }
     if (opts.at == null) { try { push(await ctx.page.evaluate(PAGE_CSS_VS_TWEEN)); } catch (e) {} }
     for (const t of times) {
       await ctx.page.seek(t);
       const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT}, ${JSON.stringify({ safeZone: opts.safeZone || null, t })})`);
+      if (opts.at == null) { try { const pc = await ctx.page.evaluate(`(${PAGE_PACING})(${prevT == null ? 0 : t - prevT}, ${t})`); paceSamples.push({ t, units: pc.units, clips: pc.clips }); Object.assign(paceMeta, pc.meta); pops.push(...pc.pops); } catch (e) {} }
       prevT = t;
       if (moSetup) { try { const m = await ctx.page.evaluate(PAGE_MOTION); moSamples.push({ t, els: m.els }); Object.assign(moNames, m.names); } catch (e) {} }
       if (opts.at != null && Math.abs(t - +opts.at) > 0.5 / fps) continue; // warm-up samples only feed motion detection
@@ -1007,6 +1422,20 @@ export async function check(input, opts = {}) {
     const logs = groupLogs(await ctx.page.evaluate('window.gm && gm.__logs ? gm.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
     if (moSetup) issues.push(...motionIssues(moSamples, moNames, moSetup, info, step));
+    if (opts.at == null) {
+      issues.push(...pacingIssues(paceSamples, paceMeta, pops, { from, to, lastT, duration: info.duration }));
+      try {
+        for (const s of await ctx.page.evaluate(PAGE_PACING_END)) issues.push({ severity: 'info', code: 'stepped-move', selector: s.sel, time: Math.round(s.t * 100) / 100,
+          message: `This element covers ${Math.round(s.area * 100)}% of the frame and moves with a steps() ease (${s.how}): on something this big, stepped motion reads as dropped frames.`,
+          fix: 'Keep steps() for small things (a counter, a blinking caret, text typing); give windows, cards and the camera a smooth ease (or leave ease out for the natural default).' });
+      } catch (e) {}
+    }
+    // a tween or style on a display: contents element (a bare <gm-include> wrapper) does nothing
+    try {
+      for (const b of await ctx.page.evaluate('[...(window.__gmNoBox || new Map()).values()]')) issues.push({ severity: 'warning', code: 'contents-no-box', selector: b.sel, time: b.t == null ? null : Math.round(b.t * 100) / 100,
+        message: `This element has display: contents${b.inc ? ' (a <gm-include> without class or style gets it)' : ''}, so it draws no box: its ${b.props.join(', ')} ${b.props.length > 1 ? 'do' : 'does'} nothing.`,
+        fix: b.inc ? 'Give the <gm-include> a class or a style (e.g. style="display:block") so it gets a box, or animate the elements inside it.' : 'Animate the elements inside it, or give it a box (display: block / flex / grid).' });
+    } catch (e) {}
     if (from === 0 && openFrames.length >= 2 && openFrames.every((o) => o.empty)) issues.push({ severity: 'warning', code: 'empty-start', time: 0, message: 'The first half second shows only the background. The first frame is often the thumbnail, and the hook: viewers decide in the first second.', fix: 'Show something from frame 0 (a shape, the background art, the first word already in place), or start the first entrance at 0.' });
     // Almost nothing on screen for a second or more in the middle (a camera between two far-apart parts, a gap
     // between scenes, a zoom so far out that everything is a speck)
@@ -1044,7 +1473,7 @@ export async function check(input, opts = {}) {
 }
 
 /** Codes that judge style (a move's path, easing variety, camera pauses): reported as ℹ notes, not ⚠ warnings. */
-export const STYLE_NOTES = new Set(['straight-move', 'camera-stop', 'fast-no-blur', 'same-ease', 'empty-frame']);
+export const STYLE_NOTES = new Set(['straight-move', 'camera-stop', 'fast-no-blur', 'same-ease', 'empty-frame', 'stepped-move']);
 
 /** gm.log() lines: the same message at neighbouring times becomes one line with a time range and a count. */
 export function groupLogs(list) {

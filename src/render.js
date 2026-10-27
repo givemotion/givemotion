@@ -315,6 +315,10 @@ export async function render(input, opts = {}) {
         try {
           // Warm up on the previous frame: Chrome's paint caches then match a single worker exactly.
           // and Chrome's paint state from earlier frames is dropped, so any split between workers gives the same bytes
+          // A part that starts at frame 0 has no previous frame to warm up on: right after the page opens (several
+          // browsers starting at once) its first capture could catch the page before it drew (elements at their CSS
+          // rest, tiles missing), so frame 0 is captured once and thrown away first (below).
+          const coldStart = a === 0 && prevFrame === -2;
           if (a !== prevFrame + 1) { last = null; if (a > 0) { await seekFrame(page, a - 1); await page.resetPaint(); await page.capture(captureFormat, jpegQ); } }
           for (let f = a; f < b; f++) {
             for (let s = 0; s < blurSamples; s++) {
@@ -323,6 +327,7 @@ export async function render(input, opts = {}) {
               prof.seek += Date.now() - q0; q0 = Date.now();
               if (r && r.needsReload) throw new Error('Internal: page needs reload during render.');
               let buf;
+              if (coldStart && f === 0 && s === 0) await page.capture(captureFormat, jpegQ);
               if (!last || (r && r.dirty) || opts.noReuse) buf = await page.capture(captureFormat, jpegQ);
               else { buf = last; if (s === 0) reused++; }
               last = buf;

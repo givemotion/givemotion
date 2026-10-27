@@ -52,6 +52,7 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 | `odd-size` | Width or height is odd; video codecs need even sizes (1920x1080). |
 | `non-seekable-animation` | A CSS animation started inside `onFrame`; use `data-start` or set styles from `t`. |
 | `onframe-global-time` | `gm.onFrame(fn)` / `gm.onLayout(fn)` without an element, in a `<script>` inside a clip that starts after 0: `fn` gets the video's time, not the scene's. Pass the scene: `gm.onFrame('#scene', (local, info, el) => …)`. |
+| `bind-missing` / `bind-unsafe` | A `data-bind*` path that the data does not have, or a bound value that would be an event handler (`data-bind-onclick`) or a `javascript:` URL: data is only text, so it was not set. |
 | `onframe-no-target` | `gm.onFrame('#sel', fn)` matched nothing (check the selector; put the script after the element), so `fn` got the video's time. |
 | `timeline-no-target`, `cursor-target`, `fly-no-from`, `connect-no-target`, `burst-no-target` | A selector matched nothing. |
 | `morph-no-pairs` | `morph` transition without matching `data-morph` names in both scenes. |

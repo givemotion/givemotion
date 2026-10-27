@@ -14,7 +14,7 @@
 </head>
 <body>
   <canvas id="c" width="1920" height="1080"></canvas>
-  <div class="title" data-start="1.2" data-exit="fade 0.8">
+  <div class="title" data-start="0.2" data-exit="fade 0.8">
     <h1 data-split="chars" data-enter="blur 0.7" data-stagger="0.035">Flow fields</h1>
     <p data-enter="fade-up 0.8 0.8">Every frame is a function of time.</p>
   </div>
@@ -38,7 +38,8 @@
     g.fillStyle = '#05060a'; g.fillRect(0, 0, W, H);
     g.globalCompositeOperation = 'lighter';
     g.lineCap = 'round';
-    const fade = Math.min(1, t / 1.5) * Math.min(1, (gm.duration - t) / 1.0);
+    // already visible on frame 0 (the thumbnail), full strength by 1.2 s, fading out over the last second
+    const fade = Math.min(1, 0.45 + t / 2.2) * Math.min(1, (gm.duration - t) / 1.0);
     for (let i = 0; i < N; i++) {
       g.beginPath();
       let prev = null;

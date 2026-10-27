@@ -77,7 +77,7 @@
   .baseline { position: absolute; height: 3px; background: rgba(255,255,255,.22); transform-origin: left; }
   #trend { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: visible; pointer-events: none; }
   #trend path { fill: none; stroke: var(--amber); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
-  .delta { position: absolute; padding: 14px 30px; border-radius: 999px; background: var(--amber); color: #1b1203; font-size: 46px; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
+  .delta { position: absolute; z-index: 2; padding: 14px 30px; border-radius: 999px; background: var(--amber); color: #1b1203; font-size: 46px; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
 
   /* ---------- 4. NPS gauge ---------- */
   #nps .gauge { position: absolute; left: 50%; top: 170px; width: 1100px; height: 640px; translate: -50% 0; overflow: visible; }
@@ -255,7 +255,7 @@ tl2.to('#tip', { scale: 0, duration: 0.3, ease: 'power2.in' }, T1 + 0.05)
 gm.camera('#world')
   .shot(0, { follow: '#tip', zoom: 1.9, offset: [120, -60] })
   .shot(T1 - 0.6, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, duration: 1.2, ease: 'in-out-cubic' })
-  .shot(T1 + 0.7, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, zoom: 1.05, offset: [60, 40], duration: 1.6, ease: 'in-out-sine' })
+  .shot(T1 + 0.6, { fit: { x: 0, y: 0, w: 1920, h: 1080 }, zoom: 1.05, offset: [60, 40], duration: 0.9, ease: 'in-out-sine' })
   .shake(T1 + 0.72, { duration: 0.35, amount: 12 });
 
 /* ---------------- 3. Revenue bars ---------------- */

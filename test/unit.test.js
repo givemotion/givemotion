@@ -260,6 +260,13 @@ test('gm-include: reads HTML/SVG blocks, never hidden or other files', () => {
   const html = expandIncludes('<gm-include src=".env"/><gm-include src="notes.txt"/><gm-include src=".hidden/x.html"/><gm-include src="./ok.html"/>', dir, dir);
   assert.ok(!html.includes('SECRET'));
   assert.ok(html.includes('<b>block</b>'));
+  // an absolute path may go through a hidden folder (a project in .claude/worktrees), but not into a key folder
+  mkdirSync(join(dir, '.work', 'blocks'), { recursive: true });
+  writeFileSync(join(dir, '.work', 'blocks', 'a.html'), '<i>abs</i>');
+  mkdirSync(join(dir, '.ssh'));
+  writeFileSync(join(dir, '.ssh', 'k.html'), 'SECRET=4');
+  const abs = expandIncludes(`<gm-include src="${join(dir, '.work', 'blocks', 'a.html')}"/><gm-include src="${join(dir, '.ssh', 'k.html')}"/><gm-include src="${join(dir, '.env')}"/>`, dir, dir);
+  assert.ok(abs.includes('<i>abs</i>') && !abs.includes('SECRET'));
 });
 
 test('server: the audio analysis page cannot be used to inject a script', async () => {

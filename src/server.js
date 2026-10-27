@@ -2,7 +2,7 @@
 // expands <gm-include>, and serves video frames decoded by ffmpeg.
 import http from 'node:http';
 import { createReadStream, existsSync, readFileSync, statSync, mkdirSync, readdirSync, watch, realpathSync } from 'node:fs';
-import { join, extname, resolve, dirname, sep, normalize, basename } from 'node:path';
+import { join, extname, resolve, dirname, sep, normalize, basename, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -36,7 +36,11 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     const file = resolve(fileDir, attrs.src);
     // Includes are read here on the server, so they may live outside the served folder (../blocks).
     // Only HTML/SVG blocks, never hidden files or folders (.env, .ssh): a page must not be able to read secrets in.
-    if (!/\.(html?|svg)$/i.test(file) || String(attrs.src).split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.' && x !== '..')) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include only reads .html and .svg files (and no hidden files): ${esc(attrs.src)}</div>`;
+    // A relative src may not name a hidden file or folder. An absolute one may live under a hidden folder (a project in
+    // ~/.cache or .claude/worktrees), but not end at a hidden file or go through a folder that holds keys.
+    const hiddenSeg = (x) => x.startsWith('.') && x !== '.' && x !== '..';
+    const hidden = isAbsolute(String(attrs.src)) ? hiddenSeg(basename(file)) || file.split(/[\\/]/).some((x) => SECRET_DIRS.has(x)) : String(attrs.src).split(/[\\/]/).some(hiddenSeg);
+    if (!/\.(html?|svg)$/i.test(file) || hidden) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include only reads .html and .svg files (and no hidden files): ${esc(attrs.src)}</div>`;
     if (!existsSync(file) || !statSync(file).isFile() || !linkIsSafe(file)) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include not found: ${esc(attrs.src)}</div>`;
     if (seen.includes(file)) return `<!-- circular gm-include ${esc(attrs.src)} -->`;
     let body = readFileSync(file, 'utf8');

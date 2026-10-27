@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { join, resolve, dirname, basename, extname, relative, isAbsolute } from 'node:path';
 import { cpus, tmpdir, totalmem, freemem } from 'node:os';
 import { ensureChrome, FramePage, CACHE_DIR } from './browser.js';
-import { startServer } from './server.js';
+import { startServer, safeJoin } from './server.js';
 import { requireFfmpeg, encoderPlan, openSegmentWriter, finalize, mixAudio, probe, qualitySettings, wantsHardware, encoderIsReproducible } from './ffmpeg.js';
 import { pagePrints } from './parts.js';
 
@@ -126,7 +126,9 @@ async function prepareMedia(ctx, page) {
   const durations = {};
   const audio = [];
   for (const m of media) {
-    const file = join(ctx.root, decodeURIComponent(m.src.split('?')[0]));
+    // Same rule as the server: inside the project folder, never hidden files.
+    const file = safeJoin(ctx.root, decodeURIComponent(m.src.split('?')[0]));
+    if (!file) throw new Error(`Media files must be inside the project folder (and not hidden): ${m.src}`);
     if (!existsSync(file)) throw new Error(`Media file not found: ${m.src}`);
     const p = probe(file);
     if (!p) throw new Error(`ffprobe could not read ${m.src}`);
@@ -639,7 +641,8 @@ async function dependencyPrints(ctx) {
   }
   const fileHash = [...files].sort().map((p) => {
     if (p.startsWith('remote:')) return p;
-    const f = join(ctx.root, p);
+    const f = safeJoin(ctx.root, p);
+    if (!f) return p + ':outside';
     try { const st = statSync(f); return p + ':' + (st.size > 64 * 1024 * 1024 ? st.size + '-' + st.mtimeMs : hashOf(readFileSync(f))); } catch { return p + ':missing'; }
   });
   const units = (c) => c.units.map((u) => ({ fp: hashOf(u.print), t: +u.t.toFixed(6), end: u.end == null ? null : +u.end.toFixed(6), name: u.name }));

@@ -71,11 +71,14 @@ select{background:#222630;color:var(--text);border:1px solid var(--line);border-
 <script>
 (() => {
   const qs = new URLSearchParams(location.search);
-  const file = qs.get('file') || '/index.html';
+  // Only a page from this server: ?file=javascript:… would run in this origin.
+  const asked = qs.get('file') || '/index.html';
+  const parsed = (() => { try { return new URL(asked, location.href); } catch { return null; } })();
+  const file = parsed && parsed.origin === location.origin && /^https?:$/.test(parsed.protocol) ? parsed.pathname + parsed.search : '/index.html';
   const $ = (id) => document.getElementById(id);
   const frame = $('frame'), stage = $('stage'), wrap = $('stageWrap');
   let info = null, gm = null, t = parseFloat(qs.get('t') || '0') || 0, playing = false, loop = true, speed = 1, busy = false, pendingT = null;
-  $('name').textContent = file.split('/').pop();
+  $('name').textContent = (() => { const n = file.split('?')[0].split('/').pop(); try { return decodeURIComponent(n); } catch { return n; } })();
 
   function load(keepT) {
     $('loading').style.display = 'grid';

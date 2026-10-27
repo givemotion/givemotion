@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, copyFileS
 import { join, dirname, resolve, relative, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveInput } from './render.js';
-import { expandIncludes, applyData, readRuntime, scriptJSON } from './server.js';
+import { expandIncludes, applyData, readRuntime, scriptJSON, safeJoin } from './server.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -24,14 +24,19 @@ export function bundle(input, opts = {}) {
   let html = readFileSync(file, 'utf8');
   html = expandIncludes(html, dir, root);
   html = applyData(html, opts.data ?? null);
-  // Find files the page uses, including files those files use (css, json)
-  const files = new Set();
-  const queue = refsIn(html).map((u) => resolve(dir, decodeURIComponent(u.split(/[?#]/)[0])));
+  // Find files the page uses, including files those files use (css, json).
+  // A bundle is made to be published: only files the server would serve (inside the project folder, never
+  // hidden files like .env), and "/x.png" means the project folder's x.png, as it does when rendering.
+  const files = new Set(), skipped = new Set();
+  const at = (from, u) => { let p = u.split(/[?#]/)[0]; try { p = decodeURIComponent(p); } catch {} return p.startsWith('/') ? join(root, p) : resolve(from, p); };
+  const queue = refsIn(html).map((u) => at(dir, u));
   while (queue.length) {
     const f = queue.pop();
-    if (files.has(f) || !existsSync(f) || !statSync(f).isFile()) continue;
+    if (files.has(f) || skipped.has(f) || !existsSync(f) || !statSync(f).isFile()) continue;
+    const rel = relative(root, f);
+    if (rel.startsWith('..') || isAbsolute(rel) || !safeJoin(root, rel)) { skipped.add(f); continue; }
     files.add(f);
-    if (/\.(css|js|json|html)$/i.test(f) && statSync(f).size < 2e6) for (const u of refsIn(readFileSync(f, 'utf8'))) queue.push(resolve(dirname(f), decodeURIComponent(u.split(/[?#]/)[0])));
+    if (/\.(css|js|json|html)$/i.test(f) && statSync(f).size < 2e6) for (const u of refsIn(readFileSync(f, 'utf8'))) queue.push(at(dirname(f), u));
   }
   // Keep relative paths working: lay files out under their common parent folder
   let base = dir;
@@ -69,5 +74,5 @@ export function bundle(input, opts = {}) {
 <script src="gm-player.js"></script>
 <gm-player src="${pageRel}" controls></gm-player>
 `);
-  return { outDir, page: join(outDir, pageRel), player: join(outDir, 'player.html'), files: copied };
+  return { outDir, page: join(outDir, pageRel), player: join(outDir, 'player.html'), files: copied, skipped: [...skipped] };
 }

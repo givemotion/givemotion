@@ -1,7 +1,7 @@
 // Local HTTP server: serves the project folder, injects the runtime into HTML,
 // expands <gm-include>, and serves video frames decoded by ffmpeg.
 import http from 'node:http';
-import { createReadStream, existsSync, readFileSync, statSync, mkdirSync, readdirSync, watch } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync, mkdirSync, readdirSync, watch, realpathSync } from 'node:fs';
 import { join, extname, resolve, dirname, sep, normalize, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -37,7 +37,7 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     // Includes are read here on the server, so they may live outside the served folder (../blocks).
     // Only HTML/SVG blocks, never hidden files or folders (.env, .ssh): a page must not be able to read secrets in.
     if (!/\.(html?|svg)$/i.test(file) || String(attrs.src).split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.' && x !== '..')) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include only reads .html and .svg files (and no hidden files): ${esc(attrs.src)}</div>`;
-    if (!existsSync(file) || !statSync(file).isFile()) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include not found: ${esc(attrs.src)}</div>`;
+    if (!existsSync(file) || !statSync(file).isFile() || !linkIsSafe(file)) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include not found: ${esc(attrs.src)}</div>`;
     if (seen.includes(file)) return `<!-- circular gm-include ${esc(attrs.src)} -->`;
     let body = readFileSync(file, 'utf8');
     // Drop the block's documentation comment
@@ -65,14 +65,15 @@ function parseAttrs(s) {
   while ((m = re.exec(s))) out[m[1]] = m[2] ?? m[3] ?? m[4] ?? '';
   return out;
 }
-const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 /** JSON that is safe inside an inline <script> (a value holding "</script>" cannot end the tag). */
 export const scriptJSON = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 /**
  * Replace {{data.path}} / {{data.path|default}} with values from the render data
  * (--data / --props, or the page's <script type="application/json" id="gm-data">).
- * Arrays become comma lists, objects become JSON. Values are HTML-escaped.
+ * Arrays become comma lists, objects become JSON. Values are HTML-escaped (safe in text and quoted
+ * attributes), and a value that starts a URL attribute cannot be a script URL. In JS, read gm.data instead.
  */
 export function applyData(html, data) {
   if (data == null) {
@@ -80,18 +81,21 @@ export function applyData(html, data) {
     if (m) { try { data = JSON.parse(m[1]); } catch { data = null; } }
   }
   const missing = new Set();
-  const out = html.replace(/\{\{\s*data\.([\w.\[\]-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, path, def) => {
+  const out = html.replace(/\{\{\s*data\.([\w.\[\]-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, path, def, at, all) => {
     const v = path.replace(/\[(\d+)\]/g, '.$1').split('.').reduce((o, k) => (o == null ? o : o[k]), data);
     if (v == null) { if (def == null) missing.add(path); return def != null ? esc(def.trim()) : ''; }
-    if (Array.isArray(v)) return esc(v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : x)).join(','));
-    if (typeof v === 'object') return esc(JSON.stringify(v));
-    return esc(String(v));
+    let text = Array.isArray(v) ? v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : x)).join(',') : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    // At the start of src="…", href="…" and the like, data is a link, never a script.
+    if (URL_ATTR_START.test(all.slice(Math.max(0, at - 40), at)) && /^[\s\0-\x1f]*(javascript|vbscript):/i.test(text.replace(/[\s\0-\x1f]+/g, ''))) text = 'about:blank';
+    return esc(text);
   });
   // Tell the page which templates came out empty, so `check` can say so.
   if (!missing.size) return out;
   const tag = `<script type="application/json" id="gm-missing-data">${scriptJSON({ keys: [...missing], noData: data == null })}</script>`;
   return /<\/body>/i.test(out) ? out.replace(/<\/body>/i, tag + '</body>') : out + tag;
 }
+
+const URL_ATTR_START = /\b(?:src|href|xlink:href|action|formaction|poster|data|srcdoc)\s*=\s*["']?$/i;
 
 export function injectRuntime(html, { inlineConfig } = {}) {
   const tags = `<link rel="stylesheet" href="/__gm/preset.css" data-gm-preset><script>window.__GM_CONFIG = window.__GM_CONFIG || ${scriptJSON(inlineConfig || { mode: 'preview' })};</script><script src="/__gm/runtime.js"></script>`;
@@ -187,8 +191,9 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       }
       if (path === '/__gm/vframe') {
         const src = u.searchParams.get('src');
-        const fps = parseFloat(u.searchParams.get('fps')) || 30;
-        const i = parseInt(u.searchParams.get('i'), 10) || 0;
+        // Bounded: any web page can make the browser request this URL.
+        const fps = Math.min(240, Math.max(1, parseFloat(u.searchParams.get('fps')) || 30));
+        const i = Math.min(10_000_000, Math.max(0, parseInt(u.searchParams.get('i'), 10) || 0));
         const file = safeJoin(root, decodeURIComponent(new URL(src, 'http://x').pathname));
         if (!file || !existsSync(file)) return send(res, 404, 'text/plain', 'video not found: ' + src);
         const f = await extractor.frame(file, fps, i);
@@ -198,7 +203,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
       if (path === '/__gm_analyze') {
         // Tiny page used by `givemotion audio <file>`
         const src = scriptJSON(u.searchParams.get('src') || '');
-        const fps = parseFloat(u.searchParams.get('fps')) || 30;
+        const fps = Math.min(240, Math.max(1, parseFloat(u.searchParams.get('fps')) || 30));
         return send(res, 200, MIME['.html'], injectRuntime(`<!doctype html><html data-width="320" data-height="180" data-fps="${fps}" data-duration="1"><body><script>window.__gmA = gm.audio(${src});</script></body></html>`, { inlineConfig: { mode: 'render' } }), { 'Cache-Control': 'no-store' });
       }
       if (path === '/__gm/pcm') {
@@ -212,7 +217,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': buf.length, 'Cache-Control': 'max-age=31536000, immutable' });
         return res.end(buf);
       }
-      if (path.startsWith('/__gm/studio')) {
+      if (studio && path.startsWith('/__gm/studio')) {
         const rel = path.slice('/__gm/studio'.length).replace(/^\/+/, '') || 'index.html';
         const f = safeJoin(STUDIO_DIR, rel);
         if (!f || !existsSync(f)) return send(res, 404, 'text/plain', 'not found');
@@ -289,11 +294,21 @@ function hostname(h = '') {
   return h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0];
 }
 // Paths under the root, never hidden files or folders (.env, .git, .npmrc...): the root is often the project folder.
-function safeJoin(root, p) {
+export function safeJoin(root, p) {
   if (String(p).split(/[\\/]/).some((x) => x.startsWith('.') && x !== '.well-known')) return null;
   const f = normalize(join(root, p));
   if (f !== root && !f.startsWith(root + sep)) return null;
-  return f;
+  return linkIsSafe(f) ? f : null;
+}
+// Symbolic links inside the project are followed (that is how projects share styles, sounds and blocks), but a link
+// may not end at a hidden file (env.txt -> .env) or lead into a folder that holds keys (assets -> ~/.ssh).
+const SECRET_DIRS = new Set(['.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker', '.git', '.config', '.password-store', '.netrc', '.npmrc', '.env']);
+export function linkIsSafe(f) {
+  let real;
+  try { real = realpathSync(f); } catch { return true; } // does not exist (yet): nothing to read
+  if (real === f) return true;
+  const parts = real.split(/[\\/]/);
+  return !parts[parts.length - 1].startsWith('.') && !parts.some((x) => SECRET_DIRS.has(x));
 }
 function send(res, code, type, body, headers = {}) {
   res.writeHead(code, { 'Content-Type': type, ...headers });

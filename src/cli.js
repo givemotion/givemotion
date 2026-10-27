@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // givemotion CLI
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join, resolve, dirname, basename, relative } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync, statSync, rmSync, mkdtempSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { join, resolve, dirname, basename, relative, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { parseArgs } from './args.js';
@@ -316,10 +316,15 @@ async function cmdCaptions(args) {
   if (!f) return fail(new Error('Usage: givemotion captions captions.json [--words 5]'), args);
   const file = resolve(f);
   if (!existsSync(file)) return fail(new Error(`Not found: ${file}`), args);
-  // a tiny page next to the file with the captions block in it; the block itself does the paging
-  const page = join(dirname(file), `.gm-captions-${process.pid}.html`);
+  // A tiny page with the captions block in it (the block itself does the paging), in a temp folder with a copy of the
+  // captions file: nothing is written next to your file, and no path needs to go through a hidden folder (npx).
   const words = parseInt(args.words || '5', 10);
-  writeFileSync(page, `<!doctype html><html data-width="1080" data-height="1920" data-duration="1"><body><gm-include src="${join(PKG_ROOT, 'blocks', 'captions.html').split('\\').join('/')}" file="${basename(file)}" words="${words}"></gm-include></body></html>`);
+  const tmp = mkdtempSync(join(tmpdir(), 'gm-captions-'));
+  const name = 'captions' + (extname(file).toLowerCase() || '.json');
+  copyFileSync(file, join(tmp, name));
+  copyFileSync(join(PKG_ROOT, 'blocks', 'captions.html'), join(tmp, 'captions-block.html'));
+  const page = join(tmp, 'index.html');
+  writeFileSync(page, `<!doctype html><html data-width="1080" data-height="1920" data-duration="1"><body><gm-include src="captions-block.html" file="${name}" words="${words}"></gm-include></body></html>`);
   const { openComposition } = await import('./render.js');
   let ctx;
   try {
@@ -328,7 +333,7 @@ async function cmdCaptions(args) {
     if (args.json) return console.log(JSON.stringify(pages.map((p) => ({ start: p.start, end: p.end, text: p.words.map((w) => w.word).join(' ') })), null, 2));
     console.log(`${pages.length} caption pages with words="${words}":`);
     for (const p of pages) console.log(`  ${p.start.toFixed(2).padStart(6)}–${p.end.toFixed(2).padEnd(6)} ${p.words.map((w) => w.word).join(' ')}`);
-  } catch (e) { fail(e, args); } finally { if (ctx) { await ctx.page.close(); await ctx.server.close(); } try { (await import('node:fs')).rmSync(page, { force: true }); } catch {} }
+  } catch (e) { fail(e, args); } finally { if (ctx) { await ctx.page.close(); await ctx.server.close(); } try { rmSync(tmp, { recursive: true, force: true }); } catch {} }
 }
 
 async function cmdAnalyze(args) {
@@ -358,6 +363,7 @@ async function cmdBundle(args) {
     const r = bundle(inputOf(args), { output: args.output, data: loadData(args) });
     if (args.json) return console.log(JSON.stringify(r, null, 2));
     console.log(`Standalone page: ${shortPath(r.page)} (${r.files} asset file${r.files === 1 ? '' : 's'} copied)\nPlayer demo:     ${shortPath(r.player)}\nEmbed anywhere:  <script src="gm-player.js"></script> <gm-player src="${relative(r.outDir, r.page).split('\\').join('/')}" controls></gm-player>\n(Open through a web server, not file://.)`);
+    if (r.skipped.length) console.log(`Not copied (outside the project folder, or hidden like .env): ${r.skipped.map(shortPath).join(', ')}`);
   } catch (e) { fail(e, args); }
 }
 

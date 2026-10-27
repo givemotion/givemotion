@@ -1,5 +1,5 @@
 // Finding, installing and launching Chrome, plus a Page that renders frames.
-import { existsSync, mkdirSync, readdirSync, statSync, chmodSync, createWriteStream, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, statSync, chmodSync, createWriteStream, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { homedir, platform, arch, tmpdir } from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -71,14 +71,16 @@ export async function installChrome({ log = console.error } = {}) {
   if (!dl) throw new Error(`No chrome-headless-shell download for ${plat}.`);
   const dir = join(CACHE_DIR, 'chrome-headless-shell', `${plat}-${stable.version}`);
   mkdirSync(dir, { recursive: true });
-  const zip = join(tmpdir(), `gm-chrome-${process.pid}.zip`);
+  // A fresh private folder: a fixed name in a shared /tmp could be planted by another user.
+  const tmp = mkdtempSync(join(tmpdir(), 'gm-chrome-'));
+  const zip = join(tmp, 'chrome.zip');
   const r = await fetch(dl.url);
   if (!r.ok) throw new Error(`Download failed (${r.status}): ${dl.url}`);
   await pipeline(Readable.fromWeb(r.body), createWriteStream(zip));
   log(`Extracting Chrome ${stable.version}…`);
   if (platform() === 'win32') execFileSync('tar', ['-xf', zip, '-C', dir]);
   else execFileSync('unzip', ['-q', '-o', zip, '-d', dir]);
-  rmSync(zip, { force: true });
+  rmSync(tmp, { recursive: true, force: true });
   const bin = findInDir(dir, shellBinaryName());
   if (!bin) throw new Error('Extracted Chrome but could not find the binary.');
   if (platform() !== 'win32') chmodSync(bin, 0o755);
@@ -172,7 +174,7 @@ export class FramePage {
       // Say where: line number in the page, plus the text of that line.
       const url = d.url || (d.stackTrace && d.stackTrace.callFrames[0] && d.stackTrace.callFrames[0].url);
       const line = d.lineNumber != null && d.url ? d.lineNumber : d.stackTrace && d.stackTrace.callFrames[0] ? d.stackTrace.callFrames[0].lineNumber : d.lineNumber;
-      if (e && url && /^http:\/\/(127\.0\.0\.1|localhost)/.test(url) && line != null) {
+      if (e && url && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(url) && line != null) {
         const file = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
         const base = e.message;
         e.message = base + ` (${file} line ${line + 1})`;

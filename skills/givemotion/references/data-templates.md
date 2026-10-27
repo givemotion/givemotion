@@ -12,7 +12,8 @@ Contents
 
 - Pass `--data file.json` or `--props '{"title":"Q3 results"}'` to any command (render, check, snapshot, still, inspect, dev, bundle). With neither, a `data.json` next to the HTML is used, then `<script type="application/json" id="gm-data">{…}</script>` in the page (good for defaults).
 - Use it anywhere in the HTML as `{{data.title}}`, `{{data.users[2]}}` or `{{data.stats.total}}`; an array becomes a comma list (`{{data.users}}` → `1200,1850,1700`, which is what the chart blocks take); `{{data.label|Monthly users}}` gives a default.
-- In JS: `gm.data`. Also `<h1 data-bind="title">`, `<img data-bind-src="logo">`, `data-bind-style-color="brand"`.
+- In JS: `gm.data`, never `{{data.…}}` inside a `<script>` (values are HTML-escaped: `it's` arrives as `it&#39;s`). In attributes, quote the template: `title="{{data.name}}"`. Also `<h1 data-bind="title">`, `<img data-bind-src="logo">`, `data-bind-style-color="brand"`.
+- Shared files: the page's project folder is served, and symbolic links inside it are followed, so several projects can link one `styles/` or `sounds/` folder in instead of copying it (a link to a hidden file or a key folder like `.ssh` is refused). `..` paths out of the project folder are not served.
 - `check` warns when a `{{data.…}}` came out empty (`data-missing`). Test a template with a second data file that has other values and a different number of items (longer names, more months): layouts must not break.
 - Scene length can follow the data: `{{data.…}}` works in attributes too (`data-duration="{{data.introLength|3}}"`), and a chart's `timeOf()` can drive the camera.
 

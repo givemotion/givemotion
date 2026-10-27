@@ -972,3 +972,23 @@ test('timeline draw on a data-sketch shape (a <g> of rough strokes) draws it on 
   assert.ok(rows[1].every((x) => +x > 0.3 && +x < 0.7), `half drawn: ${rows[1]}`);
   assert.ok(rows[2].every((x) => +x === 1), `done: ${rows[2]}`);
 });
+
+test('captions: the command pages a word-timed file (and writes nothing next to it)', { skip }, () => {
+  const d = tmp();
+  const words = 'one two three four five six seven'.split(' ').map((w, i) => ({ word: w, start: i * 0.4, end: i * 0.4 + 0.35 }));
+  writeFileSync(join(d, 'words.json'), JSON.stringify(words));
+  const out = JSON.parse(execFileSync(process.execPath, [join(ROOT, 'src', 'cli.js'), 'captions', join(d, 'words.json'), '--words', '3', '--json'], { encoding: 'utf8' }));
+  // at most 3 words a page, every word once and in order (the block balances pages: no lone last word)
+  assert.ok(out.length >= 3 && out.every((p) => p.text.split(' ').length <= 3));
+  assert.equal(out.map((p) => p.text).join(' '), words.map((w) => w.word).join(' '));
+  assert.deepEqual(readdirSync(d), ['words.json']);
+});
+
+test('render: media files must be inside the project folder', { skip }, async () => {
+  const d = tmp();
+  mkdirSync(join(d, 'proj'));
+  writeFileSync(join(d, 'proj', 'package.json'), '{}');
+  execFileSync(ffmpegPath(), ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', join(d, 'outside.wav')]);
+  writeFileSync(join(d, 'proj', 'index.html'), page('<audio src="..%2foutside.wav"></audio>', 'data-width="320" data-height="180" data-fps="10" data-duration="1"'));
+  await assert.rejects(render(join(d, 'proj', 'index.html'), { output: join(d, 'out.mp4'), ...quiet }), /inside the project folder/);
+});

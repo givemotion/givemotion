@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, symlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseArgs } from '../src/args.js';
@@ -41,7 +41,7 @@ test('expandIncludes: a wrapper with data-enter keeps its box', () => {
 });
 
 test('applyData: paths, arrays, defaults, escaping, inline JSON', () => {
-  assert.equal(applyData('{{data.a.b}}', { a: { b: '<x>' } }), '&lt;x>');
+  assert.equal(applyData('{{data.a.b}}', { a: { b: '<x>' } }), '&lt;x&gt;');
   assert.equal(applyData('{{data.list}}', { list: [1, 2, 3] }), '1,2,3');
   assert.equal(applyData('{{data.list[1]}}', { list: ['a', 'b'] }), 'b');
   assert.equal(applyData('{{data.missing|fallback}}', {}), 'fallback');
@@ -179,6 +179,40 @@ test('server: no hidden files, no cross-origin reads, only localhost Host header
   } finally { await s.close(); }
 });
 
+test('applyData: data stays text in quoted attributes and is never a script URL', () => {
+  const d = { t: "x' onmouseover='alert(1)", u: ' java\tscript:alert(1)', ok: 'https://example.com/a.png', title: 'javascript: the good parts' };
+  assert.equal(applyData("<p title='{{data.t}}'>", d), "<p title='x&#39; onmouseover=&#39;alert(1)'>");
+  assert.equal(applyData('<a href="{{data.u}}">', d), '<a href="about:blank">');
+  assert.equal(applyData('<img src={{data.u}}>', d), '<img src=about:blank>');
+  assert.equal(applyData('<img src="{{data.ok}}">', d), '<img src="https://example.com/a.png">');
+  assert.equal(applyData('<h1>{{data.title}}</h1>', d), '<h1>javascript: the good parts</h1>');
+});
+
+test('server: symbolic links are followed, but never to hidden files or key folders; the studio only in dev', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gm-srv-link-'));
+  const proj = join(dir, 'proj'), shared = join(dir, 'shared'), keys = join(dir, '.ssh');
+  for (const d of [proj, shared, keys]) mkdirSync(d);
+  writeFileSync(join(shared, 'logo.svg'), '<svg/>');
+  writeFileSync(join(keys, 'id_rsa'), 'SECRET');
+  writeFileSync(join(proj, '.env'), 'SECRET');
+  symlinkSync(shared, join(proj, 'assets'));
+  symlinkSync(keys, join(proj, 'keys'));
+  symlinkSync(join(proj, '.env'), join(proj, 'env.txt'));
+  const s = await startServer({ root: proj });
+  try {
+    assert.equal((await fetch(s.origin + '/assets/logo.svg')).status, 200);
+    assert.equal((await fetch(s.origin + '/keys/id_rsa')).status, 404);
+    assert.equal((await fetch(s.origin + '/env.txt')).status, 404);
+    assert.equal((await fetch(s.origin + '/__gm/studio/')).status, 404);
+  } finally { await s.close(); }
+  const dev = await startServer({ root: proj, studio: true });
+  try {
+    const studio = await (await fetch(dev.origin + '/__gm/studio/')).text();
+    // the preview only loads pages from its own server (?file=javascript:… must not run)
+    assert.match(studio, /parsed\.origin === location\.origin/);
+  } finally { await dev.close(); }
+});
+
 test('injectRuntime: data cannot end the config <script> early', () => {
   const html = injectRuntime('<html><head></head><body></body></html>', { inlineConfig: { mode: 'render', data: { name: '</script><script>alert(1)</script>' } } });
   assert.ok(!html.includes('<script>alert(1)'));
@@ -196,6 +230,24 @@ test('bundle: inlines exactly the built-in fonts the page names', () => {
   assert.ok(faces('JetBrains Mono').every((x) => x === 'inline'));
   assert.ok(faces('Bebas Neue').every((x) => x === 'about:blank'));
   assert.ok(faces('Caveat').every((x) => x === 'about:blank'));
+});
+
+test('bundle: copies only files the server would serve (no hidden files, nothing outside the project)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gm-bundle-sec-'));
+  const proj = join(dir, 'proj');
+  mkdirSync(join(proj, 'img'), { recursive: true });
+  mkdirSync(join(dir, 'outside'));
+  writeFileSync(join(proj, 'package.json'), '{}');
+  writeFileSync(join(proj, '.env'), 'SECRET=1');
+  writeFileSync(join(dir, 'outside', 'notes.txt'), 'SECRET=2');
+  writeFileSync(join(proj, 'img', 'a.png'), 'png');
+  writeFileSync(join(proj, 'logo.svg'), '<svg/>');
+  writeFileSync(join(proj, 'index.html'), `<html data-width="320" data-height="180" data-duration="1"><body><img src="img/a.png"><img src="/logo.svg"><link href=".env"><img src="../outside/notes.txt"><img src="${join(proj, '.env')}"></body></html>`);
+  const r = bundle(join(proj, 'index.html'), { output: join(dir, 'b') });
+  assert.equal(r.files, 2);
+  assert.ok(existsSync(join(dir, 'b', 'img', 'a.png')) && existsSync(join(dir, 'b', 'logo.svg')));
+  assert.equal(r.skipped.length, 2);
+  assert.ok(!existsSync(join(dir, 'b', '.env')) && !existsSync(join(dir, 'b', 'outside')) && !existsSync(join(dir, 'outside', 'b')));
 });
 
 test('gm-include: reads HTML/SVG blocks, never hidden or other files', () => {

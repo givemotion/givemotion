@@ -1365,12 +1365,13 @@
   function getPath(obj, path) {
     return String(path).split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
   }
-  let dataCache;
+  let dataCache, dataFromAddress = false;
   function getData() {
     if (dataCache !== undefined) return dataCache;
     if (CONFIG.data != null) return (dataCache = CONFIG.data);
+    // <gm-player data="…"> passes data in the page address. Anyone can write a link, so this data is never HTML.
     const hm = /[#&]gm-data=([^&]+)/.exec(location.hash);
-    if (hm) { try { return (dataCache = JSON.parse(decodeURIComponent(hm[1]))); } catch (e) { report('error', 'bad-data', 'Could not read #gm-data from the page address.', null); } }
+    if (hm) { try { dataCache = JSON.parse(decodeURIComponent(hm[1])); dataFromAddress = true; return dataCache; } catch (e) { report('error', 'bad-data', 'Could not read #gm-data from the page address.', null); } }
     const s = document.getElementById('gm-data');
     if (!s) return null;
     try { dataCache = JSON.parse(s.textContent); } catch (e) { report('error', 'bad-data', 'The <script id="gm-data"> block is not valid JSON: ' + e.message, s); dataCache = null; }
@@ -1385,9 +1386,14 @@
         const v = getPath(data, at.value);
         if (v === undefined) { report('warning', 'bind-missing', `data has no "${at.value}".`, el, 'Pass it with --data file.json or --props \'{"…":…}\'.'); continue; }
         if (at.name === 'data-bind') el.textContent = String(v);
-        else if (at.name === 'data-bind-html') el.innerHTML = String(v);
+        else if (at.name === 'data-bind-html') { if (dataFromAddress) el.textContent = String(v); else el.innerHTML = String(v); }
         else if (at.name.startsWith('data-bind-style-')) el.style.setProperty(at.name.slice(16), String(v));
-        else if (at.name.startsWith('data-bind-')) el.setAttribute(at.name.slice(10), String(v));
+        else if (at.name.startsWith('data-bind-')) {
+          // Data is text: never an event handler (onclick…) or a script URL.
+          const name = at.name.slice(10);
+          if (/^on/i.test(name) || /^\s*(javascript|vbscript):/i.test(String(v))) { report('warning', 'bind-unsafe', `data-bind-${name} was not set: data cannot add event handlers or script URLs.`, el); continue; }
+          el.setAttribute(name, String(v));
+        }
       }
     }
   }

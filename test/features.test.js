@@ -1,7 +1,7 @@
 // Tests for motion tools, React mode, audio analysis and the checker's motion handling.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, mkdirSync, copyFileSync, symlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -1152,6 +1152,87 @@ test('audio: two loud tracks are limited instead of hard-clipping; quiet audio a
   let off = 0, mx = 0;
   for (let i = 0; i < Q.n; i++) { const df = Math.abs(Q.at(i) - ref.readInt16LE(2 * i)); if (df) { off++; mx = Math.max(mx, df); } }
   assert.ok(mx <= 1, 'quiet samples that differ from the plain mix: ' + off + ' of ' + Q.n + ', max ' + mx);
+});
+
+test('data-anchor fit: a mark takes the box of its target every frame (moving, scaled), inside the container it is placed in', { skip }, async () => {
+  const d = tmp(), f = join(d, 'fit.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2"><div id="panel" style="position:absolute;left:20px;top:20px;width:400px;height:200px;overflow:hidden">
+      <div id="mark" data-anchor="#word fit 10" style="background:rgba(255,200,0,.4)"></div>
+      <b id="word" style="position:absolute;left:30px;top:70px;font-size:40px">Revenue</b></div>
+    <script>gm.timeline().to('#word', { x: 250, scale: 1.4, duration: 1.5, ease: 'linear' }, 0);</script></section>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  const out = [];
+  try {
+    for (const t of [0.2, 0.9, 1.4]) {
+      await ctx.page.seek(t);
+      out.push(await ctx.page.evaluate(`(() => { const r = (e) => { const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; }; const w = r(document.querySelector('#word')), m = r(document.querySelector('#mark')), g = 10 * gm.px; return { w, m, g, clip: document.querySelector('#mark').parentElement.id }; })()`));
+    }
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+  for (const { w, m, g } of out) {
+    const want = [w[0] - g, w[1] - g, w[2] + g, w[3] + g];
+    assert.ok(want.every((v, i) => Math.abs(v - m[i]) < 1), `mark ${m.map((x) => x.toFixed(1))} vs word box + gap ${want.map((x) => x.toFixed(1))}`);
+  }
+  assert.ok(out[2].m[0] > out[0].m[0] + 100, 'the mark moved with the word');
+  assert.equal(out[0].clip, 'panel');
+});
+
+test('a scoped part brings its own timeline: times count from its own start, selectors stay inside the copy', { skip }, async () => {
+  const d = tmp(), f = join(d, 'pt.html');
+  writeFileSync(join(d, 'card.html'), `<b class="t" style="position:absolute;left:20px;top:{{top}}px">{{label}}</b>
+    <script>gm.timeline('[data-gm-scope="{{scope}}"]').from('.t', { x: -100, duration: 1, ease: 'linear' }, 0);</script>`);
+  writeFileSync(f, page(`<section class="scene" data-duration="6"><gm-include src="card.html" scope top="20" label="one" data-start="0" data-duration="6"></gm-include>
+    <gm-include src="card.html" scope top="120" label="two" data-start="3" data-duration="3"></gm-include></section>`, 'data-width="640" data-height="360" data-fps="30" data-duration="6"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  try {
+    const at = async (t) => { await ctx.page.seek(t); return ctx.page.evaluate(`[...document.querySelectorAll('.t')].map((e) => Math.round(e.getBoundingClientRect().left))`); };
+    assert.equal((await at(0.5))[0], -30, 'the first copy plays from 0');
+    assert.deepEqual(await at(3.5), [20, -30], 'the second copy plays from its own start (3 s), not from 0');
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+});
+
+test('scene files: <gm-include> of a scene inside data-sequence is the sequence child (duration from the file, transitions between them)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'as.html');
+  mkdirSync(join(d, 'scenes'));
+  writeFileSync(join(d, 'scenes', 's.html'), `<style>.sc-{{title}}{color:#fff}</style><section class="scene" data-duration="{{len}}" style="background:{{bg}}"><h1 class="sc-{{title}}" style="position:absolute;left:40px;top:40px">{{title}}</h1></section>`);
+  writeFileSync(f, page(`<main data-sequence data-transition="push-left 0.5">
+    <gm-include src="scenes/s.html" title="One" bg="#c33" len="2"></gm-include>
+    <gm-include src="scenes/s.html" title="Two" bg="#33c" len="3"></gm-include>
+    <gm-include src="scenes/s.html" title="Three" bg="#3a3" len="2"></gm-include></main>`, 'data-width="640" data-height="360" data-fps="30"'));
+  const rep = await check(f, { fast: true });
+  assert.deepEqual(rep.issues.filter((i) => i.severity === 'error').map((i) => i.code), []);
+  assert.equal(rep.info.duration, 6, '2 + 3 + 2 s, minus two 0.5 s transitions');
+  assert.equal(await evalAt(f, 1, `document.querySelectorAll('main > section.scene').length`), 3, 'the scenes are the sequence children');
+});
+
+test('brand kit: a folder linked into the project (symlink) brings its tokens, fonts path and scoped parts; a kit change redoes the parts', { skip }, async () => {
+  const d = tmp(), proj = join(d, 'ep1'), kit = join(d, 'brand');
+  mkdirSync(join(kit, 'parts'), { recursive: true }); mkdirSync(proj);
+  writeFileSync(join(kit, 'kit.css'), ':root{--brand:rgb(224,69,123)}');
+  writeFileSync(join(kit, 'parts', 'tag.html'), '<b id="tag" style="position:absolute;left:30px;top:30px;color:var(--brand);font-size:40px">{{text}}</b>');
+  symlinkSync('../brand', join(proj, 'brand'));
+  writeFileSync(join(proj, 'index.html'), page(`<link rel="stylesheet" href="brand/kit.css"><gm-include src="brand/parts/tag.html" scope text="Hello"></gm-include>`, 'data-width="320" data-height="180" data-fps="10" data-duration="1"'));
+  assert.equal(await evalAt(join(proj, 'index.html'), 0.5, `getComputedStyle(document.querySelector('[id^=tag]')).color`), 'rgb(224, 69, 123)');
+  const out = join(d, 'o', 'v.mp4');
+  await render(join(proj, 'index.html'), { output: out, ...quiet });
+  writeFileSync(join(kit, 'kit.css'), ':root{--brand:rgb(60,200,255)}');
+  const s2 = await render(join(proj, 'index.html'), { output: out, ...quiet });
+  assert.equal(s2.parts.reused, 0, 'a change in the kit redoes every part');
+});
+
+test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
+  const d = tmp(), f = join(d, 'hl.html');
+  mkdirSync(join(d, 'blocks'));
+  copyFileSync(join(ROOT, 'blocks', 'highlight.html'), join(d, 'blocks', 'highlight.html'));
+  writeFileSync(f, page(`<section class="scene" data-duration="2"><b id="t" style="position:absolute;left:60px;top:100px;font-size:40px">Price</b>
+    ${['wash', 'ring', 'underline', 'glow'].map((l) => `<gm-include src="blocks/highlight.html" target="#t" look="${l}" pad="4"></gm-include>`).join('')}
+    <script>gm.timeline().to('#t', { x: 300, duration: 1.5, ease: 'linear' }, 0);</script></section>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  try {
+    await ctx.page.seek(1);
+    const r = await ctx.page.evaluate(`(() => { const t = document.querySelector('#t').getBoundingClientRect(); return [...document.querySelectorAll('.gmb-hl')].map((e) => { const b = e.getBoundingClientRect(), c = getComputedStyle(e); return { look: e.className.replace(/.*--/, ''), dl: Math.round(t.left - b.left - 4 * gm.px), dw: Math.round(b.width - t.width - 8 * gm.px), bg: c.backgroundImage !== 'none' || c.backgroundColor !== 'rgba(0, 0, 0, 0)', shadow: c.boxShadow !== 'none' }; }); })()`);
+    assert.deepEqual(r.map((x) => [x.look, x.dl, x.dw]), [['wash', 0, 0], ['ring', 0, 0], ['underline', 0, 0], ['glow', 0, 0]]);
+    assert.ok(r[0].bg && r[1].shadow && r[2].bg && r[3].shadow, 'each look draws something');
+  } finally { await ctx.page.close(); await ctx.server.close(); }
 });
 
 test('check: pacing per element: short-hold and cut-exit; transitions, the last scene, exits, counters, quick-ok and swaps in place pass', { skip }, async () => {

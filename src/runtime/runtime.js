@@ -1694,9 +1694,23 @@
     if (comp.width % 2 || comp.height % 2) report('warning', 'odd-size', `Size ${comp.width}x${comp.height} has an odd number; most video codecs need even sizes.`, null, 'Use even width and height, e.g. 1920x1080.');
   }
 
+  // A scene file included in a data-sequence (<gm-include src="scenes/intro.html">) is the sequence's child itself: the
+  // plain wrapper the include made (display: contents, nothing of its own) goes away and the scene takes its place.
+  function unwrapSceneIncludes() {
+    for (const seq of document.querySelectorAll('[data-sequence]')) {
+      for (const w of [...seq.children]) {
+        if (!w.hasAttribute('data-gm-include') || [...w.attributes].some((x) => !/^(data-gm-include|data-gm-scope)$/.test(x.name) && !(x.name === 'style' && /^display:\s*contents;?$/.test(x.value)))) continue;
+        const kids = [...w.childNodes], scene = /** @type {Element | undefined} */ (kids.find((n) => n.nodeType === 1 && !SKIP_TAGS.has(/** @type {Element} */ (n).tagName)));
+        if (!scene) continue;
+        for (const x of ['data-gm-include', 'data-gm-scope']) if (w.hasAttribute(x) && !scene.hasAttribute(x)) scene.setAttribute(x, w.getAttribute(x));
+        w.replaceWith(...kids);
+      }
+    }
+  }
   function init() {
     if (initialized) return;
     initialized = true;
+    unwrapSceneIncludes();
     if (document.body) { const els = [...document.body.getElementsByTagName('*')]; sourceEls = { els, parents: els.map((e) => e.parentElement) }; }
     readSettings();
     applyBindings();

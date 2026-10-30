@@ -45,6 +45,7 @@ Options: `data-sketch="1.5"` (roughness, default 1), `data-sketch-seed`, `data-s
 
 `<h2 data-anchor="#server bottom 16">` puts the label 16 px (at 1080p) under `#server`'s visible edge, centered, and keeps it there every frame while the shape moves (timeline, travel, camera).
 - Sides: `top` `bottom` `left` `right` `center` (on it), `top-left` `top-right` `bottom-left` `bottom-right` (above/below, lined up with that edge); add `inside` for inside that edge (`"#card top-left inside 20"`).
+- `fit` makes the element take the target's box instead (`data-anchor="#price fit 8"`: 8 px past it, default 6), every frame: a highlight, ring or underline that follows what it marks. Put it inside the container it marks (that clips it) and before what should cover it (the wash then sits under the text); `blocks/highlight.html` has four looks. It sizes itself, so give it only a look (background, `box-shadow`, `border-radius`).
 - Works on HTML elements and SVG `<text>`; the target can be any element: a sketched shape, a moving package, another label. The nearest match wins, so a repeated block finds its own shape.
 - The label is placed absolutely in its own parent (its `left`/`top`/`margin` and a centering `translate(-50%,-50%)` are ignored); set a `width` or `max-width` to wrap it.
 - Place shapes by hand, labels by anchor: then moving a part is one edit. `anchor-no-target` warns when the target matches nothing.

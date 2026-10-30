@@ -1,0 +1,13 @@
+<!-- block:
+description: A mark that sits on an element and follows it every frame (moving, scaling, camera): a wash, a ring, an underline or a glow. Put it inside the container it marks (that clips it), before what should cover it.
+params: target (CSS selector of what to mark), look (wash|ring|underline|glow, default wash), color, pad (px at 1080p past the target's box, default 6), radius (px, default 8), width (line px for ring and underline, default 4)
+usage: <gm-include src="blocks/highlight.html" target="#price" look="ring" color="#ffd23f" data-start="1.2" data-duration="2"></gm-include>
+-->
+<div class="gmb-hl gmb-hl--{{look|wash}}" data-anchor="{{target}} fit {{pad|6}}" data-enter="fade 0.25" style="--c:{{color|#ffd23f}};--r:{{radius|8}}px;--w:{{width|4}}px"></div>
+<style>
+.gmb-hl{pointer-events:none;border-radius:var(--r)}
+.gmb-hl--wash{background:color-mix(in srgb,var(--c) 38%,transparent)}
+.gmb-hl--ring{box-shadow:inset 0 0 0 var(--w) var(--c)}
+.gmb-hl--underline{border-radius:0;background:linear-gradient(var(--c),var(--c)) bottom/100% var(--w) no-repeat}
+.gmb-hl--glow{box-shadow:0 0 0 2px color-mix(in srgb,var(--c) 70%,transparent),0 0 28px 4px color-mix(in srgb,var(--c) 55%,transparent)}
+</style>

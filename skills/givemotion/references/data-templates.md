@@ -17,9 +17,23 @@ Contents
 - `check` warns when a `{{data.…}}` came out empty (`data-missing`). Test a template with a second data file that has other values and a different number of items (longer names, more months): layouts must not break.
 - Scene length can follow the data: `{{data.…}}` works in attributes too (`data-duration="{{data.introLength|3}}"`), and a chart's `timeOf()` can drive the camera.
 
+## Scenes in a sequence, and brand kits
+
+**Scenes in the page.** A scene can be a file: `<main data-sequence data-transition="push-left 0.5"><gm-include src="scenes/intro.html" title="Hi" len="4"></gm-include>…</main>`, where `scenes/intro.html` holds one `<section class="scene" data-duration="{{len|4}}">`. The scene is the sequence's child (the include's own wrapper goes away), so the length comes from the file or its params, transitions work between them, and moving a scene is moving one line. No build script that stitches files.
+
+**Brand kit** = a folder kept outside the projects that every video of the brand links in. Put the brand's taste there, not in the engine or the skill:
+```
+brand/kit.css        :root { --brand: #e0457b; --ink: …; --radius: 14px }  and the @font-face rules (fonts/…)
+brand/parts/*.html   lower-third, end card, highlight look, … as scoped parts that read the variables
+brand/motion.js      shared helpers (gm.timeline() calls for the brand's entrance, its ease and its pacing)
+```
+In each project: `ln -s ../brand brand` (links inside a project are followed, and a change to the kit re-renders the parts it touches), then `<link rel="stylesheet" href="brand/kit.css">`, `<script src="brand/motion.js"></script>`, `<gm-include src="brand/parts/lower-third.html" scope name="Ana" data-start="3" data-duration="4">`. A new video of the series starts from these pieces, so it looks the same without asking the agent to remember the style.
+
 ## Reuse with gm-include
 
 `<gm-include src="parts/intro.html" title="Hi" data-start="2">optional inner HTML</gm-include>` inserts the file; `{{title}}` / `{{title|default}}` / `{{content}}` are replaced. `class`, `style`, `id` and `data-*` on `<gm-include>` go to a wrapper `div` around the block. Block parameters are any other attribute. A missing file is the error `include-not-found`; includes may live in a parent folder.
+
+A part with its own timeline and style: `<gm-include src="parts/card.html" scope data-start="3" data-duration="4">`, and in the part `gm.timeline('[data-gm-scope="{{scope}}"]').from('.title', { y: 30, opacity: 0 }, 0.2)`: selectors are looked up inside this copy and times count from its start, so the same part can be placed anywhere and moved by editing one attribute.
 
 **Same part many times, or scenes with the same names: add `scope`.** `<gm-include src="parts/card.html" scope>` gives each copy private names: every id the part declares gets a suffix (`title` → `title--s1`, `--s2` for the next scoped copy), and the `#title` that names it follows, in its own CSS, its script strings (`gm.timeline().to('#title', …)`), `href="#title"`, `url(#title)`, `data-anchor="#title bottom"` and `getElementById('title')`. Its `<style>` applies only inside the copy, and its `@keyframes` names get the suffix. No `{{S}}` placeholders in every id. `{{scope}}` is the suffix (`s1`) if you need it. Code outside the part reaches in through the include's own `id` or class (`#intro .title`), not through the part's ids. Only ids the part declares change; an id from the page stays as it is. Leave `scope` off when the page's own timeline targets ids inside the part.
 
@@ -31,6 +45,7 @@ Contents
 - A background under a whole sequence: put the background element (or a `gradient-bg`) outside the `data-sequence`, before it, with no timing: elements without timing are always there.
 - In tests, agents who built their own visuals scored higher than ones who assembled stock blocks. Use blocks for the parts that are fiddly to build (captions, code-window, cursor, lottie, backgrounds) and restyle them to the video's look.
 - `browser-window` follows a brand palette: `dots="none"` (or one color, or three `"#e5484d,#f5a524,#30a46c"`), `bar` (top bar color), `field` (address field), `text` (address text), `url-size` (px at 1080p, default 24), `lock="off"`, plus `theme="light"`.
+- `highlight`: `target="#price" look="wash|ring|underline|glow" color pad radius width`: a mark that follows its target every frame (`data-anchor` with `fit`); put it inside the container it marks and before what should cover it.
 - `code-window`: every line is `.gm-line[data-line="N"]` (aim a camera at it or animate it with a timeline); wrap a part of the code in `⟦ ⟧` to mark it (it becomes `.gm-mark[data-mark="1"]`); `highlight`, `focus` (dims the other lines), `gutter`, `grow`, `typing`, `size`. Scaled down, its text gets small: zoom the camera in rather than shrinking the window.
 
 ## Cursor demos

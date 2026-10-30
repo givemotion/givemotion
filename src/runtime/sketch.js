@@ -890,7 +890,7 @@
   // Plus gm.path.travel(el, arrow): ride along an gm.connect arrow, whose line is rebuilt every frame.
   // ---------------------------------------------------------------------------
   const r2 = (x) => Math.round(x * 100) / 100;
-  const SIDES = { top: 'top', above: 'top', bottom: 'bottom', below: 'bottom', under: 'bottom', left: 'left', right: 'right', center: 'center', middle: 'center', 'top-left': 'top-left', 'top-right': 'top-right', 'bottom-left': 'bottom-left', 'bottom-right': 'bottom-right', 'left-top': 'top-left', 'right-top': 'top-right', 'left-bottom': 'bottom-left', 'right-bottom': 'bottom-right' };
+  const SIDES = { top: 'top', above: 'top', bottom: 'bottom', below: 'bottom', under: 'bottom', left: 'left', right: 'right', center: 'center', middle: 'center', 'top-left': 'top-left', 'top-right': 'top-right', 'bottom-left': 'bottom-left', 'bottom-right': 'bottom-right', 'left-top': 'top-left', 'right-top': 'top-right', 'left-bottom': 'bottom-left', 'right-bottom': 'bottom-right', fit: 'fit', cover: 'fit' };
   function parseAnchor(v) {
     const toks = String(v || '').trim().split(/\s+/).filter(Boolean);
     let side = null, gap = null, inside = false;
@@ -903,7 +903,8 @@
       else break;
       toks.pop();
     }
-    return { sel: toks.join(' '), side: side || 'center', gap: gap ?? 12, inside };
+    // fit: the element takes the target's box (a highlight, a ring), the number is how far it reaches past it (default 6)
+    return { sel: toks.join(' '), side: side || 'center', gap: gap ?? (side === 'fit' ? 6 : 12), inside };
   }
   // the nearest match: a block repeated with the same classes finds its own copy (or the box the label is in)
   function findNear(el, sel) {
@@ -955,7 +956,8 @@
         el.style.position = cs.position === 'fixed' ? 'fixed' : 'absolute';
         el.style.left = '0px'; el.style.top = '0px'; el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.margin = '0';
         let wAuto = false; try { wAuto = String(el.computedStyleMap().get('width')) === 'auto'; } catch (e) {}
-        if (wAuto) el.style.width = 'max-content';
+        if (sp.side === 'fit') el.style.boxSizing = 'border-box';
+        else if (wAuto) el.style.width = 'max-content';
         // the anchor centers it: a centering translate(-50%, -50%) left over from hand placement would push it off
         try { const m = cs.transform && cs.transform !== 'none' ? new DOMMatrix(cs.transform) : null; if (m && m.is2D && m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1) el.style.transform = 'none'; } catch (e) {}
         a.probes = probesFor(el.parentElement, el.style.position);
@@ -1017,6 +1019,10 @@
       const [X, Y] = anchorXY(t, a.tb.w, a.tb.h, a.sp);
       const x = String(r2(X - a.tb.x)), y = String(r2(Y - a.tb.y));
       return () => { if (x === a.lastX && y === a.lastY) return false; el.setAttribute('x', x); el.setAttribute('y', y); a.lastX = x; a.lastY = y; return true; };
+    }
+    if (a.sp.side === 'fit') {
+      const g = a.sp.gap * px(), L = r2(t.x - g) + 'px', Tp = r2(t.y - g) + 'px', W = r2(t.w + 2 * g) + 'px', Hh = r2(t.h + 2 * g) + 'px';
+      return () => { if (el.style.left === L && el.style.top === Tp && el.style.width === W && el.style.height === Hh) return false; el.style.left = L; el.style.top = Tp; el.style.width = W; el.style.height = Hh; return true; };
     }
     const [X, Y] = anchorXY(t, el.offsetWidth, el.offsetHeight, a.sp);
     const L = r2(X) + 'px', Tp = r2(Y) + 'px';

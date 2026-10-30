@@ -85,12 +85,14 @@ This is the reason people reach for React components; the answer is to have it i
   its `@keyframes`. Not tried by a fresh agent yet. Next: parts that bring behaviour (own element and clip time in the script), then brand kits.
 - **Parts that bring behaviour.** A part's script runs with its own element and its own clip time, so a part is a
   component with params, style, timeline and helpers in one file.
-- **Brand kits.** A folder a project imports: colour and type tokens (CSS variables), fonts, motion presets (eases,
-  entrance style, the highlight look) and the brand's own parts. Taste goes here, never into engine defaults.
-- **Scene assembly in the page.** Scenes listed with their order and timing (or word times) in the page itself, with no
-  build script.
-- **Highlight primitive.** A mark that follows its target every frame, sits inside the container it marks (clipped by
-  it, under what covers it), and has a few looks (wash, edge glow, ring, underline) chosen by the style or brand kit.
+- **Brand kits.** Done 2026-10-30 as a convention, no new engine feature: a folder (tokens in `kit.css`, fonts, scoped parts,
+  `motion.js` helpers) linked into each project with `ln -s` (symlinks are followed and a kit change invalidates the
+  parts); in `data-templates.md`. A `data-kit` option was not added: it would need support in the server, the part
+  fingerprints and `bundle` for what a link already does. Taste stays in the kit, never in engine defaults.
+- **Scene assembly in the page.** Done 2026-10-30: a scene file included in a `data-sequence` is the sequence's child
+  (`unwrapSceneIncludes` in the runtime). Not done: scene starts from word times (a transcript) in the page.
+- **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
+  `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
 - Test: fresh Opus agents get a three-video series brief with one brand; measure how much they reuse and whether
   they still write build scripts. Files: `src/server.js` (includes), `src/runtime/runtime.js`, skill pack.
 

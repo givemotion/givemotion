@@ -144,7 +144,7 @@ Also built in (tables in `references/api.md`): `data-enter`/`data-exit` presets,
 | `gm.chart.*`, chart blocks | `references/charts.md` |
 | Diagrams, arrows, `data-sketch`, `gm.connect`, `gm.shape`, path morphs | `references/diagrams.md` |
 | Music, beats, voice-over, video clips, captions files | `references/media-audio.md` |
-| Data/templates, `<gm-include>`, blocks, the cursor block | `references/data-templates.md` |
+| Data/templates, `<gm-include>` (scope, scenes, brand kit), blocks, highlight, cursor | `references/data-templates.md` |
 | `gm.onFrame`, canvas, three.js, `gm.burst`, springs, noise, random, Lottie | `references/javascript.md` |
 | Render options, transparency, cache | `references/output.md` |
 | Reviewing frames, learning from a reference video | `references/review.md` |

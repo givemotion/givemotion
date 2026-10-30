@@ -1088,6 +1088,20 @@ test('render for apps: --cache-dir, onProgress phases, --progress json lines; sc
   await assert.rejects(render(f, { output: join(d, 'x.mp4'), scale: 1.333, ...quiet }), /not whole pixels.*--scale 4\/3 \(640x360\)/);
 });
 
+test('render: --cache-key shares the parts between outputs with different names (render-v1, render-v2), and keeps them in one folder', { skip }, async () => {
+  const d = tmp(), f = join(d, 'k.html');
+  writeFileSync(f, page(`<div id="b" style="position:absolute;left:40px;top:60px;width:120px;height:120px;background:#f80"></div>
+    <script>gm.timeline().to('#b', { x: 200, duration: 1.4, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="30" data-duration="1.5"'));
+  const a = await render(f, { output: join(d, 'o', 'render-v1.mp4'), workers: 1, cacheKey: 'job', ...quiet });
+  const b = await render(f, { output: join(d, 'o', 'render-v2.mp4'), workers: 1, cacheKey: 'job', ...quiet });
+  assert.equal(b.parts.rendered, 0, 'the second name reuses every part');
+  assert.equal(b.parts.reused, a.parts.total);
+  assert.deepEqual(readdirSync(join(d, 'o', '.gm-parts')), ['job'], 'one folder for both versions');
+  assert.ok(b.parts.bytes > 0, 'the summary says how much the parts take');
+  assert.ok(readFileSync(join(d, 'o', 'render-v1.mp4')).equals(readFileSync(join(d, 'o', 'render-v2.mp4'))));
+  await assert.rejects(render(f, { output: join(d, 'x.mp4'), cacheKey: '../x', ...quiet }), /Bad cache key/);
+});
+
 test('check: pacing per element: short-hold and cut-exit; transitions, the last scene, exits, counters, quick-ok and swaps in place pass', { skip }, async () => {
   const d = tmp(), f = join(d, 'p.html');
   writeFileSync(f, page(`<style>h1,h2,p{margin:0;position:absolute}.card{position:absolute;background:#2a3a6a;padding:10px;border-radius:8px}</style>

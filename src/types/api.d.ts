@@ -136,6 +136,8 @@ export interface RenderOptions extends OpenOptions {
   cache?: boolean;
   /** Keep the parts in <cacheDir>/<output name>/ instead of .gm-parts/ next to the output. */
   cacheDir?: string;
+  /** Name of the parts' folder, instead of the output's file name: renders to render-v1.mov, render-v2.mov, … share the parts. */
+  cacheKey?: string;
   /** Do not reuse a captured frame for frames that look unchanged. */
   noReuse?: boolean;
   /** No audio track. */

@@ -63,6 +63,7 @@ Render options
   --redo <range>         Re-render this part ("4s-7s") even if it looks unchanged, keep the rest
   --no-cache             Do not keep or reuse parts (by default only changed parts are re-rendered)
   --cache-dir <dir>      Keep the parts in <dir>/<output name>/ instead of .gm-parts/ next to the output
+  --cache-key <name>     Name the parts' folder <name> instead of the output's file name (a new output name per version still reuses them)
   --workers <n>          Parallel browsers (default: based on CPU and memory)
   --transparent          Keep transparency (use --format mov or webm)
   --muted                No audio track
@@ -196,12 +197,13 @@ async function cmdRender(args) {
   if (args.progress != null && args.progress !== 'json') return fail(new Error(`Bad --progress "${args.progress === true ? '' : args.progress}". Use --progress json (one JSON object per line on stderr).`), args);
   const jsonl = args.progress === 'json' ? (o) => process.stderr.write(JSON.stringify(o) + '\n') : null;
   if (args.cacheDir === true) return fail(new Error('--cache-dir needs a folder.'), args);
+  if (args.cacheKey === true) return fail(new Error('--cache-key needs a name.'), args);
   try {
     const summary = await render(inputOf(args), {
       ...commonOpts(args), output: out, format: args.format, quality: args.quality, crf: args.crf != null ? +args.crf : undefined, codec: args.codec,
       hardware: args.hardware, workers: args.workers ? +args.workers : undefined, frames: args.frames, transparent: args.transparent, muted: args.muted,
       motionBlur: args.noMotionBlur ? 'off' : args.motionBlur, shutter: args.shutter != null ? +args.shutter : undefined, force: args.force, quiet: args.quiet || args.json || !!jsonl,
-      noReuse: args.reuse === false, lossless: args.lossless, redo: args.redo, cache: args.cache, cacheDir: args.cacheDir,
+      noReuse: args.reuse === false, lossless: args.lossless, redo: args.redo, cache: args.cache, cacheDir: args.cacheDir, cacheKey: args.cacheKey != null ? String(args.cacheKey) : undefined,
       ...(jsonl ? { onProgress: (p) => jsonl({ event: 'progress', ...p }), log: (message) => jsonl({ event: 'log', message: String(message) }) } : {}),
     });
     if (args.json) console.log(JSON.stringify(summary, null, 2));

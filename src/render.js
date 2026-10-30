@@ -277,8 +277,10 @@ export async function render(input, opts = {}) {
     let ranges, parts = null;
     if (useParts) {
       const segF = Math.max(1, Math.round((totalFrames / fps < 12 ? 1 : 2) * fps));
-      // (opts.cacheDir / --cache-dir: keep them there instead, for apps that move the output away)
-      const dir = keepParts ? join(opts.cacheDir ? resolve(opts.cacheDir) : join(dirname(out), '.gm-parts'), basename(out)) : join(tmp, 'parts');
+      // (opts.cacheDir / --cache-dir: keep them there instead, for apps that move the output away;
+      //  opts.cacheKey / --cache-key: the folder's name, for callers that name each version's output differently)
+      if (opts.cacheKey != null && (!/^[^/\\]+$/.test(String(opts.cacheKey)) || /^\.+$/.test(String(opts.cacheKey)))) throw new Error(`Bad cache key "${opts.cacheKey}": use a plain name, without slashes.`);
+      const dir = keepParts ? join(opts.cacheDir ? resolve(opts.cacheDir) : join(dirname(out), '.gm-parts'), opts.cacheKey != null ? String(opts.cacheKey) : basename(out)) : join(tmp, 'parts');
       const settings = hashOf(JSON.stringify({ v: 2, engine: engineHash(), format, plan, captureFormat, jpeg: q.jpeg, blurSamples, blur: blur.mode === 'auto' ? AUTO_BLUR : null, shutter, w: comp.width, h: comp.height, scale: opts.scale || 1, fps, seed: ctx.config.seed, data: ctx.config.data, transparent, segF }));
       const deps = await dependencyPrints(ctx);
       const old = keepParts ? readJson(join(dir, 'parts.json')) : null;
@@ -338,7 +340,7 @@ export async function render(input, opts = {}) {
       return page.evaluate(`__gmVelocityBlur(${t}, ${shutter / fps}, ${vbArgs})`);
     };
 
-    let done = 0, reused = 0;
+    let done = 0, reused = 0, partsBytes = 0;
     let lastLog = 0;
     const tFrames = Date.now();
     const progress = () => {
@@ -426,6 +428,8 @@ export async function render(input, opts = {}) {
         writeFileSync(join(parts.dir, 'parts.json'), JSON.stringify({ settings: parts.settings, shared: parts.deps.shared, clips: parts.deps.clips, parts: parts.list.map(({ a, b, fp }) => ({ a, b, fp })) }));
         // parts of an older, longer video
         for (const f of readdirSync(parts.dir)) if (/^part-\d+\./.test(f) && !parts.list.some((p) => basename(p.file) === f)) rmSync(join(parts.dir, f), { force: true });
+        partsBytes = parts.list.reduce((n, p) => n + (existsSync(p.file) ? statSync(p.file).size : 0), 0);
+        if (!opts.quiet && partsBytes > 5e8) log(`  parts kept: ${(partsBytes / 1e9).toFixed(1)} GB in ${parts.dir} (--no-cache keeps none; delete the folder when it is not needed)`);
       }
     }
     if (process.env.GIVEMOTION_PROFILE) log(`  finalize ${Date.now() - tLoop}ms, total ${Date.now() - t0}ms`);
@@ -434,7 +438,7 @@ export async function render(input, opts = {}) {
       output: out, format, width: size.width, height: size.height, fps, frames: nFrames, duration: nFrames / fps,
       seconds: +elapsed.toFixed(2), renderFps: +(nFrames / elapsed).toFixed(1), reusedFrames: reused, workers: nWorkers, capture: ctx.page.mode, encoder: plan ? plan.vargs[plan.vargs.indexOf('-c:v') + 1] : 'png',
       motionBlur: auto ? { mode: 'auto', frames: todoFrames, blurred: blurStats.blurred, elements: blurStats.samples } : { mode: blur.mode, samples: blurSamples },
-      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
+      parts: keepParts ? { total: parts.list.length, reused: parts.list.filter((p) => p.keep).length, rendered: parts.list.filter((p) => !p.keep).length, folder: parts.dir, bytes: partsBytes, late: parts.deps.clips.reduce((n, c) => n + c.units.length, 0), lateOff: parts.deps.fine } : null,
       bytes: format === 'png' ? null : statSync(out).size,
       warnings: comp.issues.filter((i) => i.severity !== 'error'),
       pageErrors: dedupe(pageErrors),

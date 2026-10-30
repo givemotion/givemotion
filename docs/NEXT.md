@@ -53,6 +53,24 @@ second. Do not reformat files you are not changing.
 - Open: tile memory is now 4 GB per Chrome (a ceiling, not an allocation). With many workers on a very heavy 4K page,
   watch memory; the worker count could take it into account.
 
+## Reusable parts and brand kits (decided 2026-10-29, not started)
+A real 90 s product demo (16 scenes, many rounds of edits) showed what agents hand-build when they need reuse. The agent
+wrote its own build script to stitch scene files, put a `{{S}}` placeholder in every id because ids clashed across
+scenes, kept a shared helpers file for camera and highlight functions, and kept scene starts in a separate JSON.
+This is the reason people reach for React components; the answer is to have it in HTML (CLAUDE.md, "Authoring format").
+- **Scoped parts.** Each copy of a `<gm-include>` gets its own scope: ids and `#id` selectors inside it (CSS, timeline
+  targets, `data-anchor`, cursor points) are private to that copy, and its `<style>` applies only inside it.
+- **Parts that bring behaviour.** A part's script runs with its own element and its own clip time, so a part is a
+  component with params, style, timeline and helpers in one file.
+- **Brand kits.** A folder a project imports: colour and type tokens (CSS variables), fonts, motion presets (eases,
+  entrance style, the highlight look) and the brand's own parts. Taste goes here, never into engine defaults.
+- **Scene assembly in the page.** Scenes listed with their order and timing (or word times) in the page itself, with no
+  build script.
+- **Highlight primitive.** A mark that follows its target every frame, sits inside the container it marks (clipped by
+  it, under what covers it), and has a few looks (wash, edge glow, ring, underline) chosen by the style or brand kit.
+- Test: fresh Opus agents get a three-video series brief with one brand; measure how much they reuse and whether
+  they still write build scripts. Files: `src/server.js` (includes), `src/runtime/runtime.js`, skill pack.
+
 ## README claims that need data (2026-10-27)
 The README now promises these; do them or soften the README:
 - Publish the givemotion vs Remotion agent test (method, versions, prompts, raw scores), like `benchmarks/vs-hyperframes`.

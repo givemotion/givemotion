@@ -73,6 +73,13 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
 - **Squash and stretch, lightly.** A landing can flatten for 0.08–0.12 s (`scaleX: 1.08, scaleY: 0.92`) and recover; skip it for text and UI.
 - **Contrast of speed.** Fast in, slow drift while it is read, fast out. Constant medium speed everywhere reads as software.
 - **Emphasis.** To make a word or number matter: scale it 1.1–1.3, change its color to the accent, add a mark (`data-sketch-mark`), a flash or a small shake. One emphasis per beat.
+- **Marking a thing on screen** (a highlight, a glow, an underline, a ring) to say "look here":
+  - It arrives after its target has landed, and holds ≥ 1 s (as text: ≥ 1 s + 0.25 s per word it covers).
+  - It stays on its target. If the target moves, scrolls or the camera pushes, re-measure it every frame in `gm.onLayout` (`references/javascript.md`); a box measured once at load floats off. Measure only after fonts load (`gm.onLayout` runs after they have), never in the script's top level.
+  - It belongs to what it marks: put it inside the target's card or window, so it is clipped by that card and goes under whatever covers the card. A mark painted on top of everything runs over the window that hides half the card.
+  - One mark per thing. Two marks stacked on one line read as one darker mark with a seam.
+  - To mark the next thing, let this mark leave and the next one appear on its target. A mark that slides across the screen to the next target reads as a glitch (except along a list, row to row).
+  - Pick one look for the whole video from the style or brand (a highlighter wash for text, a glow on a card's own edge, an underline, a drawn ring for hand-drawn styles) and keep it. The look is taste; the rules above are not.
 - **A big hit** (logo lock, peak number): at the same time, a burst of sparks, a ring that scales 0.6→1.6 while fading, `camera.shake` 10–16 px for 0.3–0.4 s, a 0.1 s brightness flash. Put it on a music hit if there is music.
 - **Motion blur** is off by default. `--motion-blur auto` (experimental) gives extra sub-frames only to frames where something moves fast; very fast text can show stepped copies, so check the frames. `--motion-blur 8` blurs every frame (smooth but slow). Whip transitions and `rise`/`blur` entrances already carry their own blur.
 
@@ -100,6 +107,7 @@ To see how natural a render is: `npx givemotion analyze out/video.mp4 --motion` 
 - **Land on time.** A shot's time is when the move starts; to land on a beat or on a scene's key moment, start it `duration` earlier. Finish before the scene's exit transition (`camera-late`).
 - **Depth.** Backgrounds next to a camera world (grid-bg, gradient-bg, full-frame layers behind it) drift with the camera by themselves; `data-parallax` 0.2–0.5 sets a layer's depth yourself, `data-parallax="0"` pins it; a soft blur on far layers helps. 3D tilt (`rotateX`/`rotateY` with `transformPerspective`) for screenshots and cards beats a flat rectangle.
 - **Impacts** use `shake`; a handheld feel (`data-camera="handheld"`) suits documentary or energetic styles, not clean corporate ones.
+- **A camera budget.** One deliberate move per shot (a push, a pan to the next detail, or a slow drift), then hold while it is read. Do not push in and fly straight back out (in and out within ~2 s), and do not chain big zooms (a scale change of 1.5× or more) one after another: the camera reads as hunting, and viewers tire. To show a new framing after a push, cut or dissolve to it instead of flying back. The judges' contact sheets reward motion; people watching a real 90 s product demo found a zoom in every scene too much. The longer the video, the calmer the camera: in videos over ~45 s and in product demos, most shots are one move or a drift.
 
 ## 5. Scene-to-scene continuity
 
@@ -165,6 +173,8 @@ Before rendering, none of these should be true:
 - [ ] The same entrance (`fade-up` everywhere) or the same layout in every scene.
 - [ ] A plain `fade` between every scene.
 - [ ] The camera crosses empty space, or a wide shot holds for long with tiny labels.
+- [ ] The camera pushes in and straight back out, or big zooms come one after another.
+- [ ] A mark (highlight, glow, ring) that floats off its target, runs over a window covering its card, or sits on top of another mark.
 - [ ] Particles, arrows or shapes crossing key text.
 - [ ] The end card sits still for 2 s or more.
 - [ ] Something that lands and is gone, covered or cut a second later; an element with no planned way out.

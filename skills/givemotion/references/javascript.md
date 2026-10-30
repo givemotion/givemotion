@@ -58,6 +58,7 @@ gm.burst('#end', { at: 0.2, kind: 'confetti', speed: 1600, gravity: 450, duratio
 ## Rules for seekable JS
 
 - In `onFrame`, compute everything from `t`. Don't accumulate state between calls.
+- A callback that writes styles writes its whole state every frame: every property it ever sets, set back (`''` or `none`) when not in use. If one look sets a `box-shadow` and a later look on the same element does not clear it, the shadow stays in the render (frames in order) but not in a `still` (one seek), so stills look right and the video is wrong.
 - Don't toggle classes inside `onFrame` to start CSS transitions; they can't be seeked (`check`: `non-seekable-animation`). To do something "at 2s", use `setTimeout(fn, 2000)` (virtual and exact) or give the element `data-start="2"`.
 - Measure elements in `gm.onLayout`, not in `onFrame` (in `onFrame` boxes are from before this frame's animations).
 - Script errors are reported with file and line (`script-error`, `console-error`); fix them first, they can cause misleading pacing warnings.

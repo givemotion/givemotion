@@ -19,22 +19,53 @@ It is written for Claude Code sessions that continue this work. Keep it short an
 
 ## How to handle feedback
 
-Leo gives feedback on the videos he sees. For every problem, first decide where the fix belongs:
+Leo gives feedback on the videos he sees, often from real projects with their own brand and taste. For every problem,
+first decide where the fix belongs. There are four places, and putting a fix in the wrong one is a mistake of its own:
 
-1. **Engine gap**: the AI could not do the right thing because the engine lacked a tool or did it badly.
-   Fix the engine (new primitive, better default, better checker). This is the main job.
-2. **Prompt / docs gap**: the engine can do it, but the docs (skills/givemotion/SKILL.md, block docs)
-   led the AI to the wrong result. Fix the docs.
-3. Usually check both. Prefer engine fixes that make the mistake impossible or caught by `check`.
+1. **Engine: the frame is wrong, or a tool is missing.**
+   - Wrong for everyone, whatever the style: text that jitters or snaps while it moves, stale or blank rectangles,
+     a frame that differs between 1 and N workers or between a render and a still, a first frame caught before the
+     page drew. Fix it in the engine as the default, with no option to turn on. Nobody wants the broken version.
+   - A missing primitive: the AI had to hand-build something many videos need (a highlight that follows its target,
+     a cursor that aims at an element, reusable parts). Add the tool with a sensible default and a few looks, never
+     one person's taste as the only option.
+   - Example: the cursor clicked the wrong button because it only took x,y numbers. It now aims at a CSS selector.
+2. **Skill (SKILL.md, references, blocks, `check`): the engine could do it, the AI did not know the craft.**
+   - General motion-design knowledge most viewers agree on: hold text long enough to read, one camera move per
+     shot, do not zoom in and straight back out, things come from something, a highlight sits on what it marks.
+   - Write it as a default with its reason; add a `check` rule when it can be measured.
+3. **User side (taste): reasonable people would choose differently.** Not in the engine's defaults, not a rule in
+   the skill.
+   - Examples: a glow instead of a circle around things, a pink accent, cards coming from behind one app's window,
+     "no outlines".
+   - It belongs in the user's brand kit or project files. The engine's job is to make taste easy to declare once
+     and reuse (parts, brand kits), not to hold it.
+4. **Nowhere: specific to one product or one video.** Copying a product's exact UI, a script cut, one client's
+   wording. It stays in that project.
 
-Example: the cursor clicked the wrong button because the cursor block only took raw x,y numbers.
-That is an engine gap: the cursor now aims at a CSS selector and tracks the element live.
+How to tell: "Is the frame wrong whatever the style?" → engine. "Would almost any good motion designer do this?" →
+skill. "Would another user with another brand want the opposite?" → user side. Prefer engine fixes that make the
+mistake impossible, then ones `check` catches, then docs. Often a problem has parts in two places (a missing
+highlight primitive in the engine, its looks in the user's brand); split it.
+
+## Authoring format: HTML/CSS/JS only (decided 2026-10-29)
+
+- One format, not two. Not React, not "HTML or React". Two formats split every doc, example and `check` rule, and
+  the agent spends effort choosing instead of making the video.
+- React would not fix the problems seen so far: they live in Chrome's rendering, which a React-based tool uses the
+  same way (the React framework's docs tell each author to work around text snapping by hand).
+- In the agent test (`docs/experiments/2026-10-vs-remotion.md`), the same Opus agents scored higher with
+  givemotion, wrote ~40% of the code and rendered ~2× faster.
+- The real pull toward React is reusable components (a brand, a series, many edits of one video). Answer it in
+  HTML: parts with their own scope, behaviour and timing, brand kits, and scene assembly (`docs/NEXT.md`).
+  Revisit only if agent tests show agents still hand-build reuse after that.
 
 ## When to stop and ask Leo
 
 Ask before going ahead if a change would drift from the goal above, for example:
 - making it specific to one company, product or use case,
-- moving away from HTML/CSS as the authoring format,
+- moving away from HTML/CSS as the authoring format, or adding a second one (see above),
+- putting one user's taste into an engine default or a skill rule,
 - adding a paid, closed or copyleft dependency, or copying another framework's code,
 - big changes to the public API that break existing compositions.
 

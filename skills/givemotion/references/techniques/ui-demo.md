@@ -10,6 +10,8 @@ Use for: showing an app doing one task: a window arrives, the cursor clicks and 
 - **A tick is three beats in 0.4 s:** box fills and pops to 112% (`back.out(3)` back to 100%), the check stroke draws (0.3 s), the strike-through sweeps (0.35 s), the label dims to 50%.
 - **Views cross-slide together:** old view out and new view in by one window width, same 0.7 s `power4.inOut`, 8 px blur while moving, clipped by the window (`overflow: hidden`); the tab indicator slides 0.45 s; new content builds 0.45 s later (bars `scaleY` 0→1, 70 ms stagger).
 - **Ambient:** a blurred accent glow drifting behind (`animation: float`), and the camera never fully stops.
+- **The app does the work, so the work comes out of the app.** When the app reads an email, opens a web page or fills a form, show that page coming out of the app (from behind its window, out of the message or button that started it) and going back, not sliding in from the frame edge. While the app is driving another page, let that page show it (an accent edge glow, the app's cursor), so the viewer sees who is acting.
+- **Fewer, longer camera moves in longer demos.** A 15 s demo can push into every control; in a 60–90 s product video, frame each scene once (or push once) and let the cursor and the UI carry the motion (`references/motion-design.md`, "A camera budget").
 
 ## Recipe
 Needs `npx givemotion add cursor`. Times are seconds into the scene.

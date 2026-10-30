@@ -21,6 +21,8 @@ Contents
 
 `<gm-include src="parts/intro.html" title="Hi" data-start="2">optional inner HTML</gm-include>` inserts the file; `{{title}}` / `{{title|default}}` / `{{content}}` are replaced. `class`, `style`, `id` and `data-*` on `<gm-include>` go to a wrapper `div` around the block. Block parameters are any other attribute. A missing file is the error `include-not-found`; includes may live in a parent folder.
 
+**Same part many times, or scenes with the same names: add `scope`.** `<gm-include src="parts/card.html" scope>` gives each copy private names: every id the part declares gets a suffix (`title` → `title--s1`, `--s2` for the next scoped copy), and the `#title` that names it follows, in its own CSS, its script strings (`gm.timeline().to('#title', …)`), `href="#title"`, `url(#title)`, `data-anchor="#title bottom"` and `getElementById('title')`. Its `<style>` applies only inside the copy, and its `@keyframes` names get the suffix. No `{{S}}` placeholders in every id. `{{scope}}` is the suffix (`s1`) if you need it. Code outside the part reaches in through the include's own `id` or class (`#intro .title`), not through the part's ids. Only ids the part declares change; an id from the page stays as it is. Leave `scope` off when the page's own timeline targets ids inside the part.
+
 ## Blocks: list, layering, params
 
 - `npx givemotion blocks` lists them; `npx givemotion add lower-third captions` copies them into `./blocks/`. Each file's header shows its params and usage.

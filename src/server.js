@@ -27,7 +27,7 @@ export function readRuntime() {
 }
 
 /** Expand <gm-include src="file.html" key="value"> recursively. {{key}} in the included file is replaced. */
-export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
+export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = [], state = { n: 0 }) {
   if (depth > 12) return html;
   // <gm-include src="x.html" a="1"/>  or  <gm-include src="x.html" a="1">inner HTML</gm-include>
   return html.replace(/<gm-include\b((?:[^>"']|"[^"]*"|'[^']*')*?)(?:\/>|>([\s\S]*?)<\/gm-include>)/gi, (m, attrStr, inner) => {
@@ -46,20 +46,59 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = []) {
     let body = readFileSync(file, 'utf8');
     // Drop the block's documentation comment
     body = body.replace(/<!--\s*block:[\s\S]*?-->\s*/, '');
-    const vars = { ...attrs, content: inner != null ? expandIncludes(inner, fileDir, rootDir, depth + 1, seen) : '' };
+    // `scope`: this copy's ids, their #references and its <style> are private to it (see scopePart)
+    const scoped = 'scope' in attrs && attrs.scope !== 'false';
+    const tag = scoped ? 's' + (++state.n) : '';
+    const vars = { ...attrs, ...(scoped ? { scope: tag } : {}), content: inner != null ? expandIncludes(inner, fileDir, rootDir, depth + 1, seen, state) : '' };
     body = body.replace(/\{\{\s*([\w.-]+)\s*(?:\|\s*([^}]*))?\}\}/g, (mm, key, def) => {
       if (key.startsWith('data.')) return mm; // resolved later from render data
       const v = vars[key];
       if (v != null && v !== '') return key === 'content' ? v : esc(v);
       return def != null ? def.trim() : '';
     });
-    body = expandIncludes(body, dirname(file), rootDir, depth + 1, [...seen, file]);
+    if (scoped) body = scopePart(body, tag);
+    body = expandIncludes(body, dirname(file), rootDir, depth + 1, [...seen, file], state);
     const passthrough = Object.entries(attrs).filter(([k]) => k === 'class' || k === 'style' || k === 'id' || k.startsWith('data-'))
+      .concat(scoped ? [['data-gm-scope', tag]] : [])
       .map(([k, v]) => `${k}="${esc(v)}"`).join(' ');
     // The wrapper takes no space in layout (display: contents) unless it needs its own box
     // for animation or styling (data-enter/exit, class or style on the include).
     const needsBox = ['data-enter', 'data-exit', 'class', 'style'].some((k) => k in attrs);
     return `<div data-gm-include="${esc(attrs.src)}"${needsBox ? '' : ' style="display:contents"'} ${passthrough}>${body}</div>`;
+  });
+}
+/**
+ * A part included with `scope` keeps its own names: every id it declares gets a suffix (id="title" → "title--s1"), and
+ * the `#title` that names it (in its CSS, its script strings, href="#title", url(#title), data-anchor="#title bottom",
+ * getElementById('title'), for=) follows. Its <style> applies only inside the copy (@scope), and its @keyframes names
+ * get the suffix too. So the same part can be included many times, or scenes written apart can share names, with no
+ * {{S}} placeholders. Only ids the part declares itself change; an id from outside is left alone.
+ */
+export function scopePart(body, tag) {
+  const ids = [...new Set([...body.matchAll(/(?<![\w-])id\s*=\s*["']([A-Za-z_][\w-]*)["']/g)].map((m) => m[1]))];
+  const sfx = '--' + tag;
+  if (ids.length) {
+    const alt = ids.sort((a, b) => b.length - a.length).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    body = body
+      .replace(new RegExp(`(?<![\\w&-])id(\\s*=\\s*["'])(${alt})(?=["'])`, 'g'), `id$1$2${sfx}`)
+      .replace(new RegExp(`(?<![\\w&])#(${alt})(?![\\w-])`, 'g'), `#$1${sfx}`)
+      .replace(new RegExp(`(\\b(?:for|aria-labelledby|aria-describedby|aria-controls)\\s*=\\s*["'])(${alt})(?=["'])`, 'g'), `$1$2${sfx}`)
+      .replace(new RegExp(`(getElementById\\(\\s*["'])(${alt})(?=["'])`, 'g'), `$1$2${sfx}`);
+  }
+  return body.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (m, open, css, close) => {
+    const names = [...new Set([...css.matchAll(/@keyframes\s+([A-Za-z_][\w-]*)/g)].map((x) => x[1]))];
+    for (const n of names) css = css.replace(new RegExp(`(?<![\\w-])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'g'), n + sfx);
+    // rules go inside @scope; at-rules that must stay at the top level (@keyframes, @font-face, @import, @property) stay out
+    let rules = '', keep = '', depth = 0, start = 0;
+    const flush = (end) => { const chunk = css.slice(start, end); start = end; if (/^\s*@(keyframes|font-face|import|property|charset|layer\s+[\w.-]+\s*;)/.test(chunk)) keep += chunk; else rules += chunk; };
+    for (let i = 0; i < css.length; i++) {
+      const c = css[i];
+      if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) flush(i + 1);
+      else if (c === ';' && depth === 0) flush(i + 1);
+    }
+    flush(css.length);
+    return `${open}${keep}${rules.trim() ? `@scope ([data-gm-scope="${tag}"]) {${rules}}` : ''}${close}`;
   });
 }
 function parseAttrs(s) {

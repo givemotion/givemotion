@@ -82,8 +82,9 @@ A real 90 s product demo (16 scenes, many rounds of edits) showed what agents ha
 wrote its own build script to stitch scene files, put a `{{S}}` placeholder in every id because ids clashed across
 scenes, kept a shared helpers file for camera and highlight functions, and kept scene starts in a separate JSON.
 This is the reason people reach for React components; the answer is to have it in HTML (CLAUDE.md, "Authoring format").
-- **Scoped parts.** Each copy of a `<gm-include>` gets its own scope: ids and `#id` selectors inside it (CSS, timeline
-  targets, `data-anchor`, cursor points) are private to that copy, and its `<style>` applies only inside it.
+- **Scoped parts.** Done 2026-10-30, opt-in: `<gm-include scope>` (`scopePart` in `src/server.js`) suffixes the ids a part
+  declares, rewrites the `#id` names in its CSS and script strings, applies its `<style>` with `@scope` and suffixes
+  its `@keyframes`. Not tried by a fresh agent yet. Next: parts that bring behaviour (own element and clip time in the script), then brand kits.
 - **Parts that bring behaviour.** A part's script runs with its own element and its own clip time, so a part is a
   component with params, style, timeline and helpers in one file.
 - **Brand kits.** A folder a project imports: colour and type tokens (CSS variables), fonts, motion presets (eases,

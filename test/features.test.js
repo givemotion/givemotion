@@ -1102,6 +1102,32 @@ test('render: --cache-key shares the parts between outputs with different names 
   await assert.rejects(render(f, { output: join(d, 'x.mp4'), cacheKey: '../x', ...quiet }), /Bad cache key/);
 });
 
+test('gm-include scope: the same part twice, each copy with its own ids, tween targets, style and keyframes; without scope the names clash', { skip }, async () => {
+  const d = tmp(), f = join(d, 'sc.html');
+  writeFileSync(join(d, 'card.html'), `<style>.box{background:{{color}};width:60px;height:60px;position:absolute;top:{{top}}px;left:10px;animation:spin-{{scope|x}} 2s linear both}@keyframes spin-{{scope|x}}{from{opacity:1}to{opacity:1}}.t{outline-width:7px;outline-style:solid}#mark{position:absolute;top:{{top}}px;left:200px;width:20px;height:20px;background:{{color}}}</style>
+    <div class="box t"></div><div id="mark"></div>
+    <svg width="0" height="0"><defs><linearGradient id="g"><stop offset="0" stop-color="{{color}}"/></linearGradient></defs></svg>
+    <script>gm.timeline().to('#mark', { x: {{dx}}, duration: 1, ease: 'linear' }, 0);</script>`);
+  const body = (scope) => `<section class="scene" data-duration="2"><i class="t" id="out" style="position:absolute;top:300px"></i>
+    <gm-include src="card.html" color="red" top="20" dx="100" ${scope}></gm-include>
+    <gm-include src="card.html" color="blue" top="120" dx="300" ${scope}></gm-include></section>`;
+  const probe = async (scope) => {
+    writeFileSync(f, page(body(scope), 'data-width="640" data-height="360" data-fps="30" data-duration="2"'));
+    const ctx = await openComposition(f, { mode: 'render' });
+    try {
+      await ctx.page.seek(1);
+      return await ctx.page.evaluate(`(() => [...document.querySelectorAll('[id^=mark]')].map((e) => [e.id, Math.round(e.getBoundingClientRect().left)]).concat([[getComputedStyle(document.querySelector('.box')).outlineWidth, getComputedStyle(document.querySelector('#out')).outlineWidth]]))()`);
+    } finally { await ctx.page.close(); await ctx.server.close(); }
+  };
+  const on = await probe('scope');
+  assert.deepEqual(on.slice(0, 2), [['mark--s1', 300], ['mark--s2', 500]], 'each copy moves its own mark');
+  assert.deepEqual(on[2], ['7px', '0px'], 'the part style reaches its own copy and nothing outside it');
+  const off = await probe('');
+  assert.ok(off.slice(0, 2).some(([id]) => id === 'mark') && !off.some(([id]) => /--s/.test(id)), 'unscoped ids keep their names');
+  assert.notDeepEqual(off.slice(0, 2).map((x) => x[1]), [300, 500], 'unscoped: both tweens hit the first #mark');
+  assert.equal(off[2][1], '7px', 'unscoped: the part style leaks out');
+});
+
 test('check: pacing per element: short-hold and cut-exit; transitions, the last scene, exits, counters, quick-ok and swaps in place pass', { skip }, async () => {
   const d = tmp(), f = join(d, 'p.html');
   writeFileSync(f, page(`<style>h1,h2,p{margin:0;position:absolute}.card{position:absolute;background:#2a3a6a;padding:10px;border-radius:8px}</style>

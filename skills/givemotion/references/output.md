@@ -63,3 +63,7 @@ Leave `<html>` and `<body>` without a background, then `npx givemotion render ov
 ## React (JSX) compositions
 
 You can also write a composition as a React component in `video.jsx` (or `.tsx`); every command works the same (`check video.jsx`, `render video.jsx`). Plain HTML is the recommended format (in tests it scored as well or better); use JSX when you already have React components. Read `references/react.md` for the API (`Sequence`, `Scene`, `Clip`, `useTime`, `useTimeline` …).
+
+## Colour
+
+Videos are tagged with what Chrome draws: BT.709 matrix and primaries, limited range, and the sRGB transfer curve (`iec61966-2-1`), the same in mp4, webm and mov. A player that reads the tags shows the colours of your page; one that ignores them shows the raw values, which is also right for sRGB.

@@ -67,11 +67,15 @@ export function qualitySettings(q = 'standard') { return QUALITY[q] || QUALITY.s
  */
 export function encoderPlan({ format, quality = 'standard', crf, codec, transparent, info, hardware }) {
   const q = qualitySettings(quality);
-  const colorTags = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
+  // Chrome draws sRGB: BT.709 primaries and matrix, but the sRGB transfer curve. Tagging the video with BT.709's own
+  // transfer made colour-managed players (QuickTime, browsers) show the dark tones 10+ levels off.
+  const colorTags = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'iec61966-2-1', '-color_range', 'tv'];
   // Frames arrive as sRGB images. Convert through RGB to BT.709 limited range (what players expect).
   // The accurate swscale flags cost ~3x encode time, so only the high/max presets use them.
   const precise = quality === 'high' || quality === 'max' ? ':flags=accurate_rnd+full_chroma_int' : '';
-  const toYuv = (pix) => ['-vf', `format=rgb24,scale=out_color_matrix=bt709:out_range=tv${precise},format=${pix}`];
+  // The tags are also set on the frames: a frame's own properties win over the encoder flags, and frames from a JPEG
+  // pipe carry none (the video came out with no primaries and no transfer tag at all, unlike one made from PNG frames).
+  const toYuv = (pix) => ['-vf', `format=rgb24,scale=out_color_matrix=bt709:out_range=tv${precise},format=${pix},setparams=colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1:range=tv`];
   if (format === 'mp4' || format === 'mkv') {
     if (transparent) throw new Error('MP4 cannot hold transparency. Use --format mov (ProRes 4444) or --format webm (VP9 alpha).');
     const c = codec || 'h264';

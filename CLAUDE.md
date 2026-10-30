@@ -48,23 +48,27 @@ skill. "Would another user with another brand want the opposite?" → user side.
 mistake impossible, then ones `check` catches, then docs. Often a problem has parts in two places (a missing
 highlight primitive in the engine, its looks in the user's brand); split it.
 
-## Authoring format: HTML/CSS/JS only (decided 2026-10-29)
+## Authoring format: HTML/CSS/JS first (decided 2026-10-29, corrected 2026-10-30)
 
-- One format, not two. Not React, not "HTML or React". Two formats split every doc, example and `check` rule, and
-  the agent spends effort choosing instead of making the video.
-- React would not fix the problems seen so far: they live in Chrome's rendering, which a React-based tool uses the
-  same way (the React framework's docs tell each author to work around text snapping by hand).
-- In the agent test (`docs/experiments/2026-10-vs-remotion.md`), the same Opus agents scored higher with
-  givemotion, wrote ~40% of the code and rendered ~2× faster.
+- HTML/CSS/JS is the format the skill teaches. A thin optional JSX input already exists (`src/jsx.js`,
+  `givemotion/react`, `skills/givemotion/references/react.md`): a `.jsx` file compiles to the same page, so every
+  command and check works on it. It is not in SKILL.md's core and needs `esbuild react react-dom` installed. Keep it a
+  thin input: no second set of docs, examples or `check` rules, and no feature that works only in JSX.
+  (An earlier version of this file said JSX did not exist; that was wrong.)
+- Why not make React the main format: it would not fix the problems seen so far, which live in Chrome's rendering
+  that a React-based tool uses the same way (the React framework's docs tell each author to work around text snapping
+  by hand). In the agent test (`docs/experiments/2026-10-vs-remotion.md`) the same Opus agents scored higher with
+  givemotion, wrote ~40% of the code and rendered ~2x faster. Two formats in the core docs split every doc, example
+  and `check` rule, and the agent spends effort choosing instead of making the video.
 - The real pull toward React is reusable components (a brand, a series, many edits of one video). Answer it in
-  HTML: parts with their own scope, behaviour and timing, brand kits, and scene assembly (`docs/NEXT.md`).
-  Revisit only if agent tests show agents still hand-build reuse after that.
+  the format the skill teaches: parts with their own scope, behaviour and timing, brand kits, and scene assembly
+  (`docs/NEXT.md`). Revisit only if agent tests show agents still hand-build reuse after that.
 
 ## When to stop and ask Leo
 
 Ask before going ahead if a change would drift from the goal above, for example:
 - making it specific to one company, product or use case,
-- moving away from HTML/CSS as the authoring format, or adding a second one (see above),
+- moving away from HTML/CSS as the authoring format, or making JSX a second full authoring system (see above),
 - putting one user's taste into an engine default or a skill rule,
 - adding a paid, closed or copyleft dependency, or copying another framework's code,
 - big changes to the public API that break existing compositions.

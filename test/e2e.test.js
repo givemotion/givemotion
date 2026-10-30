@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { findChrome } from '../src/browser.js';
 import { ffmpegInfo, ffmpegPath, probe } from '../src/ffmpeg.js';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { render, stills, check, snapshot, inspect } from '../src/api.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -62,6 +62,9 @@ test('render mp4: duration, size, frame count', { skip }, async () => {
   const p = probe(out);
   assert.equal(p.width, 640);
   assert.ok(Math.abs(p.duration - 1.5) < 0.05);
+  // the tags say what Chrome drew (BT.709 primaries and matrix, sRGB transfer); frames from a JPEG pipe used to carry none
+  const info = spawnSync(ffmpegPath(), ['-hide_banner', '-i', out], { encoding: 'utf8' }).stderr;
+  assert.match(info, /tv, bt709\/bt709\/iec61966-2-1/, 'colour tags: ' + (info.match(/yuv420p\([^)]*\)/) || [''])[0]);
 });
 
 test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF canvas, transitions, WAAPI)', { skip }, async () => {

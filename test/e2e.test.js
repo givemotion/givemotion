@@ -80,6 +80,23 @@ test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF c
   assert.deepEqual(diff, []);
 });
 
+test('entrance (opacity + move) on text: 1 worker == 2 workers byte for byte, also the second after the move ends', { skip }, async () => {
+  // Chrome keeps the raster phase of a text layer that was moved and faded in for about a second after the move. A worker
+  // that continues from the earlier part has that state, one that starts at a part does not, so frames 60-89 of this
+  // 90-frame video used to differ by a few colour levels on glyph edges. Every part start now drops those layers.
+  const d = tmp();
+  const f = comp(d, 'in.html', `<style>h1{position:absolute;left:40px;top:60px;margin:0;font:56px Inter;color:#fff}p{position:absolute;left:40px;top:180px;margin:0;font:28px Inter;color:#fff}</style>
+    <h1 id="h">Hello determinism</h1><p id="p">second line of text</p>
+    <script>gm.timeline().from('#h', { opacity: 0, y: 40, duration: 0.8, ease: 'out-cubic' }, 0.1).from('#p', { opacity: 0, y: 30, duration: 0.6 }, 0.4);</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="3"');
+  const a = join(d, 'a.mov'), b = join(d, 'b.mov');
+  await render(f, { output: a, workers: 1, cache: false, ...quiet });
+  await render(f, { output: b, workers: 2, cache: false, ...quiet });
+  const frames = (v) => execFileSync(ffmpegPath(), ['-v', 'error', '-i', v, '-an', '-f', 'framemd5', '-'], { encoding: 'utf8' }).split('\n').filter((l) => l && l[0] !== '#').map((l) => l.split(',')[5].trim());
+  const fa = frames(a), fb = frames(b);
+  assert.equal(fa.length, 90);
+  assert.deepEqual(fa.map((m, i) => (m === fb[i] ? null : i)).filter((i) => i != null), [], 'frames that differ between 1 and 2 workers');
+});
+
 test('steady text: slowly moving text glides with its box instead of stepping whole pixels (a timeline tween and a CSS animation; 1 worker == 2 workers)', { skip }, async () => {
   // 12 px down in 2 s (0.2 px a frame). Without the runtime's tilt Chrome puts the glyphs on whole pixels: the text
   // stays still for 4 frames and jumps a pixel while the bar under it glides (rms of the 2nd difference ~0.64 px).

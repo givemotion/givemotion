@@ -327,16 +327,41 @@ export class FramePage {
    * N workers by a pixel level on grid lines and text). Hiding the page's content for one drawn frame drops every such
    * layer, and the frame drawn after it makes new ones for the current state only. Call it right after a seek: the new
    * layers are made for the time the page is at (it draws once more itself, as the compositor may draw at any moment).
+   * `only`: drop just the layers of elements moved or faded by an inline style or an animation that hold text of their
+   * own (the ones whose text raster phase outlives the move by about a second); a heavy page keeps the rest, which is
+   * why a render can do this at every part start. Returns false when there was nothing to drop.
    */
-  async resetPaint() {
-    const had = await this.evaluate(`(() => { const b = document.body; if (!b) return false; window.__gmResetStyle = b.getAttribute('style'); b.style.setProperty('content-visibility', 'hidden', 'important'); return true; })()`);
-    if (!had) return;
+  async resetPaint(only = false) {
+    // only: drop just the layers that can carry text raster state (an element moved or faded by an inline style or an
+    // animation, with text of its own), instead of the whole page: far cheaper on a heavy page, same bytes
+    const had = await this.evaluate(`(() => {
+      const only = ${only ? 'true' : 'false'};
+      let els;
+      if (only) {
+        els = [];
+        for (const el of document.body ? document.body.querySelectorAll('*') : []) {
+          const st = el.style;
+          const moved = st && (st.transform || st.translate || st.scale || st.rotate || st.opacity || st.filter || st.willChange) || (el.getAnimations && el.getAnimations().length);
+          if (!moved) continue;
+          let own = false;
+          for (const n of el.childNodes) if (n.nodeType === 3 && n.data.trim()) { own = true; break; }
+          if (own || !el.children.length) els.push(el);
+        }
+        if (!els.length) return false;
+      } else els = [document.body];
+      if (!els[0]) return false;
+      window.__gmReset = els.map((e) => [e, e.getAttribute('style')]);
+      for (const e of els) e.style.setProperty('content-visibility', 'hidden', 'important');
+      return true;
+    })()`);
+    if (!had) return false;
     try {
       await this._drawFrame();
     } finally {
-      await this.evaluate(`(() => { const b = document.body, s = window.__gmResetStyle; delete window.__gmResetStyle; if (s == null) b.removeAttribute('style'); else b.setAttribute('style', s); })()`);
+      await this.evaluate(`(() => { for (const [e, s] of window.__gmReset || []) { if (s == null) e.removeAttribute('style'); else e.setAttribute('style', s); } delete window.__gmReset; })()`);
     }
     await this._drawFrame();
+    return true;
   }
   /** Have the compositor draw the current state once (a tiny capture). */
   async _drawFrame() {

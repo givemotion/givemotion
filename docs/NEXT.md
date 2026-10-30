@@ -56,17 +56,15 @@ second. Do not reformat files you are not changing.
   identical for 1 and N workers (before, a worker starting mid-video stepped while the first glided). Not covered: the engine's own `data-enter`/`data-exit` animations (the tilt broke their 1 == N match; they step like
   any composited layer, but entrances are short). Not covered or not tried: SVG
   `<text>`, elements shown smaller than ~0.35x, CSS `transition`s.
-- Open, sharper diagnosis (2026-10-30): the most common entrance, `.from(el, { opacity: 0, y: 40 })`, differs between 1 and
-  N workers in the ~1 s after the move ends (frames 45-71 of a 90-frame test): ~2k edge pixels, up to 63 levels, on horizontal
-  glyph edges, text position within 0.02 px. Inline styles are identical in both cases; Chrome keeps the old raster phase of
-  the layer for about a second, then re-rasters. Invisible, but it breaks byte-for-byte part patching. Frame reuse is not the cause.
+- Done 2026-10-30: determinism of entrances (opacity + move) and of CSS animations that move and scale. Chrome keeps a
+  text layer's raster phase for about a second after a move; a worker that continued from the earlier part had it, one that
+  started at a part did not. Every part start now drops the layers of animated elements that hold text
+  (`resetPaint(true)` in `src/browser.js`), for fresh and continuing workers alike. Cost +5% on bench, +3% on data-story
+  (the whole-page reset tried first cost 10% and 42%). Not covered: an animated layer with no text of its own that
+  keeps state (none found).
 - Done 2026-10-30: a peak limiter after the audio mix (two loud tracks hard-clipped 15% of samples). Quiet mixes stay
   within one 16-bit step; the 239-sample look-ahead is padded in and cut out, so length and timing are unchanged. The
   'unexplained 4633-level difference' was the lost last 239 samples (the limiter does not flush its look-ahead).
-- Open: a CSS animation that moves AND scales an element (a float with a pulse) still differs between 1 and N workers by
-  ~17 edge pixels a frame (thin lines, up to 240 levels). Chrome keeps raster state of such composited layers from earlier
-  frames. Resetting paint at every part start fixes it by construction but costs 10% (bench) to 40% (data-story) render
-  time: tried and rejected. A cheaper reset, or no layer for a paused animation, would close it.
 - Done 2026-10-29 (found by looking for edge cases, each with a test): the time zone is pinned to UTC, language to en-US,
   reduced-motion and dark mode off (a clock read 12:00 on one machine and 21:00 on another); smooth scrolling is instant
   (frames differed per run); `loading="lazy"` images no longer hang the render for 60 s; SVG SMIL animations follow the

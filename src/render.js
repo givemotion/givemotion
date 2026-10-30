@@ -376,7 +376,15 @@ export async function render(input, opts = {}) {
           // browsers starting at once) its first capture could catch the page before it drew (elements at their CSS
           // rest, tiles missing), so frame 0 is captured once and thrown away first (below).
           const coldStart = a === 0 && prevFrame === -2;
-          if (a !== prevFrame + 1) { last = null; if (a > 0) { await seekFrame(page, a - 1); await page.resetPaint(); await page.capture(captureFormat, jpegQ); } }
+          // A part starts the same way whether this worker just drew the frame before it or is new to it: the layers that
+          // hold animated text are dropped (resetPaint), so the bytes do not depend on how parts were split between workers.
+          const follows = a === prevFrame + 1;
+          if (!follows) last = null;
+          if (a > 0 && (!follows || useParts)) {
+            if (!follows) await seekFrame(page, a - 1);
+            const did = await page.resetPaint(useParts);
+            if (did) last = null; else if (!follows) await page.capture(captureFormat, jpegQ);
+          }
           for (let f = a; f < b; f++) {
             for (let s = 0; s < blurSamples; s++) {
               let q0 = Date.now();

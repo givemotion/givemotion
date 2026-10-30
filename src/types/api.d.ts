@@ -308,7 +308,8 @@ export declare class FramePage {
   seek(t: number): Promise<any>;
   capture(format?: 'png' | 'jpeg', quality?: number): Promise<Buffer>;
   /** Drop what Chrome kept from earlier paints, so the next capture draws everything fresh. */
-  resetPaint(): Promise<void>;
+  /** Drop the paint state of earlier frames (only: just the layers holding animated text). True if anything was reset. */
+  resetPaint(only?: boolean): Promise<boolean>;
   close(): Promise<void>;
 }
 

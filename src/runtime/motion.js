@@ -688,7 +688,12 @@
           continue;
         }
         const targets = toArray(op.t, this.scope);
-        if (!targets.length) I.report('warning', 'timeline-no-target', `gm.timeline: "${typeof op.t === 'string' ? op.t : 'target'}" matched nothing.`, null, 'Check the selector. Targets are looked up when the video starts, inside the timeline scope if one was given.');
+        {
+          // a list of selectors: name each one that matched nothing, also when the others did match
+          const names = typeof op.t === 'string' ? [op.t] : Array.isArray(op.t) ? op.t.filter((x) => typeof x === 'string') : [];
+          const none = names.filter((n) => !toArray(n, this.scope).length);
+          if (!targets.length || none.length) I.report('warning', 'timeline-no-target', `gm.timeline: ${none.length ? none.map((n) => '"' + n + '"').join(', ') : '"target"'} matched nothing.`, null, 'Check the selector. Targets are looked up when the video starts, inside the timeline scope if one was given. (An id inside a part included with `scope` is renamed: reach it through the include\'s own id or class.)');
+        }
         const start = this._pos(op.pos, cursor) + (timing.delay || 0);
         const dur = Math.max(0, +timing.duration || 0);
         const rep = timing.repeat === -1 ? Infinity : Math.max(0, timing.repeat | 0);
@@ -782,7 +787,9 @@
       const cssHidden = (el) => {
         if (!hiddenMemo.has(el)) {
           let h = false;
-          if (el instanceof Element && !el.hasAttribute('data-enter') && !(el.getAnimations && el.getAnimations().length)) {
+          // (an animation of something else, like the transform a morph pair puts on its scene, does not decide it)
+          const owns = el instanceof Element && el.getAnimations && el.getAnimations().some((an) => { try { return /** @type {KeyframeEffect} */ (an.effect).getKeyframes().some((k) => 'opacity' in k || 'visibility' in k); } catch (e) { return true; } });
+          if (el instanceof Element && !el.hasAttribute('data-enter') && !owns) {
             const cs = getComputedStyle(el);
             h = parseFloat(cs.opacity) <= 0.01 || cs.visibility === 'hidden';
           }
@@ -1226,15 +1233,18 @@
       const ra = m.a.getBoundingClientRect(), rb = m.b.getBoundingClientRect();
       const p = m.ease(Math.max(0, Math.min(1, lt / m.dur)));
       const ar = (r) => r.width / Math.max(1, r.height);
+      // natural motion: a diagonal flight bends up a little like a thrown object (the same arc a tween of x and y gets)
+      const dx = rb.left - ra.left, dy = rb.top - ra.top;
+      const bend = I.naturalMotion() && Math.abs(dx) > 1 && Math.abs(dy) > 1 ? -0.1 * Math.abs(dx) * 4 * p * (1 - p) : 0;
       if (Math.abs(Math.log(ar(ra) / ar(rb))) > 0.2) {
         // different shapes (e.g. two text boxes): fly center to center and scale evenly, no stretching
-        const cx = (ra.left + ra.width / 2) * (1 - p) + (rb.left + rb.width / 2) * p, cy = (ra.top + ra.height / 2) * (1 - p) + (rb.top + rb.height / 2) * p;
+        const cx = (ra.left + ra.width / 2) * (1 - p) + (rb.left + rb.width / 2) * p, cy = (ra.top + ra.height / 2) * (1 - p) + (rb.top + rb.height / 2) * p + bend;
         const h = ra.height * (1 - p) + rb.height * p;
         const box = (r) => { const k = h / r.height; return { left: cx - (r.width * k) / 2, top: cy - (r.height * k) / 2, width: r.width * k, height: r.height * k }; };
         placeAt(m.a, ra, box(ra));
         placeAt(m.b, rb, box(rb));
       } else {
-        const R = { left: ra.left + (rb.left - ra.left) * p, top: ra.top + (rb.top - ra.top) * p, width: ra.width + (rb.width - ra.width) * p, height: ra.height + (rb.height - ra.height) * p };
+        const R = { left: ra.left + (rb.left - ra.left) * p, top: ra.top + (rb.top - ra.top) * p + bend, width: ra.width + (rb.width - ra.width) * p, height: ra.height + (rb.height - ra.height) * p };
         placeAt(m.a, ra, R);
         placeAt(m.b, rb, R);
       }

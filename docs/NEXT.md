@@ -94,6 +94,12 @@ This is the reason people reach for React components; the answer is to have it i
   (`unwrapSceneIncludes` in the runtime). Not done: scene starts from word times (a transcript) in the page.
 - **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
   `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
+- First agent test of these (2026-10-30, one Opus agent, a two-video series): the kit, scene files, scoped parts and
+  `fit` all worked from the docs (398 lines for the kit and two videos, each rendered in ~3.7 s). It found and we fixed:
+  a CSS-hidden `fromTo` shown early when the sequence has a morph pair, a false `empty-start` (a shape with no text),
+  the morph's straight flight (now an arc in natural motion), `timeline-no-target` not naming the selector of a list,
+  and the include-path rule (relative to the containing file) missing from the docs. Not tried: three videos, word-time
+  scene starts, the stock `highlight` block (the agent built its own on `fit`), a second agent for variance.
 - Test: fresh Opus agents get a three-video series brief with one brand; measure how much they reuse and whether
   they still write build scripts. Files: `src/server.js` (includes), `src/runtime/runtime.js`, skill pack.
 

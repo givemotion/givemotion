@@ -1476,7 +1476,7 @@ export async function check(input, opts = {}) {
         const g = await ctx.page.evaluate(`window.__gmGrid('data:image/jpeg;base64,${jpg.toString('base64')}')`);
         { const srt = [...g].sort((x, y) => x - y), med = srt[srt.length >> 1]; let off = 0; for (const v of g) if (Math.abs(v - med) > 10) off++;
           // (the opening frame: empty = no readable text and almost no edges; a smooth gradient or a flat color is empty)
-          if (t < 0.6) { let edge = 0; for (let i = 0; i < g.length; i++) if ((i % GW < GW - 1 && Math.abs(g[i] - g[i + 1]) > 12) || (i + GW < g.length && Math.abs(g[i] - g[i + GW]) > 12)) edge++; openFrames.push({ t, empty: edge / g.length < 0.01 && !(a.maxFont >= 24) }); }
+          if (t < 0.6) { let edge = 0; for (let i = 0; i < g.length; i++) if ((i % GW < GW - 1 && Math.abs(g[i] - g[i + 1]) > 12) || (i + GW < g.length && Math.abs(g[i] - g[i + GW]) > 12)) edge++; openFrames.push({ t, empty: edge / g.length < 0.004 && !(a.maxFont >= 24) }); }
           emptyGrid.push([t, off / g.length < 0.015 && !(a.maxFont >= 24)]); }
         if (lastGrid) { let n = 0; for (let i = 0; i < g.length; i++) if (Math.abs(g[i] - lastGrid[i]) > 6) n++; change.push([t, n / g.length, busy]); }
         lastGrid = g; lastGridT = t; busy = false;

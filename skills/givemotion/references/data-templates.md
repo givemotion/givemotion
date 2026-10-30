@@ -27,6 +27,8 @@ brand/kit.css        :root { --brand: #e0457b; --ink: …; --radius: 14px }  and
 brand/parts/*.html   lower-third, end card, highlight look, … as scoped parts that read the variables
 brand/motion.js      shared helpers (gm.timeline() calls for the brand's entrance, its ease and its pacing)
 ```
+An include's `src` is relative to the file that contains it: in `ep1/scenes/intro.html` the lower-third is `../brand/parts/lower-third.html`, while on the page `ep1/video.html` it is `brand/parts/lower-third.html`.
+
 In each project: `ln -s ../brand brand` (links inside a project are followed, and a change to the kit re-renders the parts it touches), then `<link rel="stylesheet" href="brand/kit.css">`, `<script src="brand/motion.js"></script>`, `<gm-include src="brand/parts/lower-third.html" scope name="Ana" data-start="3" data-duration="4">`. A new video of the series starts from these pieces, so it looks the same without asking the agent to remember the style.
 
 ## Reuse with gm-include

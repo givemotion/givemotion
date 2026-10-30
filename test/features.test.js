@@ -398,6 +398,10 @@ test('check: empty-start when the first half second shows only a gradient backgr
   const d = tmp(), mk = (delay) => { const f = join(d, `e${delay}.html`); writeFileSync(f, `<!doctype html><html data-width="640" data-height="360" data-fps="30"><head><style>body{background:linear-gradient(135deg,#2a1b5c,#0b6e8a);color:#fff;font-family:sans-serif}</style></head><body><section class="scene" data-duration="2"><h1 data-enter="fade 0.3 ${delay}" style="font-size:60px;text-align:center;margin-top:120px">Hello</h1></section></body></html>`); return f; };
   assert.ok((await check(mk(0.7))).issues.some((i) => i.code === 'empty-start'));
   assert.ok(!(await check(mk(0))).issues.some((i) => i.code === 'empty-start'));
+  // a single shape without text (a coral drop on a gradient, about 2% of the frame) is something on screen
+  const f = join(d, 'drop.html');
+  writeFileSync(f, `<!doctype html><html data-width="1280" data-height="720" data-fps="30"><head><style>body{background:linear-gradient(135deg,#2a1b5c,#0b6e8a)}#d{position:absolute;left:340px;top:10px;width:86px;height:186px;background:#ff6b5b;border-radius:50% 50% 50% 50% / 30% 30% 70% 70%}</style></head><body><section class="scene" data-duration="2"><div id="d"></div></section></body></html>`);
+  assert.ok(!(await check(f)).issues.some((i) => i.code === 'empty-start'), 'a shape with no text counts as content');
 });
 
 test('check: ghost-overlap when a crossfade stacks two headlines, not for a push', { skip }, async () => {
@@ -1217,6 +1221,39 @@ test('brand kit: a folder linked into the project (symlink) brings its tokens, f
   writeFileSync(join(kit, 'kit.css'), ':root{--brand:rgb(60,200,255)}');
   const s2 = await render(join(proj, 'index.html'), { output: out, ...quiet });
   assert.equal(s2.parts.reused, 0, 'a change in the kit redoes every part');
+});
+
+test('a CSS-hidden element with a fromTo stays hidden until it starts, also when the sequence has a morph pair', { skip }, async () => {
+  const d = tmp(), f = join(d, 'mh.html');
+  writeFileSync(f, page(`<style>#r{position:absolute;left:100px;top:100px;width:50px;height:50px;background:red;opacity:0}</style>
+    <main data-sequence data-transition="morph 0.8"><section class="scene" id="s" data-duration="2"><i id="r"></i><div data-morph="d" style="width:40px;height:40px;background:blue"></div></section>
+    <section class="scene" id="t" data-duration="2"><div data-morph="d" style="width:20px;height:20px;background:blue;margin:200px"></div></section></main>
+    <script>gm.timeline('#s').fromTo('#r', { scale: 0.3, opacity: 0.8 }, { scale: 1.8, opacity: 0, duration: 0.9 }, 0.6);</script>`, 'data-width="640" data-height="360"'));
+  const ctx = await openComposition(f, { mode: 'render' });
+  try {
+    const at = async (t) => { await ctx.page.seek(t); return ctx.page.evaluate(`+getComputedStyle(document.querySelector('#r')).opacity`); };
+    assert.equal(await at(0.3), 0, 'hidden before its tween starts');
+    assert.equal(await at(0.6), 0.8, 'visible from the start of the tween');
+  } finally { await ctx.page.close(); await ctx.server.close(); }
+});
+
+test('morph between scenes flies on a slight arc in natural motion, straight in classic', { skip }, async () => {
+  const d = tmp();
+  const pg = (attr) => page(`<main data-sequence data-transition="morph 1"><section class="scene" data-duration="2"><div id="a" data-morph="m" style="position:absolute;left:100px;top:250px;width:40px;height:40px;background:#f55"></div></section>
+    <section class="scene" data-duration="2"><div id="b" data-morph="m" style="position:absolute;left:500px;top:50px;width:40px;height:40px;background:#f55"></div></section></main>`, `data-width="640" data-height="360" ${attr}`);
+  const mid = async (attr) => { const f = join(d, `mo${attr.length}.html`); writeFileSync(f, pg(attr)); return evalAt(f, 1.5, `(() => { const r = document.querySelector('#a').getBoundingClientRect(); return [r.left, r.top]; })()`); };
+  const [nx, ny] = await mid(''), [cx, cy] = await mid('data-motion="classic"');
+  assert.ok(Math.abs(cy - 150) < 2 && Math.abs(cx - 300) < 2, `classic flies straight: ${cx},${cy}`);
+  assert.ok(Math.abs(nx - 300) < 2 && cy - ny > 25 && cy - ny < 45, `natural bends up by about 10% of the horizontal distance (40 px): ${nx},${ny}`);
+});
+
+test('check: timeline-no-target names each selector of a list that matched nothing, also when the others matched', { skip }, async () => {
+  const d = tmp(), f = join(d, 'nt.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="2"><b id="a" style="position:absolute;left:10px;top:10px">a</b></section><script>gm.timeline('.scene').to(['#a', '#gone'], { x: 50, duration: 1 }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10" data-duration="2"'));
+  const w = (await check(f, { fast: true })).issues.filter((i) => i.code === 'timeline-no-target');
+  assert.equal(w.length, 1);
+  assert.match(w[0].message, /"#gone" matched nothing/);
+  assert.doesNotMatch(w[0].message, /"#a"/);
 });
 
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {

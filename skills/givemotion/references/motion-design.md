@@ -92,6 +92,7 @@ Leave out `ease` and `duration` unless you need exact timing, and you get these 
 - **Moves flow.** Back-to-back tweens on the same property (one ends where the next starts) carry their speed through the joint instead of stopping.
 - **Arcs.** Diagonal x+y moves and `gm.fly` bend slightly upward like a thrown object. `arc: 0` for a dead-straight line, `arc: 0.2` for more.
 - **Staggers breathe.** Staggered rows vary a few percent in timing (seeded, the same every render); the first and last item keep their times.
+- **Moving text glides.** Chrome puts text on whole pixels when it only moves or scales, so slow moves and camera drifts made it step and wobble against its box. The engine gives every element moved by an inline transform a tiny `rotate` (about 0.04°, invisible) so its text lands at quarter pixels. You will see it in `inspect`; an element with a `rotate` of its own is left alone.
 - **The camera moves like an operator** (`references/camera.md`): back-to-back shots become one continuous move, `follow` trails its target and settles, held shots breathe by a pixel or two, fast zooms overshoot a touch, and backgrounds next to the world drift for depth.
 - `gm.motion` is `'natural'`; `<html data-motion="classic">` brings back the older fixed curves and cameras that stop between shots (only to match an earlier render).
 

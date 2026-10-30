@@ -50,6 +50,11 @@ second. Do not reformat files you are not changing.
   gives the 2-worker pixels, so some raster state of the text survives until `resetPaint`, which the render loop
   only calls at the start of a part. Fix idea: reset that state per frame cheaply, or at every part boundary in both
   modes, and add a 1 == N test with this exact tween.
+- Done 2026-10-29: steady text. Elements moved by an inline transform get a tiny `rotate` (runtime `steadyText`), so their
+  text lands at quarter pixels instead of stepping whole pixels (rms 2nd difference 0.64 → 0.02 px on a slow move,
+  0.15 → 0.02 on a camera drift; 1 == N workers; no speed change on bench). Not covered yet: text moved by a CSS
+  `@keyframes` animation (its transform is not inline), SVG `<text>`, and elements shown smaller than ~0.35×.
+  Thin shapes inside a tilted element move in quarter-pixel steps instead of exactly (invisible at normal speeds).
 - Open: tile memory is now 4 GB per Chrome (a ceiling, not an allocation). With many workers on a very heavy 4K page,
   watch memory; the worker count could take it into account.
 

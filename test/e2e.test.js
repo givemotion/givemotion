@@ -76,6 +76,29 @@ test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF c
   assert.deepEqual(diff, []);
 });
 
+test('steady text: slowly moving text glides with its box instead of stepping whole pixels (1 worker == 2 workers)', { skip }, async () => {
+  // 12 px down in 2 s (0.2 px a frame). Without the runtime's tilt Chrome puts the glyphs on whole pixels: the text
+  // stays still for 4 frames and jumps a pixel while the bar under it glides (rms of the 2nd difference ~0.64 px).
+  const d = tmp();
+  const f = comp(d, 'move.html', `<div id="w" style="position:absolute;left:100px;top:140px;width:440px"><div style="font:600 40px Inter;color:#fff;line-height:52px">Every morning</div><div style="height:4px;background:#f00"></div></div>
+    <script>gm.timeline().fromTo('#w', { y: 0 }, { y: 12, duration: 2, ease: 'linear' }, 0)</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"');
+  const a = join(d, 'a'), b = join(d, 'b');
+  await render(f, { output: a, format: 'png', workers: 1, cache: false, ...quiet });
+  await render(f, { output: b, format: 'png', workers: 2, cache: false, ...quiet });
+  const fa = readdirSync(a).filter((x) => x.endsWith('.png')).sort();
+  assert.deepEqual(fa.filter((x) => md5(join(a, x)) !== md5(join(b, x))), []);
+  const ys = fa.map((x) => {
+    const px = execFileSync(ffmpegPath(), ['-v', 'error', '-i', join(a, x), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
+    let w = 0, s = 0;
+    for (let i = 0; i < px.length; i += 3) { const v = Math.min(px[i], px[i + 1], px[i + 2]); if (v > 30) { w += v; s += v * Math.floor(i / 3 / 640); } }
+    return s / w;
+  });
+  let q = 0;
+  for (let i = 1; i < ys.length - 1; i++) q += (ys[i + 1] - 2 * ys[i] + ys[i - 1]) ** 2;
+  const jitter = Math.sqrt(q / (ys.length - 2));
+  assert.ok(jitter < 0.15, `the text steps instead of gliding: rms 2nd difference ${jitter.toFixed(3)} px`);
+});
+
 test('4K with many composited layers: every tile is drawn (still and render match the same page on one layer)', { skip }, async () => {
   // 48 full-frame layers at --scale 2 need more tile memory than Chrome gives a tab by default; past the
   // limit the frame came out with blank or stale rectangles. The same page without will-change paints into one layer.

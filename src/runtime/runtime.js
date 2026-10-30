@@ -1768,7 +1768,8 @@
     let animActive = seekAnimations(T);
     if (driven.length && updateDriven(T)) animActive = true;
     for (const h of hooks.post) { try { if (h(T)) animActive = true; } catch (e) { pageError(e); } }
-    if (layoutFns.length && runFrameFns(T, layoutFns)) animActive = true;
+    steadyText();
+    if (layoutFns.length) { if (runFrameFns(T, layoutFns)) animActive = true; steadyText(); }
     waitImages();
     const tChanged = lastT == null || Math.abs(T - lastT) > 1e-9;
     const dirty = tChanged && (lastT == null || visChanged || cChanged || vChanged || ranFns || hadRAF || animActive || mutated || activeBefore);
@@ -1785,6 +1786,52 @@
     return result;
   }
   let activeBefore = true;
+
+  // Steady text. When an element's transform only moves and scales it, Chrome puts its glyphs on whole pixels
+  // vertically, so text that moves or zooms slowly steps a pixel at a time while the shapes around it glide (it
+  // wobbles against its own box). A tiny rotation, just past the angle Chrome still treats as level (sin × scale ≈
+  // 1/2048), makes it place glyphs at quarter pixels. Every element moved by an inline transform gets one; it depends
+  // only on this frame's styles, so 1 worker == N workers. (Compositor layers would also glide, but keep raster
+  // state from earlier frames.)
+  const TILT_SEL = '[style*="transform"],[style*="translate"],[style*="scale"]';
+  const TILT_DEG = 0.042, TILT_MAX = 0.12;
+  const tilted = new Map(); // element -> the rotate value set on it
+  const sheetRotate = new WeakMap(); // element -> its stylesheet gives it a rotate of its own
+  const setStyle = (v) => v && v !== 'none';
+  function ownScale(el) {
+    const cs = getComputedStyle(el);
+    let k = 1;
+    if (setStyle(cs.scale)) {
+      const p = cs.scale.split(/\s+/).map(parseFloat);
+      k *= Math.sqrt(Math.abs(p[0] * (p.length > 1 ? p[1] : p[0]))) || 1;
+    }
+    if (setStyle(cs.transform)) { try { const m = new DOMMatrixReadOnly(cs.transform); k *= Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1; } catch (e) {} }
+    return k;
+  }
+  function steadyText() {
+    handleRecords(mo.takeRecords());
+    const seen = new Set(), scales = new Map();
+    const scaleOf = (el) => { if (!el) return 1; let k = scales.get(el); if (k === undefined) { k = ownScale(el) * scaleOf(el.parentElement); scales.set(el, k); } return k; };
+    for (const el of document.querySelectorAll(TILT_SEL)) {
+      if (!(el instanceof HTMLElement)) continue;
+      const s = el.style;
+      if (!setStyle(s.transform) && !setStyle(s.translate) && !setStyle(s.scale)) continue;
+      const mine = tilted.get(el);
+      if (s.rotate && s.rotate !== mine) continue; // the page rotates it itself
+      if (mine === undefined) {
+        if (!sheetRotate.has(el)) sheetRotate.set(el, getComputedStyle(el).rotate !== 'none');
+        if (sheetRotate.get(el)) continue;
+      }
+      // smaller on screen needs a larger angle (computed transform and scale leave out rotate: the same answer
+      // whatever was drawn before)
+      const k = scaleOf(el);
+      const v = Math.round(Math.min(TILT_MAX, TILT_DEG / Math.min(1, k)) * 1e4) / 1e4 + 'deg';
+      if (mine !== v) { s.rotate = v; tilted.set(el, v); }
+      seen.add(el);
+    }
+    for (const [el, v] of tilted) if (!seen.has(el)) { if (el.style.rotate === v) el.style.rotate = ''; tilted.delete(el); }
+    dropOwnMutations();
+  }
 
   // ---------------------------------------------------------------------------
   // Helpers for authors

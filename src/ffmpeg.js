@@ -209,6 +209,13 @@ function volumeExpr(keys, scale = 1) {
   return `volume='${parts.join('+')}':eval=frame`;
 }
 
+/**
+ * Two loud tracks (a voice and music) add up past full scale and would hard-clip (crackle). A peak limiter keeps the
+ * sum under 0.966 and leaves everything quieter bit-exact. Its look-ahead delays the sound by 239 samples, so the
+ * mix is padded by that much first and the delay is cut off after it: same length, same timing.
+ */
+const PEAK_LIMIT = 'apad=pad_len=240,alimiter=limit=0.966:attack=5:release=50:level=disabled,atrim=start_sample=239,asetpts=PTS-STARTPTS';
+
 /** Build per-input audio filter chains. Inputs start at index `first`. */
 function audioChains(audio, args, first) {
   const filters = [], labels = [];
@@ -245,7 +252,7 @@ export async function mixAudio({ audio, out, format, duration }) {
   const bed = audio.length;
   args.push('-f', 'lavfi', '-t', duration.toFixed(4), '-i', 'anullsrc=r=48000:cl=stereo');
   filters.push(`[${bed}:a]asetpts=PTS-STARTPTS[bed]`);
-  filters.push(`[bed]${labels.join('')}amix=inputs=${labels.length + 1}:normalize=0:duration=first:dropout_transition=0,atrim=0:${duration.toFixed(4)}[aout]`);
+  filters.push(`[bed]${labels.join('')}amix=inputs=${labels.length + 1}:normalize=0:duration=first:dropout_transition=0,${PEAK_LIMIT},atrim=0:${duration.toFixed(4)}[aout]`);
   args.push('-filter_complex', filters.join(';'), '-map', '[aout]');
   const codec = { mp3: ['-c:a', 'libmp3lame', '-q:a', '2'], wav: ['-c:a', 'pcm_s16le'], m4a: ['-c:a', 'aac', '-b:a', '192k'], ogg: ['-c:a', 'libopus', '-b:a', '160k'], flac: ['-c:a', 'flac'] }[format] || [];
   args.push(...codec, out);
@@ -265,7 +272,7 @@ export async function finalize({ segments, listFile, out, format, duration, audi
     const bed = audio.length + 1;
     args.push('-f', 'lavfi', '-t', duration.toFixed(4), '-i', 'anullsrc=r=48000:cl=stereo');
     filters.push(`[${bed}:a]asetpts=PTS-STARTPTS[bed]`);
-    filters.push(`[bed]${labels.join('')}amix=inputs=${labels.length + 1}:normalize=0:duration=first:dropout_transition=0,atrim=0:${duration.toFixed(4)}[aout]`);
+    filters.push(`[bed]${labels.join('')}amix=inputs=${labels.length + 1}:normalize=0:duration=first:dropout_transition=0,${PEAK_LIMIT},atrim=0:${duration.toFixed(4)}[aout]`);
     args.push('-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[aout]');
     args.push('-c:v', 'copy');
     if (format === 'webm') args.push('-c:a', 'libopus', '-b:a', '160k');

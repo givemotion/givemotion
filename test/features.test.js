@@ -1128,6 +1128,32 @@ test('gm-include scope: the same part twice, each copy with its own ids, tween t
   assert.equal(off[2][1], '7px', 'unscoped: the part style leaks out');
 });
 
+test('audio: two loud tracks are limited instead of hard-clipping; quiet audio and timing stay exact', { skip }, async () => {
+  const d = tmp(), f = join(d, 'au.html'), ff = ffmpegPath();
+  const tone = (name, freq, vol) => execFileSync(ff, ['-v', 'error', '-y', '-f', 'lavfi', '-i', `sine=f=${freq}:d=2,volume=${vol}`, '-ar', '48000', '-ac', '2', join(d, name)]);
+  tone('a.wav', 220, 6.4); tone('b.wav', 330, 6.4); // 0.8 each: the sum reaches 1.6
+  const wav = async (loud) => {
+    writeFileSync(f, page(`<audio src="a.wav" data-volume="${loud ? 1 : 0.25}"></audio><audio src="b.wav" data-volume="${loud ? 1 : 0.25}"></audio>`, 'data-width="160" data-height="90" data-fps="10" data-duration="2"'));
+    const o = join(d, loud ? 'loud.mov' : 'quiet.mov'); // mov keeps the sound as 16-bit PCM
+    await render(f, { output: o, ...quiet });
+    const b = execFileSync(ff, ['-v', 'error', '-i', o, '-vn', '-f', 's16le', '-ac', '2', '-ar', '48000', '-'], { maxBuffer: 1 << 26 }), n = b.length >> 1;
+    return { n, at: (i) => b.readInt16LE(2 * i) };
+  };
+  const L = await wav(true), Q = await wav(false);
+  let peakL = 0, clipped = 0, peakQ = 0;
+  for (let i = 0; i < L.n; i++) { const v = Math.abs(L.at(i)); peakL = Math.max(peakL, v); if (v >= 32767) clipped++; }
+  for (let i = 0; i < Q.n; i++) peakQ = Math.max(peakQ, Math.abs(Q.at(i)));
+  assert.equal(clipped, 0, 'no hard-clipped samples');
+  assert.ok(peakL > 28000 && peakL <= 31700, 'limited near 0.966, not squashed: ' + peakL);
+  assert.equal(L.n, 2 * 96000, 'the mix is exactly 2 s of stereo');
+  // quiet (each track at 0.25, the sum is well below the limit): the limiter changes nothing (within one 16-bit step of rounding)
+  const ref = execFileSync(ff, ['-v', 'error', '-i', join(d, 'a.wav'), '-i', join(d, 'b.wav'), '-filter_complex', '[0]volume=0.25[x];[1]volume=0.25[y];[x][y]amix=inputs=2:normalize=0', '-f', 's16le', '-ac', '2', '-ar', '48000', '-'], { maxBuffer: 1 << 26 });
+  assert.ok(peakQ > 6000 && peakQ < 20000, 'quiet mix level ' + peakQ);
+  let off = 0, mx = 0;
+  for (let i = 0; i < Q.n; i++) { const df = Math.abs(Q.at(i) - ref.readInt16LE(2 * i)); if (df) { off++; mx = Math.max(mx, df); } }
+  assert.ok(mx <= 1, 'quiet samples that differ from the plain mix: ' + off + ' of ' + Q.n + ', max ' + mx);
+});
+
 test('check: pacing per element: short-hold and cut-exit; transitions, the last scene, exits, counters, quick-ok and swaps in place pass', { skip }, async () => {
   const d = tmp(), f = join(d, 'p.html');
   writeFileSync(f, page(`<style>h1,h2,p{margin:0;position:absolute}.card{position:absolute;background:#2a3a6a;padding:10px;border-radius:8px}</style>

@@ -928,6 +928,69 @@ const PAGE_MOTION = String.raw`(() => {
   return { els: out, names };
 })()`;
 
+// Layout position of every visible text, without transforms (a camera or a tween is not a layout shift): the box's place
+// in the layout plus where its first text sits inside the box (a taller inline thing next to the text moves the text).
+const PAGE_LAYOUT = String.raw`(() => {
+  const W = gm.width, H = gm.height, out = [], names = {}, seen = new Set();
+  let id = window.__gmLayId || 0;
+  const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  while (walk.nextNode() && seen.size < 400) {
+    const n = walk.currentNode, el = n.parentElement;
+    if (!n.data.trim() || !(el instanceof HTMLElement) || seen.has(el)) continue;
+    seen.add(el);
+    if (el.closest('[data-check~="ignore"],[aria-hidden="true"],[data-gm-internal],[data-gm-hidden]') || (!el.offsetParent && getComputedStyle(el).position !== 'fixed')) continue;
+    const cs = getComputedStyle(el);
+    if (cs.visibility !== 'visible' || parseFloat(cs.opacity) < 0.3) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4 || r.right <= 0 || r.bottom <= 0 || r.left >= W || r.top >= H || !el.offsetHeight) continue;
+    range.selectNodeContents(n);
+    const rc = range.getClientRects()[0];
+    if (!rc) continue;
+    let y = 0;
+    for (let e = el; e instanceof HTMLElement; e = e.offsetParent) y += e.offsetTop;
+    y += (rc.top - r.top) / (r.height / el.offsetHeight);
+    if (!el.__gmLayId) { el.__gmLayId = ++id; names[id] = gm.__selector(el); }
+    out.push([el.__gmLayId, Math.round(y * 10) / 10]);
+  }
+  window.__gmLayId = id;
+  return { els: out, names };
+})()`;
+
+// Text that goes up and down by a few px again and again with nothing animating it: something next to it or inside it
+// changes the line's height (a caret or icon added and removed, a swap between one line and two). A reflow that happens
+// once, a smooth bob, and a swap every couple of seconds are not wobbles: three or more abrupt flips back and forth by the
+// same amount, each less than 1.2 s after the last.
+export function layoutShiftIssues(samples, names, step) {
+  const series = new Map(); // id -> [[sample index, time, y]]
+  samples.forEach((s, i) => { for (const [id, y] of s.els) { let a = series.get(id); if (!a) series.set(id, (a = [])); a.push([i, s.t, y]); } });
+  const out = [];
+  for (const [id, a] of series) {
+    const ev = [];
+    for (let k = 1; k < a.length; k++) {
+      if (a[k][0] !== a[k - 1][0] + 1) continue;
+      const d = a[k][2] - a[k - 1][2];
+      if (Math.abs(d) >= 1.5 && Math.abs(d) <= 40) ev.push({ t: a[k][1], d });
+    }
+    const runs = [];
+    let run = [];
+    const flush = () => { if (run.length >= 3) runs.push(run); run = []; };
+    for (const e of ev) {
+      const p = run[run.length - 1];
+      if (p && e.t - p.t <= 1.2 && Math.sign(e.d) === -Math.sign(p.d) && Math.abs(Math.abs(e.d) - Math.abs(p.d)) <= 2) run.push(e);
+      else { flush(); run = [e]; }
+    }
+    flush();
+    if (!runs.length) continue;
+    const flips = runs.reduce((n, r) => n + r.length, 0), amp = Math.max(...runs.flat().map((e) => Math.abs(e.d)));
+    const ranges = runs.map((r) => [Math.max(0, Math.round((r[0].t - step) * 100) / 100), r[r.length - 1].t]);
+    out.push({ severity: 'warning', code: 'layout-shift', selector: names[id], time: ranges[0][0], until: ranges[ranges.length - 1][1], ranges,
+      message: `This text moves up and down by ${Math.round(amp * 10) / 10} px (${flips} jumps back and forth) with nothing animating it: something next to it or inside it changes the height of its line.`,
+      fix: 'Blink or toggle with opacity or visibility, not display or by adding and removing an element; give the parts that change the same height and vertical-align (a caret: height 1em, vertical-align text-bottom), or a fixed line-height on the box.' });
+  }
+  return out;
+}
+
 // Once: is motion blur off (classic motion, or turned off), and which easing curve each tween and entrance uses.
 // Script tweens are read from the page's own scripts (blocks are not the author's choice and are left out).
 const PAGE_EASES = String.raw`(async () => {
@@ -1394,6 +1457,7 @@ export async function check(input, opts = {}) {
     const watchMotion = opts.at == null && opts.motion !== false;
     let moSetup = null;
     const moSamples = [], moNames = {};
+    const layoutSamples = [], layoutNames = {}; // where each text sits in the layout at every sample
     const paceSamples = [], paceMeta = {}, pops = []; // pacing per element (short holds, cuts with no exit, slivers)
     if (watchMotion) { try { moSetup = await ctx.page.evaluate(PAGE_EASES); } catch (e) { moSetup = null; } }
     if (opts.at == null) { try { push(await ctx.page.evaluate(PAGE_CSS_VS_TWEEN)); } catch (e) {} }
@@ -1402,6 +1466,7 @@ export async function check(input, opts = {}) {
       const a = await ctx.page.evaluate(`(${PAGE_ANALYZE})(${prevT == null ? 0 : t - prevT}, ${JSON.stringify({ safeZone: opts.safeZone || null, t })})`);
       if (opts.at == null) { try { const pc = await ctx.page.evaluate(`(${PAGE_PACING})(${prevT == null ? 0 : t - prevT}, ${t})`); paceSamples.push({ t, units: pc.units, clips: pc.clips }); Object.assign(paceMeta, pc.meta); pops.push(...pc.pops); } catch (e) {} }
       prevT = t;
+      if (opts.at == null) { try { const l = await ctx.page.evaluate(PAGE_LAYOUT); layoutSamples.push({ t, els: l.els }); Object.assign(layoutNames, l.names); } catch (e) {} }
       if (moSetup) { try { const m = await ctx.page.evaluate(PAGE_MOTION); moSamples.push({ t, els: m.els }); Object.assign(moNames, m.names); } catch (e) {} }
       if (opts.at != null && Math.abs(t - +opts.at) > 0.5 / fps) continue; // warm-up samples only feed motion detection
       perSample.push({ t, issues: a.issues });
@@ -1453,6 +1518,7 @@ export async function check(input, opts = {}) {
     const logs = groupLogs(await ctx.page.evaluate('window.gm && gm.__logs ? gm.__logs(0) : []'));
     if (change.length) issues.push(...stillStretches(change, info, from, to));
     if (moSetup) issues.push(...motionIssues(moSamples, moNames, moSetup, info, step));
+    if (opts.at == null) issues.push(...layoutShiftIssues(layoutSamples, layoutNames, step));
     if (opts.at == null) {
       issues.push(...pacingIssues(paceSamples, paceMeta, pops, { from, to, lastT, duration: info.duration }));
       try {

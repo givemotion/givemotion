@@ -81,6 +81,20 @@ test('typewriter: every letter appears where it stays (centred text does not dri
   assert.equal(early.height, late.height, 'the box changed size while typing');
 });
 
+test('check: text that jumps up and down because something next to it changes the line height is reported (a one-time reflow, a smooth bob and an opacity blink are not)', { skip }, async () => {
+  const d = tmp();
+  const make = (name, script) => { const f = join(d, name + '.html'); writeFileSync(f, page(`<style>#b{position:absolute;left:60px;top:100px;width:500px;line-height:1;font:600 30px Inter}#c{display:inline-block;width:3px;height:1.8em;background:#fff;margin-left:4px}</style>
+    <div id="b"><span id="s">Every morning</span><span id="c"></span></div><script>${script}</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="4"')); return f; };
+  const blink = (prop, on, off) => `const tl = gm.timeline(); for (let i = 0; i < 8; i++) tl.set('#c', { ${prop}: i % 2 ? '${on}' : '${off}' }, 0.5 * i);`;
+  const codes = async (f) => (await check(f)).issues.filter((i) => i.code === 'layout-shift');
+  const wobble = await codes(make('wobble', blink('height', '1.8em', '0em')));
+  assert.equal(wobble.length, 1, 'a caret that changes the line height should be reported once');
+  assert.equal(wobble[0].selector, '#s');
+  assert.deepEqual(await codes(make('opacity', blink('opacity', '1', '0'))), [], 'an opacity blink does not move the text');
+  assert.deepEqual(await codes(make('once', `gm.timeline().set('#c', { height: '0em' }, 2);`)), [], 'a reflow that happens once is not a wobble');
+  assert.deepEqual(await codes(make('bob', `gm.timeline().to('#b', { top: 130, duration: 1, repeat: 3, yoyo: true, ease: 'sine.inOut' }, 0);`)), [], 'a smooth bob is not a wobble');
+});
+
 test('check: a font that is neither loaded nor installed is reported once; bundled, declared and generic fonts are not', { skip }, async () => {
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, page(`<style>@font-face{font-family:Gone;src:url(nope.woff2) format('woff2')}</style><div data-duration="2" style="font-size:40px">

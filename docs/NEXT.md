@@ -65,10 +65,8 @@ second. Do not reformat files you are not changing.
   (frames differed per run); `loading="lazy"` images no longer hang the render for 60 s; SVG SMIL animations follow the
   video clock (they sat still at a different place every run); `check` warns `font-unavailable` for a font that is neither
   loaded nor installed.
-- Ideas from the same pass, not done: a `check` rule for layout shift (text whose layout position goes up and down by a few
-  px with no animation of its own, like a caret that changes the line height; needs per-sample state and has false
-  positives with lists that reflow); the typewriter (`data-type`) removes untyped text, so centred text drifts as it grows and
-  a word jumps to the next line when it no longer fits (reserving the final layout with hidden text would fix both).
+- Done 2026-10-30: `check` `layout-shift` (text going up and down because its line's height changes, like the caret
+  bug seen in a React video) and the typewriter keeps the untyped text in the layout (no drift, no word jumping).
 - Open: tile memory is now 4 GB per Chrome (a ceiling, not an allocation). With many workers on a very heavy 4K page,
   watch memory; the worker count could take it into account.
 

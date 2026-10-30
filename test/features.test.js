@@ -846,7 +846,7 @@ import { resolveMotionBlur } from '../src/render.js';
 import { imageLength } from '../src/ffmpeg.js';
 
 test('motion blur: flag values', () => {
-  assert.deepEqual(resolveMotionBlur(undefined), { mode: 'off', samples: 1, why: 'default' }); // auto is opt-in until validated
+  assert.deepEqual(resolveMotionBlur(undefined), { mode: 'auto', samples: 1 }); // on by default in natural motion
   assert.equal(resolveMotionBlur(undefined, { motion: 'classic' }).mode, 'off');
   assert.equal(resolveMotionBlur('auto', { motion: 'classic' }).mode, 'auto');
   assert.equal(resolveMotionBlur('off').mode, 'off');
@@ -1254,6 +1254,21 @@ test('check: timeline-no-target names each selector of a list that matched nothi
   assert.equal(w.length, 1);
   assert.match(w[0].message, /"#gone" matched nothing/);
   assert.doesNotMatch(w[0].message, /"#a"/);
+});
+
+test('word times: data-words names the voice-over transcript; @word in data-cuts, data-start and gm.word; a word that is not said is an error with near matches', { skip }, async () => {
+  const d = tmp(), f = join(d, 'w.html');
+  writeFileSync(join(d, 'voice.json'), JSON.stringify([['Meet', 0.2], ['Tidewell.', 0.6], ['Spring', 1.9], ['pricing', 2.3], ['has', 2.9], ['three', 3.4], ['plans.', 3.7], ['Pricing', 5.1]].map(([word, start]) => ({ word, start, end: start + 0.35 }))));
+  writeFileSync(f, page(`<main data-sequence data-cuts="0 @spring_pricing @three_plans"><section class="scene" id="a">A</section><section class="scene" id="b">B</section><section class="scene" id="c" data-duration="2">C</section></main>
+    <b id="tag" data-start="@pricing#2" style="position:absolute">!</b><script>window.__w = [gm.word('pricing'), gm.word('tidewell.end'), gm.word('plans+0.5')];</script>`, 'data-width="320" data-height="180" data-fps="30" data-words="voice.json"'));
+  const info = await inspect(f);
+  const clip = (sel) => info.clips.find((c) => c.selector === sel);
+  assert.deepEqual([clip('#a').start, clip('#b').start, clip('#c').start, clip('#tag').start], [0, 1.9, 3.4, 5.1]);
+  assert.deepEqual(await evalAt(f, 0, 'window.__w.map((x) => Math.round(x * 100) / 100)'), [2.3, 0.95, 4.2]);
+  writeFileSync(f, readFileSync(f, 'utf8').replace('@three_plans', '@tree_plans'));
+  const bad = (await check(f, { fast: true })).issues.find((i) => i.code === 'word-not-found');
+  assert.ok(bad && bad.severity === 'error', 'a word that is not in the transcript');
+  assert.match(bad.fix, /three/);
 });
 
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {

@@ -67,8 +67,8 @@ Render options
   --workers <n>          Parallel browsers (default: based on CPU and memory)
   --transparent          Keep transparency (use --format mov or webm)
   --muted                No audio track
-  --motion-blur <mode>   off (default); auto: extra sub-frames only where something moves fast (experimental:
-                         very fast text can show stepped copies); or a number of sub-frames for every frame (e.g. 8)
+  --motion-blur <mode>   auto (default): a smear on what moves fast in each frame; off: every frame sharp
+                         (also data-motion="classic"); or a number of sub-frames for every frame (e.g. 8)
   --shutter <0-1>        Motion blur shutter (default 0.5 = 180°)
   --data <file.json>     Data for data-bind / gm.data
   --props '<json>'       Same, inline

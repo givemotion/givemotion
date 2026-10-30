@@ -81,7 +81,7 @@ Rewarded: a camera that pushes into the subject (zoom into the code with numbere
   - To mark the next thing, let this mark leave and the next one appear on its target. A mark that slides across the screen to the next target reads as a glitch (except along a list, row to row).
   - Pick one look for the whole video from the style or brand (a highlighter wash for text, a glow on a card's own edge, an underline, a drawn ring for hand-drawn styles) and keep it. The look is taste; the rules above are not.
 - **A big hit** (logo lock, peak number): at the same time, a burst of sparks, a ring that scales 0.6→1.6 while fading, `camera.shake` 10–16 px for 0.3–0.4 s, a 0.1 s brightness flash. Put it on a music hit if there is music.
-- **Motion blur** is off by default. `--motion-blur auto` (experimental) gives extra sub-frames only to frames where something moves fast; very fast text can show stepped copies, so check the frames. `--motion-blur 8` blurs every frame (smooth but slow). Whip transitions and `rise`/`blur` entrances already carry their own blur.
+- **Motion blur** is on by default (natural motion): whatever moves fast in a frame gets a camera's smear along its move, worked out per frame, for almost no render time. `--motion-blur off` (or `<html data-motion="classic">`) keeps every frame sharp; `--motion-blur 8` renders 8 sub-frames per frame instead (true blur, 8x slower). Whip transitions and `rise`/`blur` entrances already carry their own blur.
 
 ### What the engine already does for you (natural motion, the default)
 

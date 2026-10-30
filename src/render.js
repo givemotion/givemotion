@@ -77,7 +77,9 @@ export function resolveMotionBlur(value, { motion = 'natural' } = {}) {
   const v = value == null || value === true ? '' : String(value).trim().toLowerCase();
   if (v === 'off' || v === 'false' || v === 'none' || v === 'no' || v === '0') return { mode: 'off', samples: 1 };
   if (v === '' || v === 'auto' || v === 'on') {
-    if (v === '') return { mode: 'off', samples: 1, why: motion === 'classic' ? 'classic' : 'default' }; // auto is opt-in until validated
+    // natural motion (the default): fast moves get a camera's smear, measured per frame (0-3% render time on the
+    // examples); classic motion stays sharp
+    if (v === '' && motion === 'classic') return { mode: 'off', samples: 1, why: 'classic' };
     return { mode: 'auto', samples: 1 };
   }
   const n = parseInt(v, 10);

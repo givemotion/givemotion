@@ -17,7 +17,7 @@ Contents
 
 - `still video.html -t 3.2 -o f.png` (or `--frame <n>`) renders one exact frame; `--transparent` for a PNG with alpha.
 - `render v.html -o sound.mp3` (or .wav/.m4a) exports only the soundtrack.
-- Motion blur is off by default. `--motion-blur auto` (experimental) gives extra sub-frames only to frames where something moves fast (the render log says how many and the cost); with 2-4 sub-frames very fast text can show stepped copies, so look at those frames. A number forces that many sub-frames on every frame (smooth, but each frame renders n times).
+- Motion blur is on by default (`--motion-blur auto`): what moves fast in a frame gets a smear along its move (0-3% render time on the examples; the render log says how many frames). `--motion-blur off` keeps frames sharp (also `data-motion="classic"`). A number forces that many sub-frames on every frame (smooth, but each frame renders n times).
 - **`--scale`** takes a number or a fraction. A whole scale (2, 3) always works. A fractional one must turn the layout into whole pixels, even ones for a video file: `--scale 4/3` makes 1920x1080 into 2560x1440 (also `1.5` → 2880x1620, `1.25` → 2400x1350). `1.333` would give 2559.36x1439.64, which the browser rounds to an odd, slightly stretched 2559x1440, so the render stops before it starts and names the scale that works (`--scale 4/3`). Layout, `var(--px)` and `gm.px` stay those of the composition's own size; text and SVG are drawn sharp at the bigger size, images at their own resolution. 1 worker == N workers holds at any scale.
 - `npx givemotion doctor` checks Chrome, ffmpeg and which encoder is used; `npx givemotion install` downloads the Chrome build used for rendering; `npx givemotion clean` deletes cached frames.
 

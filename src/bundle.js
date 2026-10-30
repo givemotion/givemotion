@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, copyFileS
 import { join, dirname, resolve, relative, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveInput } from './render.js';
-import { expandIncludes, applyData, readRuntime, scriptJSON, safeJoin } from './server.js';
+import { expandIncludes, inlineWords, applyData, readRuntime, scriptJSON, safeJoin } from './server.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -23,6 +23,7 @@ export function bundle(input, opts = {}) {
   const outDir = resolve(opts.output || join(dir, 'bundle'));
   let html = readFileSync(file, 'utf8');
   html = expandIncludes(html, dir, root);
+  html = inlineWords(html, dir, root);
   html = applyData(html, opts.data ?? null);
   // Find files the page uses, including files those files use (css, json).
   // A bundle is made to be published: only files the server would serve (inside the project folder, never

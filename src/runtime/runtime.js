@@ -160,8 +160,44 @@
   // Time parsing: "1.5", "1.5s", "500ms", "45f", "1:02.5"
   // ---------------------------------------------------------------------------
   let FPS = 30;
+  // Words of the voice-over (<html data-words="voice.json">): "@pricing" is when "pricing" is first said,
+  // "@spring_pricing" a phrase, "@pricing#2" the second time, "@pricing.end" when it ends, "@pricing+0.3" a bit after.
+  let wordsCache;
+  const normWord = (w) => String(w).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}']+/gu, '').replace(/^'+|'+$/g, '');
+  function words() {
+    if (wordsCache !== undefined) return wordsCache;
+    wordsCache = null;
+    const s = document.getElementById('gm-words');
+    if (!s) return null;
+    try {
+      const j = JSON.parse(s.textContent);
+      if (j.error) report('error', 'words-file', j.error, null, 'Put the word-timed JSON ([{"word":"Hi","start":0.2,"end":0.5}, …], e.g. from a transcription tool) in the project folder and name it in <html data-words="voice.json">.');
+      else wordsCache = { file: j.file, list: j.words.map((w) => ({ ...w, n: normWord(w.word) })) };
+    } catch (e) {}
+    return wordsCache;
+  }
+  function wordTime(spec, el, attr) {
+    const m = /^@([^#.+\-\s][^#+\s]*?)(?:#(\d+))?(\.end|\.start)?([+-][\d.]+)?$/.exec(String(spec).trim());
+    const W = words();
+    if (!W) { report('error', 'words-missing', `${attr || 'A time'} "${spec}" names a word, but the page has no transcript.`, el, 'Add <html data-words="voice.json"> (a word-timed JSON: [{"word":"Hi","start":0.2,"end":0.5}, …]).'); return null; }
+    if (!m) { report('error', 'bad-time', `Cannot read the word time "${spec}"${attr ? ' in ' + attr : ''}.`, el, 'Write @word, @two_words (a phrase), @word#2 (the 2nd time it is said), @word.end, @word+0.3.'); return null; }
+    const want = m[1].split(/[_~]+/).map(normWord).filter(Boolean), nth = m[2] ? +m[2] : 1;
+    let seen = 0;
+    for (let i = 0; i + want.length <= W.list.length; i++) {
+      if (!want.every((w, k) => W.list[i + k].n === w)) continue;
+      if (++seen < nth) continue;
+      const t = m[3] === '.end' ? W.list[i + want.length - 1].end : W.list[i].start;
+      return t + (m[4] ? parseFloat(m[4]) : 0);
+    }
+    const dist = (a, b) => { let p = [...Array(b.length + 1).keys()]; for (let i = 1; i <= a.length; i++) { const c = [i]; for (let j = 1; j <= b.length; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); p = c; } return p[b.length]; };
+    const miss = want.find((w) => !W.list.some((x) => x.n === w)) || want[0];
+    const near = [...new Set(W.list.map((w) => w.n))].filter((n) => n && dist(n, miss) <= Math.max(1, Math.floor(miss.length / 3))).slice(0, 6);
+    report('error', 'word-not-found', `"${spec}"${attr ? ' (' + attr + ')' : ''}: ${seen ? `"${want.join(' ')}" is said only ${seen} time${seen > 1 ? 's' : ''}` : `"${want.join(' ')}" is not in ${W.file}`}.`, el, near.length ? `Words like it in the transcript: ${near.join(', ')}.` : 'Check the spelling against the transcript; join the words of a phrase with _ (@spring_pricing).');
+    return null;
+  }
   function parseTime(v, el, attr) {
     if (v == null || v === '') return null;
+    if (String(v).trim()[0] === '@') return wordTime(v, el, attr);
     const s = String(v).trim().toLowerCase();
     let m;
     if ((m = /^(-?[\d.]+)\s*ms$/.exec(s))) return parseFloat(m[1]) / 1000;
@@ -2027,6 +2063,9 @@
     wait(p) { waits.push(typeof p === 'function' ? p() : p); return p; },
     // Beat grid from <html data-bpm data-beat-offset data-bar-offset data-beats-per-bar> (printed by `givemotion audio`).
     beat(n = 0) { const g = beatGrid(); return g.offset + n * g.period; },
+    // when a word of the voice-over is said (video time): gm.word('pricing'), gm.word('spring_pricing#2.end')
+    word(spec) { const t = wordTime(String(spec)[0] === '@' ? spec : '@' + spec, null, 'gm.word'); return t == null ? 0 : t; },
+    get words() { const W = words(); return W ? W.list.map(({ word, start, end }) => ({ word, start, end })) : []; },
     bar(n = 0) { const g = beatGrid(); return g.barOffset + n * g.perBar * g.period; },
     timing(el) { if (typeof el === 'string') el = document.querySelector(el); if (!clips.length) { try { buildTimeline(); timelineDirty = true; } catch (e) {} } const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
     interpolate, spring, noise, easing,

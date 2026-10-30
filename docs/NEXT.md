@@ -119,8 +119,8 @@ editor flag a misspelled `gm.timline()`; today `gm` is `any` (`typings/env.d.ts`
 ## N7. Natural, real-world motion (Leo's request; start here)
 **Status 2026-10-30: mostly built.** `gm.motion` is 'natural' by default (physical easing, operator camera that blends
 shots, arcs, natural exits), `check` has `camera-stop` and `fast-no-blur`, and `--motion-blur auto` exists. Still open:
-the seeded breathing drift on held shots (not found in the runtime), motion blur on by default (stays opt-in until it
-meets quality at <25% cost), a smoothness number in `analyze`, and the blind-judge comparison of old vs new motion.
+motion blur on by default (done 2026-10-30: auto costs 0-3% on bench and data-story and its smear has no steps;
+classic stays sharp; the breathing drift was already there), a smoothness number in `analyze`, and the blind-judge comparison of old vs new motion.
 The list below is the original plan; check the code before building any item.
 
 Videos still move like software: every move eases from a dead stop to a dead stop, consecutive moves and camera shots

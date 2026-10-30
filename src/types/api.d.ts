@@ -142,7 +142,7 @@ export interface RenderOptions extends OpenOptions {
   noReuse?: boolean;
   /** No audio track. */
   muted?: boolean;
-  /** "off" (default), "auto" (extra sub-frames only where something moves fast), or sub-frames per frame (e.g. 8). */
+  /** "auto" (default in natural motion: a smear on what moves fast), "off", or sub-frames per frame (e.g. 8). */
   motionBlur?: 'off' | 'auto' | number | string;
   /** Motion blur shutter, 0-1 (default 0.5). */
   shutter?: number;

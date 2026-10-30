@@ -113,6 +113,31 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').repl
 export const scriptJSON = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 /**
+ * <html data-words="voice.json">: the word-timed transcript of the voice-over ([{word, start, end}], the captions
+ * format) is put in the page, so times can name a word: data-start="@pricing", data-cuts="0 @spring_pricing",
+ * gm.word('pricing'). Only a file inside the project (like every file the page reads).
+ */
+export function inlineWords(html, fileDir, rootDir) {
+  const m = /<html\b[^>]*\bdata-words\s*=\s*["']([^"']+)["']/i.exec(html);
+  if (!m) return html;
+  const f = resolve(fileDir, m[1]), rel = f.startsWith(resolve(rootDir) + sep) ? f.slice(resolve(rootDir).length + 1) : null;
+  const safe = rel != null && safeJoin(resolve(rootDir), rel);
+  let words = null, error = null;
+  if (!safe || !existsSync(safe)) error = `data-words: ${m[1]} was not found (it must be inside the project folder).`;
+  else {
+    try {
+      const j = JSON.parse(readFileSync(safe, 'utf8'));
+      const list = Array.isArray(j) ? j : Array.isArray(j.words) ? j.words : Array.isArray(j.segments) ? j.segments.flatMap((x) => x.words || []) : null;
+      if (!list) error = `data-words: ${m[1]} is not a list of {word, start, end}.`;
+      else words = list.map((w) => ({ word: String(w.word ?? w.text ?? ''), start: +w.start, end: +(w.end ?? w.start) })).filter((w) => w.word && isFinite(w.start));
+    } catch (e) { error = `data-words: ${m[1]} is not valid JSON (${e.message}).`; }
+  }
+  const tag = `<script type="application/json" id="gm-words">${scriptJSON({ file: m[1], words, error })}</script>`;
+  const head = /<head\b[^>]*>/i.exec(html);
+  return head ? html.slice(0, head.index + head[0].length) + tag + html.slice(head.index + head[0].length) : /<body\b[^>]*>/i.test(html) ? html.replace(/<body\b[^>]*>/i, (b) => b + tag) : tag + html;
+}
+
+/**
  * Replace {{data.path}} / {{data.path|default}} with values from the render data
  * (--data / --props, or the page's <script type="application/json" id="gm-data">).
  * Arrays become comma lists, objects become JSON. Values are HTML-escaped (safe in text and quoted
@@ -280,6 +305,7 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         if (u.searchParams.has('source')) return send(res, 200, 'text/plain; charset=utf-8', readFileSync(file, 'utf8'), { 'Cache-Control': 'no-store' });
         let html = readFileSync(file, 'utf8');
         html = expandIncludes(html, dirname(file), root);
+        html = inlineWords(html, dirname(file), root);
         html = applyData(html, data);
         // Pages that host <gm-player>, or are already bundled, are normal web pages: no runtime.
         if (!u.searchParams.has('raw') && !/<gm-player\b|data-gm-preset>|<meta[^>]+name=["']givemotion["'][^>]+off/i.test(html)) html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });

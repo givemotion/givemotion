@@ -1888,6 +1888,7 @@
     const scaleOf = (el) => { if (!el) return 1; let k = scales.get(el); if (k === undefined) { k = ownScale(el) * scaleOf(el.parentElement); scales.set(el, k); } return k; };
     for (const el of document.querySelectorAll(TILT_SEL)) {
       if (el instanceof HTMLElement && (setStyle(el.style.transform) || setStyle(el.style.translate) || setStyle(el.style.scale))) cands.add(el);
+      else if (el instanceof SVGTextElement && setStyle(el.style.transform)) cands.add(el);
     }
     // elements moved by the page's own CSS animation or Web Animation (@keyframes) are on a composited layer that Chrome
     // rasters by its own rules; with the tilt they are drawn like an inline transform. (Not the engine's own enter and
@@ -1900,6 +1901,9 @@
     for (const el of cands) {
       const s = el.style;
       const mine = tilted.get(el);
+      // SVG text turns about the origin of the picture unless it has its own pivot: tweens give it its middle (motion.js),
+      // and only then is a tiny turn free of any shift
+      if (el instanceof SVGElement && !(s.transformBox === 'fill-box' && s.transformOrigin === '50% 50%')) continue;
       if (s.rotate && s.rotate !== mine) continue; // the page rotates it itself
       if (mine === undefined) {
         if (!sheetRotate.has(el)) sheetRotate.set(el, getComputedStyle(el).rotate !== 'none');

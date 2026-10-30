@@ -97,7 +97,7 @@ test('entrance (opacity + move) on text: 1 worker == 2 workers byte for byte, al
   assert.deepEqual(fa.map((m, i) => (m === fb[i] ? null : i)).filter((i) => i != null), [], 'frames that differ between 1 and 2 workers');
 });
 
-test('steady text: slowly moving text glides with its box instead of stepping whole pixels (a timeline tween and a CSS animation; 1 worker == 2 workers)', { skip }, async () => {
+test('steady text: slowly moving text glides with its box instead of stepping whole pixels (a timeline tween, SVG text and a CSS animation; 1 worker == 2 workers)', { skip }, async () => {
   // 12 px down in 2 s (0.2 px a frame). Without the runtime's tilt Chrome puts the glyphs on whole pixels: the text
   // stays still for 4 frames and jumps a pixel while the bar under it glides (rms of the 2nd difference ~0.64 px).
   // A CSS @keyframes animation is on a composited layer: a fresh page glides, a worker that starts mid-video steps.
@@ -106,6 +106,7 @@ test('steady text: slowly moving text glides with its box instead of stepping wh
   const attrs = 'data-width="640" data-height="360" data-fps="30" data-duration="2"';
   const pages = {
     tween: comp(d, 'tween.html', box('') + `<script>gm.timeline().fromTo('#w', { y: 0 }, { y: 12, duration: 2, ease: 'linear' }, 0)</script>`, attrs),
+    svg: comp(d, 'svg.html', `<svg width="640" height="360" style="position:absolute;left:0;top:0"><text id="w" x="100" y="180" font-size="44" font-weight="600" fill="#fff" font-family="Inter">Every morning</text></svg><script>gm.timeline().fromTo('#w', { y: 0 }, { y: 12, duration: 2, ease: 'linear' }, 0)</script>`, attrs),
     css: comp(d, 'css.html', `<style>@keyframes drop { from { transform: translateY(0) } to { transform: translateY(12px) } }</style>` + box('animation:drop 2s linear both'), attrs),
   };
   for (const [name, f] of Object.entries(pages)) {

@@ -54,8 +54,9 @@ second. Do not reformat files you are not changing.
   `rotate` (runtime `steadyText`), so their text lands at quarter pixels instead of stepping whole pixels (rms 2nd
   difference 0.64 → 0.02 px on a slow move, 0.15 → 0.02 on a camera drift). A plain `@keyframes` move is now also
   identical for 1 and N workers (before, a worker starting mid-video stepped while the first glided). Not covered: the engine's own `data-enter`/`data-exit` animations (the tilt broke their 1 == N match; they step like
-  any composited layer, but entrances are short). Not covered or not tried: SVG
-  `<text>`, elements shown smaller than ~0.35x, CSS `transition`s.
+  any composited layer, but entrances are short). SVG `<text>` moved by a tween is now tilted too
+  (about its own middle, which tweens already set as its pivot; jitter 0.64 → 0.03 px). Not covered or not tried: SVG text
+  moved by a CSS animation, elements shown smaller than ~0.35x, CSS `transition`s.
 - Done 2026-10-30: determinism of entrances (opacity + move) and of CSS animations that move and scale. Chrome keeps a
   text layer's raster phase for about a second after a move; a worker that continued from the earlier part had it, one that
   started at a part did not. Every part start now drops the layers of animated elements that hold text

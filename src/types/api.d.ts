@@ -2,7 +2,7 @@
 // The JS source uses these through JSDoc (`@param {import('./types/api.js').RenderOptions} [opts]`), and
 // test/types/api.test-types.ts checks that the functions in src/ still match the declarations at the bottom.
 
-/** A composition: an .html (or .jsx/.tsx) file, or a folder with index.html in it. Default: index.html. */
+/** A composition: an .html file, or a folder with index.html in it. Default: index.html. */
 export type Input = string | undefined;
 
 /** Options every command that opens a composition takes. */

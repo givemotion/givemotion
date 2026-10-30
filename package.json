@@ -21,7 +21,6 @@
       "types": "./src/types/api.d.ts",
       "default": "./src/api.js"
     },
-    "./react": "./src/react/index.jsx",
     "./runtime": "./src/runtime/runtime.js",
     "./preset.css": "./src/runtime/preset.css",
     "./package.json": "./package.json"
@@ -76,27 +75,8 @@
     "free",
     "mit"
   ],
-  "peerDependencies": {
-    "esbuild": "^0.28.2",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
-  },
-  "peerDependenciesMeta": {
-    "esbuild": {
-      "optional": true
-    },
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@types/node": "^20.19.43",
-    "esbuild": "^0.28.2",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
     "typescript": "^5.9.3"
   }
 }

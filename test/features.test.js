@@ -12,7 +12,6 @@ import { render, check, inspect, openComposition } from '../src/api.js';
 import { formatReport } from '../src/check.js';
 
 const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
-const hasEsbuild = await import('esbuild').then(() => true, () => false);
 const tmp = () => mkdtempSync(join(tmpdir(), 'gm-feat-'));
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const quiet = { quiet: true, log: () => {} };
@@ -28,20 +27,6 @@ test('timeline: from/to/stagger values at exact times', { skip }, async () => {
     <script>gm.timeline().fromTo('.b', { x: 0, opacity: 0 }, { x: 100, opacity: 1, duration: 1, ease: 'linear', stagger: 0.5 }, 0);</script>`));
   const v = await evalAt(f, 0.5, `[...document.querySelectorAll('.b')].map(e => [Math.round(new DOMMatrix(getComputedStyle(e).transform).e), +getComputedStyle(e).opacity])`);
   assert.deepEqual(v, [[50, 0.5], [0, 0]]);
-});
-
-test('react: .jsx renders and 1 worker equals 2 workers', { skip: skip || (!hasEsbuild && 'needs the optional esbuild, react and react-dom (npm install)') }, async () => {
-  const d = tmp(), f = join(d, 'v.jsx');
-  writeFileSync(f, `import { Scene, Sequence, useTime, interpolate } from 'givemotion/react';
-export const config = { width: 320, height: 180, fps: 30 };
-function Dot() { const t = useTime(); return <div style={{ width: 40, height: 40, background: '#f55', transform: 'translateX(' + interpolate(t, [0, 1], [0, 200]) + 'px)' }} />; }
-export default function V() { return <Sequence transition="fade 0.3"><Scene duration={1}><Dot /></Scene><Scene duration={1} style={{ background: '#225' }}><Dot /></Scene></Sequence>; }`);
-  const a = join(d, 'a'), b = join(d, 'b');
-  await render(f, { output: a, workers: 1, ...quiet });
-  await render(f, { output: b, workers: 2, ...quiet });
-  const fa = readdirSync(a).sort();
-  assert.ok(fa.length >= 50);
-  for (const x of fa) assert.ok(readFileSync(join(a, x)).equals(readFileSync(join(b, x))), 'frame differs: ' + x);
 });
 
 test('audio: beat grid lands on the kicks of a 120 BPM click track', { skip }, async () => {

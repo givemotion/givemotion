@@ -31,8 +31,6 @@ covered by the MIT license in `LICENSE`. The repository ships no music or other 
 
 | Package | License | Used for |
 |---|---|---|
-| `react`, `react-dom` | MIT | React compositions |
-| `esbuild` | MIT | Compiling `.jsx` / `.tsx` compositions |
 
 ## Used at run time, installed separately
 

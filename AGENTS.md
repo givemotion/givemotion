@@ -2,7 +2,7 @@
 
 - Using givemotion to make a video? Read `skills/givemotion/SKILL.md` instead (and the `references/` files it points to).
 - Before fixing a problem someone saw in a video, decide where the fix belongs: engine, skill, the user's own brand and
-  taste, or nowhere. The rules are in `CLAUDE.md` ("How to handle feedback"). The authoring format is HTML/CSS/JS (JSX is an optional thin input).
+  taste, or nowhere. The rules are in `CLAUDE.md` ("How to handle feedback"). The authoring format is HTML/CSS/JS only (no JSX).
 - Zero runtime dependencies. Node 20+ built-ins only. Keep it that way.
 - Plain JavaScript, type-checked from JSDoc: no build step, the files run (and the runtime is injected into Chrome) as
   they are. `npm run typecheck` (`tsc -p .`, also the first step of `npm test`) must stay at zero errors. TypeScript

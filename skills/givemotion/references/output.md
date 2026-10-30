@@ -8,7 +8,6 @@ Contents
 - Render cost and speed
 - Overlays with transparency
 - Share and embed
-- React (JSX) compositions
 
 ## Render options
 
@@ -59,10 +58,6 @@ Leave `<html>` and `<body>` without a background, then `npx givemotion render ov
 ## Share and embed
 
 `npx givemotion bundle video.html -o dist/` writes a standalone page (runtime inlined, blocks expanded, assets copied; plays in any browser, served by any static web server, not opened as `file://`), `gm-player.js` and a demo `player.html`. Embed in a site or app: `<script src="gm-player.js"></script><gm-player src="video.html" controls autoplay loop muted></gm-player>` (methods `play()`, `pause()`, `seekTo(s)`; events `ready`, `timeupdate`, `ended`; `data='{"name":"Ana"}'` feeds `gm.data`).
-
-## React (JSX) compositions
-
-You can also write a composition as a React component in `video.jsx` (or `.tsx`); every command works the same (`check video.jsx`, `render video.jsx`). Plain HTML is the recommended format (in tests it scored as well or better); use JSX when you already have React components. Read `references/react.md` for the API (`Sequence`, `Scene`, `Clip`, `useTime`, `useTimeline` …).
 
 ## Colour
 

@@ -146,7 +146,7 @@ Also built in (tables in `references/api.md`): `data-enter`/`data-exit` presets,
 | Music, beats, voice-over, video clips, captions files | `references/media-audio.md` |
 | Data/templates, `<gm-include>`, blocks, the cursor block | `references/data-templates.md` |
 | `gm.onFrame`, canvas, three.js, `gm.burst`, springs, noise, random, Lottie | `references/javascript.md` |
-| Render options, transparency, cache, React/JSX | `references/output.md`, `references/react.md` |
+| Render options, transparency, cache | `references/output.md` |
 | Reviewing frames, learning from a reference video | `references/review.md` |
 | A check code | `references/check-codes.md` |
 | Motion principles in depth (optional) | `references/motion-design.md`; genre structures in `references/genres/` |

@@ -233,14 +233,6 @@ export async function startServer({ root, maxW = 3840, maxH = 2160, studio = fal
         return send(res, 200, MIME[extname(f)] || 'application/octet-stream', readFileSync(f));
       }
       if (path.endsWith('/')) path += 'index.html';
-      if (/\.(jsx|tsx)$/i.test(path) && !u.searchParams.has('raw')) {
-        const f = safeJoin(root, path);
-        if (!f || !existsSync(f)) return send(res, 404, 'text/plain', 'not found: ' + path);
-        const { jsxPage } = await import('./jsx.js');
-        let html = await jsxPage(f);
-        html = injectRuntime(html, { inlineConfig: data != null ? { ...(inlineConfig || { mode: 'preview' }), data } : inlineConfig });
-        return send(res, 200, MIME['.html'], html, { 'Cache-Control': 'no-store' });
-      }
       const file = safeJoin(root, path);
       if (!file || !existsSync(file) || !statSync(file).isFile()) return send(res, 404, 'text/plain', 'not found: ' + path);
       const ext = extname(file).toLowerCase();

@@ -89,7 +89,7 @@ export function resolveMotionBlur(value, { motion = 'natural' } = {}) {
 /** @param {Input} input */
 export function resolveInput(input) {
   let file = resolve(input || 'index.html');
-  if (existsSync(file) && statSync(file).isDirectory()) file = ['index.html', 'index.jsx', 'index.tsx'].map((n) => join(file, n)).find((f) => existsSync(f)) || join(file, 'index.html');
+  if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
   if (!existsSync(file)) throw new Error(`Composition not found: ${file}`);
   // Serve from the nearest folder that looks like a project root (has package.json) or the file's folder.
   let root = dirname(file);
@@ -646,7 +646,7 @@ let engineFp = null;
 function engineHash() {
   if (engineFp) return engineFp;
   const h = createHash('sha1');
-  const walk = (d) => { for (const e of readdirSync(d).sort()) { const p = join(d, e); if (statSync(p).isDirectory()) walk(p); else if (/\.(js|jsx|css)$/.test(e)) h.update(e).update(readFileSync(p)); } };
+  const walk = (d) => { for (const e of readdirSync(d).sort()) { const p = join(d, e); if (statSync(p).isDirectory()) walk(p); else if (/\.(js|css)$/.test(e)) h.update(e).update(readFileSync(p)); } };
   walk(dirname(fileURLToPath(import.meta.url)));
   return (engineFp = h.digest('hex').slice(0, 20));
 }

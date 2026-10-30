@@ -25,7 +25,6 @@ Core loop: plan a shot list → write HTML → `npx givemotion check file.html` 
 - [output.md](skills/givemotion/references/output.md): render options, the parts cache, render speed, transparent overlays, bundle and `<gm-player>`, React.
 - [review.md](skills/givemotion/references/review.md): snapshot/inspect/check recipes, reading a sheet, `analyze` for reference videos.
 - [check-codes.md](skills/givemotion/references/check-codes.md): every `check` code and how to fix it, `data-check`.
-- [react.md](skills/givemotion/references/react.md): compositions as React components (`givemotion/react`).
 - [genres/](skills/givemotion/references/genres/): explainer, data story, promo, UI demo, code explainer, logo sting, vertical short, whiteboard, year recap.
 
 ## More

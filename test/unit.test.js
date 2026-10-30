@@ -87,7 +87,7 @@ test('skill pack: `givemotion skill <dir>` installs every file for Claude Code a
   const src = join(root, 'skills', 'givemotion');
   const walk = (d) => readdirSync(d).flatMap((e) => (statSync(join(d, e)).isDirectory() ? walk(join(d, e)) : [join(d, e)]));
   const files = walk(src).map((f) => relative(src, f)).sort();
-  assert.ok(files.includes('SKILL.md') && files.includes(join('references', 'react.md')) && files.includes(join('references', 'motion-design.md')));
+  assert.ok(files.includes('SKILL.md') && files.includes(join('references', 'motion-design.md')));
   const dir = mkdtempSync(join(tmpdir(), 'gm-skill-'));
   writeFileSync(join(dir, 'AGENTS.md'), '# My project\n\nKeep this.\n');
   for (let i = 0; i < 2; i++) execFileSync(process.execPath, [join(root, 'src', 'cli.js'), 'skill', dir], { stdio: 'pipe' });

@@ -67,6 +67,17 @@ test('check: text flying in from off-screen is not an error; text stuck off-scre
   assert.ok(!off.some((i) => i.selector === '#fly'), 'flying text should not be reported');
 });
 
+test('check: a font that is neither loaded nor installed is reported once; bundled, declared and generic fonts are not', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>@font-face{font-family:Gone;src:url(nope.woff2) format('woff2')}</style><div data-duration="2" style="font-size:40px">
+    <p id="a" style="font-family:Poppins,sans-serif">Poppins</p><p id="b" style="font-family:Poppins,sans-serif">Poppins again</p>
+    <p id="c" style="font-family:Gone,serif">Declared, file missing</p>
+    <p id="d" style="font-family:Inter">Bundled</p><p id="e" style="font-family:'JetBrains Mono',monospace">Bundled mono</p><p id="g" style="font-family:system-ui">Generic</p></div>`));
+  const rep = await check(f);
+  const fonts = rep.issues.filter((i) => i.code === 'font-unavailable');
+  assert.deepEqual(fonts.map((i) => i.selector).sort(), ['#a', '#c'], 'only the first element of a missing family, and a declared font whose file is missing');
+});
+
 test('data-cuts sets scene starts; data-fit="grow" fills the width', { skip }, async () => {
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, page(`<main data-sequence data-cuts="0 1 2.5" data-transition="fade 0.2"><section class="scene">A</section><section class="scene">B</section><section class="scene" data-duration="1"><div id="w" style="width:500px"><div id="g" data-fit="grow" style="font-size:20px">Fill me</div></div></section></main>`));

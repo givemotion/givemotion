@@ -232,6 +232,14 @@ export class FramePage {
     b.on('Network.loadingFailed', (p) => { if (!p.canceled) this._err('load-failed', `${p.errorText} loading ${urls.get(p.requestId) || p.requestId}. If it is on the internet, download it next to your HTML file instead.`); }, sessionId);
     await Promise.all([s('Page.enable'), s('Runtime.enable'), s('Network.enable')]);
     await s('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: this.opts.scale || 1, mobile: false });
+    // The same page gives the same frames on every computer: the time zone (a clock or new Date()), the language
+    // (toLocaleString, Intl) and the media features a page can read (reduced motion, dark mode) do not follow
+    // the machine it renders on.
+    await Promise.all([
+      s('Emulation.setTimezoneOverride', { timezoneId: 'UTC' }),
+      s('Emulation.setLocaleOverride', { locale: 'en-US' }),
+      s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }, { name: 'prefers-color-scheme', value: 'light' }] }),
+    ].map((p) => p.catch(() => {})));
     if (this.opts.transparent) await s('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
     if (mode === 'beginframe') {
       // Prime the compositor; fails fast on platforms without BeginFrameControl.

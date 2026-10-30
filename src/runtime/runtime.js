@@ -648,6 +648,19 @@
   const origin = new WeakMap(); // animation -> seconds
   const ownAnim = new WeakSet();
 
+  // Scrolling is instant. A smooth scroll runs on its own clock, so a frame would catch it part way and differ from run
+  // to run (CSS scroll-behavior is switched off in preset.css; this covers behavior: 'smooth' in the calls).
+  for (const [proto, names] of /** @type {Array<[any, string[]]>} */ ([[Element.prototype, ['scroll', 'scrollTo', 'scrollBy', 'scrollIntoView']], [window, ['scroll', 'scrollTo', 'scrollBy']]])) {
+    for (const n of names) {
+      const orig = proto[n];
+      if (typeof orig !== 'function') continue;
+      proto[n] = function (...args) {
+        if (args[0] && typeof args[0] === 'object' && args[0].behavior) args[0] = Object.assign({}, args[0], { behavior: 'instant' });
+        return orig.apply(this, args);
+      };
+    }
+  }
+
   const preInit = [];
   let pendingInit = true;
   Element.prototype.animate = function (...args) {
@@ -715,6 +728,18 @@
       for (const k of eff.getKeyframes()) for (const p of Object.keys(k)) if (!/^(offset|computedOffset|easing|composite)$/.test(p) && end.has(propKey(p))) return;
       eff.updateTiming({ fill: tm.fill === 'both' ? 'backwards' : 'none' });
     } catch (e) {}
+  }
+
+  // SVG's own animations (<animate>, <animateTransform>, <animateMotion>, <set>) run on the SVG's clock, which does not
+  // follow the video: they sat still at wherever the page happened to be when it loaded, a different place on every
+  // run. Each SVG with one is put on the video clock, counted from the start of its clip like a CSS animation.
+  let smilRoots = null;
+  function seekSmil(T) {
+    if (smilRoots === null || mutated) smilRoots = [...document.querySelectorAll('svg')].filter((v) => !(v.parentNode instanceof SVGElement) && v.querySelector('animate,animateTransform,animateMotion,set'));
+    for (const v of smilRoots) {
+      try { v.pauseAnimations(); v.setCurrentTime(Math.max(0, (hasRemap ? mapT(v, T) : T) - clipStartOf(v))); } catch (e) {}
+    }
+    return smilRoots.length > 0;
   }
 
   function seekAnimations(T) {
@@ -1550,9 +1575,13 @@
   // Images: wait for newly shown images to decode before a frame is captured.
   // ---------------------------------------------------------------------------
   function waitImages() {
+    let eager = false;
     for (const img of document.images) {
+      // a lazy image outside the viewport never loads on its own (a camera brings it into view later): the wait for it never ended
+      if (img.loading === 'lazy') { img.loading = 'eager'; eager = true; }
       if (!img.complete) pendingWaits.push(new Promise((res) => { img.addEventListener('load', res, { once: true }); img.addEventListener('error', () => { report('error', 'image-failed', `Image failed to load: ${img.getAttribute('src')}`, img, 'Check the path (relative to the HTML file).'); res(); }, { once: true }); }));
     }
+    if (eager) dropOwnMutations();
   }
 
   // ---------------------------------------------------------------------------
@@ -1613,9 +1642,10 @@
   // ---------------------------------------------------------------------------
   let mutated = true;
   const CLIP_SEL = '[data-start],[data-duration],[data-end],[data-sequence]';
+  let mutations = 0; // counts DOM changes seen by handleRecords
   function handleRecords(recs) {
     for (const r of recs) {
-      mutated = true;
+      mutated = true; mutations++;
       if (r.type === 'childList') {
         for (const n of r.addedNodes) if (n.nodeType === 1 && (n.matches(CLIP_SEL) || n.querySelector(CLIP_SEL) || (n.parentElement && n.parentElement.hasAttribute('data-sequence')))) timelineDirty = true;
       } else if (r.type === 'attributes' && /^data-(start|duration|end|sequence|transition|gap|cuts|cut-align)$/.test(r.attributeName)) timelineDirty = true;
@@ -1766,6 +1796,7 @@
     dropOwnMutations();
     flushAnimations(T, 'clip');
     let animActive = seekAnimations(T);
+    if (seekSmil(T)) animActive = true;
     if (driven.length && updateDriven(T)) animActive = true;
     for (const h of hooks.post) { try { if (h(T)) animActive = true; } catch (e) { pageError(e); } }
     steadyText();
@@ -1808,14 +1839,44 @@
     if (setStyle(cs.transform)) { try { const m = new DOMMatrixReadOnly(cs.transform); k *= Math.sqrt(Math.abs(m.a * m.d - m.b * m.c)) || 1; } catch (e) {} }
     return k;
   }
+  const animMoves = new WeakMap(); // animation -> does it move or scale its target (and leave rotate alone)
+  function movesTarget(a) {
+    let v = animMoves.get(a);
+    if (v === undefined) {
+      v = false;
+      try {
+        let m = false, r = false;
+        for (const k of a.effect.getKeyframes()) for (const p in k) { if (p === 'transform' || p === 'translate' || p === 'scale') m = true; else if (p === 'rotate') r = true; }
+        v = m && !r;
+      } catch (e) {}
+      animMoves.set(a, v);
+    }
+    return v;
+  }
+  // Only text needs the tilt, and tilting a big blurred glow that drifts behind the scene costs a lot of paint time
+  const textOf = new WeakMap(); // element -> [has text, mutations when looked]
+  function hasText(el) {
+    let v = textOf.get(el);
+    if (!v || (!v[0] && v[1] !== mutations)) { v = [el.textContent.trim().length > 0, mutations]; textOf.set(el, v); }
+    return v[0];
+  }
   function steadyText() {
     handleRecords(mo.takeRecords());
-    const seen = new Set(), scales = new Map();
+    const seen = new Set(), scales = new Map(), cands = new Set();
     const scaleOf = (el) => { if (!el) return 1; let k = scales.get(el); if (k === undefined) { k = ownScale(el) * scaleOf(el.parentElement); scales.set(el, k); } return k; };
     for (const el of document.querySelectorAll(TILT_SEL)) {
-      if (!(el instanceof HTMLElement)) continue;
+      if (el instanceof HTMLElement && (setStyle(el.style.transform) || setStyle(el.style.translate) || setStyle(el.style.scale))) cands.add(el);
+    }
+    // elements moved by the page's own CSS animation or Web Animation (@keyframes) are on a composited layer that Chrome
+    // rasters by its own rules; with the tilt they are drawn like an inline transform. (Not the engine's own enter and
+    // exit animations: they already match between a part that continues and one that starts fresh, and the tilt broke that.)
+    for (const a of known) {
+      if (a.playState === 'idle' || ownAnim.has(a)) continue;
+      const tg = targetOf(a);
+      if (tg instanceof HTMLElement && tg.isConnected && !(a.effect && /** @type {any} */ (a.effect).pseudoElement) && movesTarget(a) && hasText(tg)) cands.add(tg);
+    }
+    for (const el of cands) {
       const s = el.style;
-      if (!setStyle(s.transform) && !setStyle(s.translate) && !setStyle(s.scale)) continue;
       const mine = tilted.get(el);
       if (s.rotate && s.rotate !== mine) continue; // the page rotates it itself
       if (mine === undefined) {

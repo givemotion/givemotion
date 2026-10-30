@@ -61,10 +61,12 @@ gm.burst('#end', { at: 0.2, kind: 'confetti', speed: 1600, gravity: 450, duratio
 - A callback that writes styles writes its whole state every frame: every property it ever sets, set back (`''` or `none`) when not in use. If one look sets a `box-shadow` and a later look on the same element does not clear it, the shadow stays in the render (frames in order) but not in a `still` (one seek), so stills look right and the video is wrong.
 - Don't toggle classes inside `onFrame` to start CSS transitions; they can't be seeked (`check`: `non-seekable-animation`). To do something "at 2s", use `setTimeout(fn, 2000)` (virtual and exact) or give the element `data-start="2"`.
 - Measure elements in `gm.onLayout`, not in `onFrame` (in `onFrame` boxes are from before this frame's animations).
+- What the engine fixes for every computer, so a render is the same everywhere: the time zone is UTC and the language en-US (`new Date()`, `toLocaleString()`, `Intl` read the same on every machine; pass a time or a format in your data to show another), `prefers-reduced-motion` is `no-preference` and `prefers-color-scheme` is `light` (switch a look with a class or a `data-*` attribute, not a media query), scrolling is instant (`scroll-behavior: smooth` and `behavior: 'smooth'` are ignored), `loading="lazy"` images load at once, and SVG animations (`<animate>`, `<animateTransform>`, `<animateMotion>`, `<set>`) follow the video clock from the start of their clip.
 - Script errors are reported with file and line (`script-error`, `console-error`); fix them first, they can cause misleading pacing warnings.
 
 ## Canvas, WebGL, libraries, Lottie, GIFs
 
+- Canvas size: at `--scale 2` the page has `devicePixelRatio` 2 (the layout stays 1920×1080 but the frame has twice the pixels). A canvas drawn at its CSS size is stretched and looks soft: size it by the ratio, `canvas.width = cssWidth * devicePixelRatio` and `ctx.scale(devicePixelRatio, devicePixelRatio)`.
 - Canvas / WebGL / three.js: draw inside `onFrame` (three.js: `preserveDrawingBuffer: true`). Libraries that animate with `requestAnimationFrame` (anime.js, Motion, GSAP) also work as they are, because the clock is virtual; `gm.timeline` is faster and frame-exact in parallel.
 - Lottie (After Effects JSON): `<gm-include src="blocks/lottie.html" file="anim.json" width="500" height="500">` plays it on the video clock (`lib="path/to/lottie.min.js"` for offline renders).
 - Animated GIF / WebP / APNG in `<img>` play frame-exact on clip time (`data-loop="false"`, `data-rate`).

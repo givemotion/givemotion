@@ -27,6 +27,28 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
   const ignored = (el) => !!el.closest('[data-check~="ignore"],[aria-hidden="true"],[data-gm-internal]');
   // data-check="overlap-ok": text in there may overlap, be covered or be crossed on purpose (a pile of cards)
   const overlapOk = (el) => !!(el && el.closest && el.closest('[data-check~="overlap-ok"]'));
+  // A font that is neither loaded (an @font-face, a bundled font) nor installed here is drawn in a fallback that differs
+  // from one computer to the next. The first family of the stack is the one that was meant.
+  const GENERIC_FONT = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-[a-z-]+|emoji|math|fangsong|inherit|initial|unset)$/i;
+  const fontSeen = window.__gmFontSeen || (window.__gmFontSeen = new Map());
+  const warnedFonts = new Set();
+  let fontCtx = null;
+  const missingFont = (family) => {
+    const first = family.split(',')[0].trim().replace(/^["']|["']$/g, '');
+    if (!first || GENERIC_FONT.test(first)) return null;
+    if (!fontSeen.has(first)) {
+      const faces = [...document.fonts].filter((f) => f.family.replace(/^["']|["']$/g, '').toLowerCase() === first.toLowerCase());
+      let missing;
+      if (faces.length) missing = faces.every((f) => f.status === 'error');
+      else {
+        fontCtx = fontCtx || document.createElement('canvas').getContext('2d');
+        const w = (f) => { fontCtx.font = '72px ' + f; return fontCtx.measureText('mmmmmmmmmmlli1WwQ@#').width; };
+        missing = ['monospace', 'serif', 'sans-serif'].every((g) => w('"' + first + '", ' + g) === w(g));
+      }
+      fontSeen.set(first, missing);
+    }
+    return fontSeen.get(first) ? first : null;
+  };
   // Alpha of a computed CSS color (rgb(), rgba(), color(srgb … / a), oklch(… / a)…); 'transparent' is 0.
   const cssAlpha = (c) => {
     if (!c || c === 'none' || c === 'transparent') return 0;
@@ -406,6 +428,8 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const scaleY = el.offsetHeight > 0 ? el.getBoundingClientRect().height / el.offsetHeight : 1;
     const visualFs = fs * (isFinite(scaleY) && scaleY > 0 ? scaleY : 1);
     if (visualFs < 22 * PX && lineH > 0 && !overview && !(camWorld && camMoving.has(camWorld))) out.push({ severity: 'warning', code: 'tiny-text', selector: sel(el), text: snippet(el), message: 'Text is ' + Math.round(visualFs) + 'px tall in a ' + W + 'x' + H + ' frame, which is hard to read in a video.', fix: 'Use at least ' + Math.round(24 * PX) + 'px (' + Math.round(28 * PX) + 'px+ for body text).' });
+    const mf = missingFont(cs.fontFamily);
+    if (mf && !warnedFonts.has(mf)) { warnedFonts.add(mf); out.push({ severity: 'warning', code: 'font-unavailable', selector: sel(el), text: snippet(el), message: 'The font "' + mf + '" is not loaded or installed here, so this text is drawn in a fallback font (which differs from one computer to the next).', fix: 'Use a font that comes with givemotion (Inter, JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Caveat), or add an @font-face for a font file next to your HTML.' }); }
     t.fontPx = visualFs;
     t.bold = parseInt(cs.fontWeight, 10) >= 600;
     // (SVG text is painted with its fill, not its CSS color; a gradient fill is judged like clip-filled text: not at all)

@@ -50,11 +50,25 @@ second. Do not reformat files you are not changing.
   gives the 2-worker pixels, so some raster state of the text survives until `resetPaint`, which the render loop
   only calls at the start of a part. Fix idea: reset that state per frame cheaply, or at every part boundary in both
   modes, and add a 1 == N test with this exact tween.
-- Done 2026-10-29: steady text. Elements moved by an inline transform get a tiny `rotate` (runtime `steadyText`), so their
-  text lands at quarter pixels instead of stepping whole pixels (rms 2nd difference 0.64 → 0.02 px on a slow move,
-  0.15 → 0.02 on a camera drift; 1 == N workers; no speed change on bench). Not covered yet: text moved by a CSS
-  `@keyframes` animation (its transform is not inline), SVG `<text>`, and elements shown smaller than ~0.35×.
-  Thin shapes inside a tilted element move in quarter-pixel steps instead of exactly (invisible at normal speeds).
+- Done 2026-10-29: steady text. Elements moved by an inline transform or by the page's own CSS animation / Web Animation get a tiny
+  `rotate` (runtime `steadyText`), so their text lands at quarter pixels instead of stepping whole pixels (rms 2nd
+  difference 0.64 → 0.02 px on a slow move, 0.15 → 0.02 on a camera drift). A plain `@keyframes` move is now also
+  identical for 1 and N workers (before, a worker starting mid-video stepped while the first glided). Not covered: the engine's own `data-enter`/`data-exit` animations (the tilt broke their 1 == N match; they step like
+  any composited layer, but entrances are short). Not covered or not tried: SVG
+  `<text>`, elements shown smaller than ~0.35x, CSS `transition`s.
+- Open: a CSS animation that moves AND scales an element (a float with a pulse) still differs between 1 and N workers by
+  ~17 edge pixels a frame (thin lines, up to 240 levels). Chrome keeps raster state of such composited layers from earlier
+  frames. Resetting paint at every part start fixes it by construction but costs 10% (bench) to 40% (data-story) render
+  time: tried and rejected. A cheaper reset, or no layer for a paused animation, would close it.
+- Done 2026-10-29 (found by looking for edge cases, each with a test): the time zone is pinned to UTC, language to en-US,
+  reduced-motion and dark mode off (a clock read 12:00 on one machine and 21:00 on another); smooth scrolling is instant
+  (frames differed per run); `loading="lazy"` images no longer hang the render for 60 s; SVG SMIL animations follow the
+  video clock (they sat still at a different place every run); `check` warns `font-unavailable` for a font that is neither
+  loaded nor installed.
+- Ideas from the same pass, not done: a `check` rule for layout shift (text whose layout position goes up and down by a few
+  px with no animation of its own, like a caret that changes the line height; needs per-sample state and has false
+  positives with lists that reflow); the typewriter (`data-type`) removes untyped text, so centred text drifts as it grows and
+  a word jumps to the next line when it no longer fits (reserving the final layout with hidden text would fix both).
 - Open: tile memory is now 4 GB per Chrome (a ceiling, not an allocation). With many workers on a very heavy 4K page,
   watch memory; the worker count could take it into account.
 

@@ -18,6 +18,7 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'gm-test-'));
 const md5 = (f) => createHash('md5').update(readFileSync(f)).digest('hex');
 const quiet = { quiet: true, log: () => {} };
 
+const md5buf = (b) => createHash('md5').update(b).digest('hex');
 function comp(dir, name, body, attrs = 'data-width="640" data-height="360" data-fps="30"') {
   const f = join(dir, name);
   writeFileSync(f, `<!doctype html><html ${attrs}><head><style>body{background:#111;color:#fff;font-family:sans-serif}</style></head><body>${body}</body></html>`);
@@ -76,27 +77,59 @@ test('deterministic: 1 worker and 3 workers give identical frames (timers, rAF c
   assert.deepEqual(diff, []);
 });
 
-test('steady text: slowly moving text glides with its box instead of stepping whole pixels (1 worker == 2 workers)', { skip }, async () => {
+test('steady text: slowly moving text glides with its box instead of stepping whole pixels (a timeline tween and a CSS animation; 1 worker == 2 workers)', { skip }, async () => {
   // 12 px down in 2 s (0.2 px a frame). Without the runtime's tilt Chrome puts the glyphs on whole pixels: the text
   // stays still for 4 frames and jumps a pixel while the bar under it glides (rms of the 2nd difference ~0.64 px).
+  // A CSS @keyframes animation is on a composited layer: a fresh page glides, a worker that starts mid-video steps.
   const d = tmp();
-  const f = comp(d, 'move.html', `<div id="w" style="position:absolute;left:100px;top:140px;width:440px"><div style="font:600 40px Inter;color:#fff;line-height:52px">Every morning</div><div style="height:4px;background:#f00"></div></div>
-    <script>gm.timeline().fromTo('#w', { y: 0 }, { y: 12, duration: 2, ease: 'linear' }, 0)</script>`, 'data-width="640" data-height="360" data-fps="30" data-duration="2"');
-  const a = join(d, 'a'), b = join(d, 'b');
-  await render(f, { output: a, format: 'png', workers: 1, cache: false, ...quiet });
-  await render(f, { output: b, format: 'png', workers: 2, cache: false, ...quiet });
-  const fa = readdirSync(a).filter((x) => x.endsWith('.png')).sort();
-  assert.deepEqual(fa.filter((x) => md5(join(a, x)) !== md5(join(b, x))), []);
-  const ys = fa.map((x) => {
-    const px = execFileSync(ffmpegPath(), ['-v', 'error', '-i', join(a, x), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
-    let w = 0, s = 0;
-    for (let i = 0; i < px.length; i += 3) { const v = Math.min(px[i], px[i + 1], px[i + 2]); if (v > 30) { w += v; s += v * Math.floor(i / 3 / 640); } }
-    return s / w;
-  });
-  let q = 0;
-  for (let i = 1; i < ys.length - 1; i++) q += (ys[i + 1] - 2 * ys[i] + ys[i - 1]) ** 2;
-  const jitter = Math.sqrt(q / (ys.length - 2));
-  assert.ok(jitter < 0.15, `the text steps instead of gliding: rms 2nd difference ${jitter.toFixed(3)} px`);
+  const box = (style) => `<div id="w" style="position:absolute;left:100px;top:140px;width:440px;${style}"><div style="font:600 40px Inter;color:#fff;line-height:52px">Every morning</div><div style="height:4px;background:#f00"></div></div>`;
+  const attrs = 'data-width="640" data-height="360" data-fps="30" data-duration="2"';
+  const pages = {
+    tween: comp(d, 'tween.html', box('') + `<script>gm.timeline().fromTo('#w', { y: 0 }, { y: 12, duration: 2, ease: 'linear' }, 0)</script>`, attrs),
+    css: comp(d, 'css.html', `<style>@keyframes drop { from { transform: translateY(0) } to { transform: translateY(12px) } }</style>` + box('animation:drop 2s linear both'), attrs),
+  };
+  for (const [name, f] of Object.entries(pages)) {
+    const a = join(d, name + 'a'), b = join(d, name + 'b');
+    await render(f, { output: a, format: 'png', workers: 1, cache: false, ...quiet });
+    await render(f, { output: b, format: 'png', workers: 2, cache: false, ...quiet });
+    const fa = readdirSync(a).filter((x) => x.endsWith('.png')).sort();
+    assert.deepEqual(fa.filter((x) => md5(join(a, x)) !== md5(join(b, x))), [], name + ': 1 and 2 workers differ');
+    const ys = fa.map((x) => {
+      const px = execFileSync(ffmpegPath(), ['-v', 'error', '-i', join(a, x), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
+      let w = 0, sum = 0;
+      for (let i = 0; i < px.length; i += 3) { const v = Math.min(px[i], px[i + 1], px[i + 2]); if (v > 30) { w += v; sum += v * Math.floor(i / 3 / 640); } }
+      return sum / w;
+    });
+    let q = 0;
+    for (let i = 1; i < ys.length - 1; i++) q += (ys[i + 1] - 2 * ys[i] + ys[i - 1]) ** 2;
+    const jitter = Math.sqrt(q / (ys.length - 2));
+    assert.ok(jitter < 0.15, `${name}: the text steps instead of gliding: rms 2nd difference ${jitter.toFixed(3)} px`);
+  }
+});
+
+test('the same page gives the same frames on every computer: time zone, instant scrolling, lazy images, SVG animation', { skip }, async () => {
+  const d = tmp();
+  writeFileSync(join(d, 'pic.png'), execFileSync(ffmpegPath(), ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=64x64', '-frames:v', '1', '-f', 'image2', '-c:v', 'png', '-'], { maxBuffer: 1 << 24 }));
+  const attrs = 'data-width="400" data-height="300" data-fps="30" data-duration="2"';
+  const body = (scrollStyle) => `<div id="clock" style="font:600 40px Inter;color:#fff"></div>
+    <div id="b" style="position:absolute;left:20px;top:80px;width:200px;height:100px;overflow:auto;${scrollStyle}"><div style="height:3000px;background:repeating-linear-gradient(#f00 0 20px,#00f 20px 40px)"></div></div>
+    <img loading="lazy" src="pic.png" style="position:absolute;left:5000px;top:10px;width:64px">
+    <svg width="400" height="40" style="position:absolute;left:0;top:250px"><circle cy="20" r="12" fill="#4ade80"><animate attributeName="cx" from="20" to="380" dur="2s" fill="freeze"/></circle></svg>
+    <script>document.getElementById('clock').textContent = new Date().toString().slice(16, 24);
+    gm.onFrame((t) => { document.getElementById('b').scrollTop = Math.round(t * 400); });</script>`;
+  const plain = comp(d, 'plain.html', body(''), attrs), smooth = comp(d, 'smooth.html', body('scroll-behavior:smooth'), attrs);
+  const grab = async (f, tz) => { const old = process.env.TZ; process.env.TZ = tz; try { return (await stills(f, [0.5, 1.5])).buffers.map((b) => md5buf(b)); } finally { if (old === undefined) delete process.env.TZ; else process.env.TZ = old; } };
+  const utc = await grab(plain, 'UTC');
+  assert.deepEqual(await grab(plain, 'Asia/Tokyo'), utc, 'the frames follow the time zone of the computer');
+  assert.deepEqual(await grab(smooth, 'UTC'), utc, 'a smooth scroll shows a different frame than an instant one');
+  // a lazy image the page never scrolls to must not hold the render up (the wait for it never ended); the SVG circle
+  // is at cx 20 + 360 * t / 2 s: 200 px at 1 s
+  const out = join(d, 'f');
+  await render(plain, { output: out, format: 'png', frames: '30-31', workers: 1, cache: false, ...quiet });
+  const px = execFileSync(ffmpegPath(), ['-v', 'error', '-i', join(out, 'frame-000030.png'), '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { maxBuffer: 1 << 26 });
+  let n = 0, sx = 0;
+  for (let y = 250; y < 290; y++) for (let x = 0; x < 400; x++) { const i = (y * 400 + x) * 3; if (px[i + 1] > 150 && px[i] < 120) { n++; sx += x; } }
+  assert.ok(n > 0 && Math.abs(sx / n - 200) < 3, `the SVG animation is not on the video clock: circle at x ${n ? (sx / n).toFixed(0) : 'none'}, expected 200`);
 });
 
 test('4K with many composited layers: every tile is drawn (still and render match the same page on one layer)', { skip }, async () => {

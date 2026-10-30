@@ -3,6 +3,7 @@
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;padding:0;width:var(--stage-w,1920px);height:var(--stage-h,1080px);overflow:hidden}
 body{position:relative;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;font-synthesis:none}
+*,::before,::after{scroll-behavior:auto!important}
 [data-gm-hidden]{display:none!important}
 /* Built-in fonts (served by givemotion, loaded only when used; all SIL OFL, licenses next to the files).
    Caveat (handwriting 400-700), Inter (sans 100-900, italic), JetBrains Mono (mono 100-800, italic),

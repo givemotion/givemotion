@@ -239,8 +239,7 @@ Files: `src/analyze.js`, `bench/analyze/`.
 ## Small known issues
 - `text-covered` skips dimmed text (opacity < 0.5) and transitions; a moving element fully covering a settled label for
   ~1 s is not reported (fully covered text is treated as hidden). (`src/check.js`)
-- A camera `float` makes labels at the frame edge flicker in and out of `text-offscreen` (agents add `crop-ok`).
-- Determinism: after the camera zoom has animated (e.g. a `fit` shot whose target pops in), a worker that starts on a
-  still frame draws one box edge a pixel row differently from the worker that rendered the zoom (which reuses its
-  earlier capture for the unchanged frame). Seen with 1 vs 3 workers at a shot start (frame 60), also before N3. Repro: the `longScene` page in `test/features.test.js` with `fit: ['#a', '#b']` shots and `pop` on `#b`.
-  Likely Chrome's raster scale heuristics for layers whose scale changed. (`src/browser.js`)
+- A camera `float` makes labels at the frame edge flicker in and out of `text-offscreen`: correct (the float cuts them
+  in those frames); the fix is to keep text further from the edge than the float's reach.
+- Done 2026-10-30: the camera-zoom determinism case (fit shots, `pop` on `#b`) gives 0 of 180 differing frames for 1 vs 3
+  workers since part starts drop animated layers.

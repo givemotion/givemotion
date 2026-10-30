@@ -23,8 +23,8 @@ Contents
 
 Built into the engine (no file, no network, the same on every machine, and they win over fonts installed on the machine):
 `Inter` (sans, 100-900, italic), `JetBrains Mono` (mono, 100-800, italic; ligatures are off inside `code`/`pre`), `Playfair Display`
-(display serif, 400-900, italic), `Space Grotesk` (grotesk display, 300-700), `Bebas Neue` (condensed caps, 400), `Caveat`
-(handwriting, 400-700). Use these names first in every stack. For a brand font, put the file next to the HTML and load it with
+(display serif, 400-900, italic), `Space Grotesk` (grotesk display, 300-700), `Bebas Neue` (condensed caps, 400), `Nunito`
+(rounded, friendly, 200-1000), `Caveat` (handwriting, 400-700). Use these names first in every stack. For a brand font, put the file next to the HTML and load it with
 `@font-face`. A Google Fonts `<link>` also works (the render waits for it) but needs the network on every render.
 
 - Sans: `Inter, system-ui, sans-serif`

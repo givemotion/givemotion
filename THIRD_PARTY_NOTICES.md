@@ -18,6 +18,7 @@ distributed by Google Fonts / Fontsource). Each family's full license is next to
 | Space Grotesk | 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk) | `src/runtime/fonts/SpaceGrotesk-OFL.txt` |
 | Bebas Neue | 2019 The Bebas Neue Project Authors (https://github.com/dharmatype/Bebas-Neue) | `src/runtime/fonts/BebasNeue-OFL.txt` |
 | Caveat | 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat) | `src/runtime/fonts/Caveat-OFL.txt` |
+| Nunito | 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito) | `src/runtime/fonts/Nunito-OFL.txt` |
 
 The OFL lets you use these fonts in videos you make, including commercial ones. The fonts may not be sold on
 their own.

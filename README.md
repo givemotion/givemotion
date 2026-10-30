@@ -144,7 +144,7 @@ measure whether viewers see the difference; so far our AI judges, who look at st
 agent reads only when it needs them: 15 technique recipes (kinetic type, camera moves, scene transitions, logo
 reveals, charts, UI demos, hand-drawn...), each checked by rendering it; 8 ready-made looks (palette, fonts,
 background, motion personality); and guides for 9 kinds of video. Six fonts are built in (Inter, JetBrains Mono,
-Playfair Display, Space Grotesk, Bebas Neue, Caveat), so a video looks the same on every machine.
+Playfair Display, Space Grotesk, Bebas Neue, Nunito, Caveat), so a video looks the same on every machine.
 
 **8. Built from what agents struggled with.** We give fresh agents only the docs and a real brief, read their
 notes on what got in their way, and fix the engine, not just the instructions. In the latest full round, 18 agents
@@ -481,7 +481,7 @@ trust, read [SECURITY.md](SECURITY.md) first. Report security problems privately
 MIT, copyright Leonardo Grigorio and givemotion contributors. Use it, change it, fork it, sell what you make with it.
 The MIT license covers givemotion itself; Chrome and ffmpeg are installed separately under their own licenses. The
 examples and the animations in this README were made for this project and are MIT too. The bundled fonts (Inter,
-JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Caveat) are under the SIL Open Font License (license
+JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Nunito, Caveat) are under the SIL Open Font License (license
 files in `src/runtime/fonts/`). Everything third-party is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like

@@ -82,7 +82,7 @@ Viewers preferred videos where the eye always knew where to look.
 </html>
 ```
 
-Built-in fonts (no files needed): `Inter`, `JetBrains Mono`, `Playfair Display`, `Space Grotesk`, `Bebas Neue`, `Caveat`. A brief's own font files load with `@font-face` from their path.
+Built-in fonts (no files needed): `Inter`, `JetBrains Mono`, `Playfair Display`, `Space Grotesk`, `Bebas Neue`, `Nunito`, `Caveat`. Other fonts: `@font-face` from their file.
 
 ## Timing model (read this)
 

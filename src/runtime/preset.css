@@ -29,7 +29,7 @@ body{position:relative;-webkit-font-smoothing:antialiased;text-rendering:geometr
 @font-face{font-family:'Bebas Neue';font-style:normal;font-weight:400;font-display:block;src:url(/__gm/fonts/bebas-neue-latin-ext-400-normal.woff2) format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 .scene{position:absolute;inset:0;overflow:hidden;isolation:isolate}
 code,pre,kbd,samp{font-variant-ligatures:none}
-.gm-caret{display:inline-block;width:.08em;height:1em;margin-left:.04em;vertical-align:-.12em;background:currentColor;animation:blink 1s steps(1,end) infinite}
+.gm-caret{display:inline-block;width:.08em;height:1em;margin:0 -.12em 0 .04em;vertical-align:-.12em;background:currentColor;animation:blink 1s steps(1,end) infinite}
 [data-gm-typing] .gm-caret{animation:none}
 [data-gm-type-wait] .gm-caret{visibility:hidden}
 .gm-word,.gm-char{display:inline-block;white-space:pre}

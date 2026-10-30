@@ -1310,15 +1310,22 @@
       el.__gmType = true;
       const nodes = [];
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      while (walker.nextNode()) nodes.push({ node: walker.currentNode, text: /** @type {Text} */ (walker.currentNode).data });
+      while (walker.nextNode()) nodes.push({ node: walker.currentNode, text: /** @type {Text} */ (walker.currentNode).data, rest: null });
       const total = nodes.reduce((s, n) => s + n.text.length, 0);
       const v = el.getAttribute('data-type').trim();
       const cps = v ? parseFloat(v) : 30;
       const caret = el.hasAttribute('data-type-caret') ? document.createElement('span') : null;
       if (caret) caret.className = 'gm-caret';
-      // Reserve the final size so the layout doesn't jump while typing (block-level elements).
-      const disp = getComputedStyle(el).display;
-      if (disp !== 'inline' && /** @type {HTMLElement} */ (el).offsetHeight > 0 && !el.style.minHeight) el.style.minHeight = /** @type {HTMLElement} */ (el).offsetHeight + 'px';
+      // The text that is not typed yet stays in the layout, invisible: every letter appears where it will stay (centred
+      // text does not drift as it grows, a word does not jump to the next line when it stops fitting, the box keeps its size).
+      for (const it of nodes) {
+        const rest = document.createElement('span');
+        rest.className = 'gm-rest';
+        rest.style.visibility = 'hidden';
+        rest.appendChild(document.createTextNode(it.text));
+        it.node.parentNode.insertBefore(rest, it.node.nextSibling);
+        it.rest = rest.firstChild;
+      }
       // data-type-caret="0.8": the caret goes away 0.8 s after the typing is done (without a number it keeps blinking)
       const keep = caret ? parseFloat(el.getAttribute('data-type-caret')) : NaN;
       typers.push({ el, nodes, total, cps: cps > 0 ? cps : 30, delay: parseTime(el.getAttribute('data-type-delay'), el, 'data-type-delay') ?? 0, caret, keep: isFinite(keep) ? keep : null, last: -1 });
@@ -1367,6 +1374,7 @@
         for (const it of ty.nodes) {
           const take = Math.max(0, Math.min(it.text.length, left));
           it.node.data = it.text.slice(0, take);
+          if (it.rest) it.rest.data = it.text.slice(take);
           left -= take;
           if (take > 0) lastNode = it.node;
         }

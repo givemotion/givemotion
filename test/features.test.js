@@ -67,6 +67,20 @@ test('check: text flying in from off-screen is not an error; text stuck off-scre
   assert.ok(!off.some((i) => i.selector === '#fly'), 'flying text should not be reported');
 });
 
+test('typewriter: every letter appears where it stays (centred text does not drift, a word does not jump lines)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<p id="t" data-type="14" data-type-caret style="position:absolute;left:60px;top:40px;width:200px;text-align:center;font:600 24px Inter;margin:0">Extraordinarily synchronised workflows keep teams calm.</p>`, 'data-width="640" data-height="360" data-fps="30" data-duration="5"'));
+  // where the first letter and the first letter of the last word are, with 4 letters typed and with all of them
+  const at = (t) => evalAt(f, t, `(() => { const el = document.getElementById('t'); const pos = (node, i) => { const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 1); const b = r.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top)]; };
+    const rest = el.querySelector('.gm-rest').firstChild; const w = el.textContent.lastIndexOf('calm'); const typed = el.firstChild.length;
+    return { typed, first: pos(el.firstChild, 0), last: w < typed ? pos(el.firstChild, w) : pos(rest, w - typed), height: el.getBoundingClientRect().height }; })()`);
+  const early = await at(0.3), late = await at(4.5);
+  assert.ok(early.typed < 6 && late.typed > 50, `typed ${early.typed} then ${late.typed}`);
+  assert.deepEqual(early.first, late.first, 'the first letter moved while typing');
+  assert.deepEqual(early.last, late.last, 'the last word moved while typing');
+  assert.equal(early.height, late.height, 'the box changed size while typing');
+});
+
 test('check: a font that is neither loaded nor installed is reported once; bundled, declared and generic fonts are not', { skip }, async () => {
   const d = tmp(), f = join(d, 'a.html');
   writeFileSync(f, page(`<style>@font-face{font-family:Gone;src:url(nope.woff2) format('woff2')}</style><div data-duration="2" style="font-size:40px">

@@ -909,6 +909,12 @@
   // Exit motion keeps going in the named direction (fade-up exit moves up).
   const EXIT_PRESETS = {
     'fade': () => [{ opacity: 1 }, { opacity: 0 }],
+    // a row taken out of a list: it slides aside and fades, then its height closes so the rows below move up
+    'collapse': (el) => {
+      const cs = getComputedStyle(el), h = el.offsetHeight + 'px', box = { height: h, marginTop: cs.marginTop, marginBottom: cs.marginBottom, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, overflow: 'hidden', boxSizing: 'border-box' };
+      const gone = { height: '0px', marginTop: '0px', marginBottom: '0px', paddingTop: '0px', paddingBottom: '0px', overflow: 'hidden', boxSizing: 'border-box' };
+      return [{ ...box, opacity: 1, translate: '0 0', offset: 0 }, { ...box, opacity: 0, translate: `${60 * PX()}px 0`, offset: 0.45 }, { ...gone, opacity: 0, translate: `${60 * PX()}px 0`, offset: 1 }];
+    },
     'fade-up': () => [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `0 ${-48 * PX()}px` }],
     'fade-down': () => [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `0 ${48 * PX()}px` }],
     'fade-left': () => [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `${-48 * PX()}px 0` }],
@@ -952,7 +958,7 @@
     'typewriter': () => [{ opacity: 1 }, { opacity: 0 }],
     'none': () => null,
   };
-  const EXIT_DEFAULTS = { 'elastic': { ease: 'in-back', dur: 0.5 }, 'grow': { ease: 'in-back', dur: 0.5 }, 'spin-in': { ease: 'in-back', dur: 0.6 }, 'typewriter': { ease: 'steps(1)', dur: 0.02 }, 'drop': { ease: 'in-cubic', dur: 0.6 } };
+  const EXIT_DEFAULTS = { 'collapse': { ease: 'in-out-cubic', dur: 0.6 }, 'elastic': { ease: 'in-back', dur: 0.5 }, 'grow': { ease: 'in-back', dur: 0.5 }, 'spin-in': { ease: 'in-back', dur: 0.6 }, 'typewriter': { ease: 'steps(1)', dur: 0.02 }, 'drop': { ease: 'in-cubic', dur: 0.6 } };
   // Natural motion (gm.motion 'natural'): what an entrance does when its data-enter gives no easing / no duration.
   // z = damping ratio of its spring (1 = lands without overshoot: fades, slides, wipes and text stay crisp; below 1 =
   // a small overshoot that settles, for things that pop, grow or tilt into place). size = how far it travels, as a
@@ -1176,11 +1182,11 @@
           else if (!isFinite(cEnd)) { report('warning', 'exit-no-end', 'data-exit needs the element (or a parent) to have an end time.', el, 'Add data-duration to this element or its clip.'); }
           else {
             if (m.name === 'draw') prepDraw(tg);
-            const kf = EXIT_PRESETS[m.name]();
+            const kf = EXIT_PRESETS[m.name](tg);
             const n = targets.length;
             const ext = stagger != null ? stagger * (n - 1 - i - (jit ? jit[i] : 0)) : 0;
             const startAt = (cEnd - cStart) - m.dur - m.delay - ext;
-            if (kf && !(natural && addDriven(tg, kf, m.ease, m.dur, Math.max(0, startAt), cStart, false))) addOwn(tg, kf, { duration: m.dur * 1000, delay: Math.max(0, startAt) * 1000, easing: cssEasing(m.ease), fill: 'forwards' }, cStart);
+            if (kf && !(natural && m.name !== 'collapse' && addDriven(tg, kf, m.ease, m.dur, Math.max(0, startAt), cStart, false))) addOwn(tg, kf, { duration: m.dur * 1000, delay: Math.max(0, startAt) * 1000, easing: cssEasing(m.ease), fill: 'forwards' }, cStart);
           }
         }
       });

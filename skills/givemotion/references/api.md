@@ -7,7 +7,7 @@ Lookup tables. SKILL.md has the core; `references/timeline.md` has `gm.timeline`
 | Attribute | What it does |
 |---|---|
 | `data-enter="<preset> [dur] [delay] [easing]"` | Animate in at the start of the element's clip. Default: a spring timed to the move's size. |
-| `data-exit="<preset> [dur] [delay] [easing]"` | Animate out so it finishes at the clip end (delay counts back from the end). |
+| `data-exit="<preset> [dur] [delay] [easing]"` | Animate out so it finishes at the clip end (delay counts back from the end). `collapse` takes a row out of a list: it slides aside, then its height closes and what is below moves up. |
 | `data-stagger="0.08"` | Apply enter/exit to each child (or each split piece) with increasing delay. |
 | `data-split="words\|chars\|lines"` | Wrap pieces in `.gm-word` / `.gm-char` spans with `--i` (index) and `--n` (count) for your own CSS. |
 | `data-count="0 1250"` | Count up. Also `data-count-duration` (1.6), `-delay`, `-prefix`, `-suffix`, `-decimals`, `-ease`, `-group="false"`. |

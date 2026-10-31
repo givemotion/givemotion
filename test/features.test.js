@@ -1376,6 +1376,15 @@ test('captions fit="true" keeps every line on one line, smaller when too wide; p
   assert.equal(await evalAt(mk(''), 0.1, `+getComputedStyle(document.querySelector('.gmb-phone')).opacity`), 1, 'no entrance');
 });
 
+test('data-exit="collapse": a list row slides away, then its height closes and the rows below move up', { skip }, async () => {
+  const d = tmp(), f = join(d, 'col.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="3"><ul style="position:absolute;left:40px;top:20px;margin:0;padding:0;list-style:none;font-size:24px">
+    <li style="height:40px;margin:6px 0">One</li><li id="gone" data-start="0" data-duration="2" data-exit="collapse" style="height:40px;margin:6px 0">Two</li><li id="three" style="height:40px;margin:6px 0">Three</li></ul></section>`, 'data-width="320" data-height="240" data-fps="30" data-duration="3"'));
+  const top = (t) => evalAt(f, t, `Math.round(document.querySelector('#three').getBoundingClientRect().top)`);
+  const before = await top(1.0), during = await top(1.95);
+  assert.ok(before - during >= 25, `Three moves up while the row closes, before the clip ends: ${before} -> ${during}`);
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

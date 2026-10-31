@@ -188,6 +188,12 @@
     for (let i = 0; i + want.length <= W.list.length; i++) {
       if (!want.every((w, k) => W.list[i + k].n === w)) continue;
       if (++seen < nth) continue;
+      // a bare word said more than once: the first is taken; say where the others are (the wrong one is easy to miss)
+      if (!m[2]) {
+        const more = [];
+        for (let j = i + 1; j + want.length <= W.list.length; j++) if (want.every((w, k) => W.list[j + k].n === w)) more.push(W.list[j].start);
+        if (more.length) report('warning', 'word-repeated', `"${spec}"${attr ? ' (' + attr + ')' : ''} is said ${more.length + 1} times; the first, at ${round(W.list[i].start)} s, is used.`, el, `If you meant a later one, write ${more.slice(0, 3).map((t2, k) => '@' + m[1] + '#' + (k + 2) + ' (' + round(t2) + ' s)').join(', ')}, or name a phrase (@${m[1]}_${W.list[i + want.length] ? W.list[i + want.length].n : 'next'}). Add #1 to keep the first and silence this.`);
+      }
       const t = m[3] === '.end' ? W.list[i + want.length - 1].end : W.list[i].start;
       return t + (m[4] ? parseFloat(m[4]) : 0);
     }
@@ -1112,6 +1118,9 @@
     for (const el of els) {
       if (el.__gmEE) continue;
       el.__gmEE = true;
+      // data-enter="none" (a block's own entrance turned off from its include: enter="none")
+      for (const k of ['data-enter', 'data-exit']) if (el.hasAttribute(k) && /^\s*(none|off)?\s*$/i.test(el.getAttribute(k))) el.removeAttribute(k);
+      if (!el.hasAttribute('data-enter') && !el.hasAttribute('data-exit')) continue;
       const stagger = parseTime(el.getAttribute('data-stagger'), el, 'data-stagger');
       const targets = eeTargets(el, stagger);
       const base = nearestClip(el);

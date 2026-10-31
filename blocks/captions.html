@@ -1,11 +1,11 @@
 <!-- block:
 description: Word-by-word captions (TikTok/Reels style) from a word-timed JSON file or an .srt file. The spoken word is highlighted.
-params: file (captions.json or .srt; leave it out to use the page's <html data-words> transcript), color (text, default #fff), shadow (dark|light|none: dark for a dark or busy video, none or light on a light background), words (max words per line, default 5), accent (color), position (bottom|center|top), offset (distance from the top/bottom edge in px at 1080p; default 120, or 420 on vertical video to stay above the app buttons), size (px at 1080p; scales with the short side, default 64), weight (font weight, default 800), upper (true = UPPERCASE)
+params: file (captions.json or .srt; leave it out to use the page's <html data-words> transcript), color (text, default #fff), shadow (dark|light|none: dark for a dark or busy video, none or light on a light background), words (max words per line, default 5), accent (color), position (bottom|center|top), offset (distance from the top/bottom edge in px at 1080p; default 120, or 420 on vertical video to stay above the app buttons), size (px at 1080p; scales with the short side, default 64), weight (font weight, default 800), upper (true = UPPERCASE), fit (true: every line stays on one line, smaller when it is too wide)
 hold: seconds the last line stays after its last word (default 0.8; 0 = gone with the word, so it does not run into the next scene).
 Paging: lines break at sentence ends, pauses and commas, and are balanced, so a line never holds one lonely word.
 usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>   JSON: [{"word":"Hello","start":0.2,"end":0.5}, …] (times in seconds, relative to the block's start)
 -->
-<div class="gmb-cap gmb-cap--{{position|bottom}} gmb-cap--shadow-{{shadow|dark}}" style="--accent:{{accent|#ffd23f}};--cap-color:{{color|#fff}};--size:{{size|64}};--weight:{{weight|800}}" data-file="{{file}}" data-words="{{words|5}}" data-offset="{{offset}}" data-upper="{{upper}}" data-hold="{{hold|0.8}}"><div class="gmb-cap__line"></div></div>
+<div class="gmb-cap gmb-cap--{{position|bottom}} gmb-cap--shadow-{{shadow|dark}}" style="--accent:{{accent|#ffd23f}};--cap-color:{{color|#fff}};--size:{{size|64}};--weight:{{weight|800}}" data-file="{{file}}" data-fit="{{fit}}" data-words="{{words|5}}" data-offset="{{offset}}" data-upper="{{upper}}" data-hold="{{hold|0.8}}"><div class="gmb-cap__line"></div></div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
@@ -16,6 +16,7 @@ usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>
   root.style.setProperty('--off', isFinite(off) ? off : gm.height > gm.width ? 420 : 120);
   if (/^(true|1|yes)$/i.test(root.dataset.upper)) line.style.textTransform = 'uppercase';
   let pages = [];
+  const fit = /^(true|1|yes)$/i.test(root.dataset.fit || '');
   const parseSrt = (txt) => txt.replace(/\r/g, '').split(/\n\n+/).map((b) => {
     const m = /(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)/.exec(b);
     if (!m) return null;
@@ -83,6 +84,12 @@ usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>
     if (pi !== shown) {
       shown = pi;
       line.innerHTML = pi < 0 ? '' : pages[pi].words.map((w) => `<span class="gmb-cap__w">${w.word.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`).join(' ');
+      // fit="true": each line on one line, made smaller when it is too wide (measured once per line, at its size)
+      if (fit && pi >= 0) {
+        line.style.fontSize = ''; line.style.whiteSpace = 'nowrap'; line.style.maxWidth = 'none';
+        const avail = root.clientWidth - parseFloat(getComputedStyle(root).paddingLeft) - parseFloat(getComputedStyle(root).paddingRight);
+        if (line.scrollWidth > avail && avail > 0) line.style.fontSize = (parseFloat(getComputedStyle(line).fontSize) * avail / line.scrollWidth).toFixed(2) + 'px';
+      }
     }
     if (pi < 0) return;
     const p = pages[pi];

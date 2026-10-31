@@ -1798,7 +1798,7 @@
     const resolve = (c, tg) => (Array.isArray(tg) ? tg : [tg]).flatMap((x) => typeof x === 'string' ? [...c.world.querySelectorAll(x)] : x instanceof Element ? [(I.replaced && I.replaced.get(x)) || x] : []);
     try {
       // fit shots: where their elements rest during the shot. Sampled across the hold (from the arrival to the next shot
-      // or the end of the clip); the last two samples that agree give the box. A target still moving at the end of
+      // or the end of the clip); the longest run of samples that agree gives the box. A target still moving at the end of
       // its hold (a truck that keeps driving) has no rest: it is measured live, every frame, as before.
       if (I.probe) {
         const rest = new Map();
@@ -1827,7 +1827,14 @@
         const same = (a, b) => a && b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5;
         const r2 = (x) => Math.round(x * 100) / 100;
         for (const { sh, boxes } of jobsRest) {
-          for (let j = boxes.length - 1; j > 0; j--) if (same(boxes[j], boxes[j - 1])) { const b = boxes[j]; sh.__rest = { x: r2(b.x), y: r2(b.y), w: r2(b.w), h: r2(b.h) }; break; }
+          // the longest stretch where the box stays put (an entrance before it and an exit after it are not the rest;
+          // on a tie, the later one, as an entrance usually comes first)
+          let best = null, bestLen = 1;
+          for (let j = 1, run = 1; j < boxes.length; j++) {
+            run = same(boxes[j], boxes[j - 1]) ? run + 1 : 1;
+            if (run >= 2 && run >= bestLen) { bestLen = run; best = boxes[j]; }
+          }
+          if (best) sh.__rest = { x: r2(best.x), y: r2(best.y), w: r2(best.w), h: r2(best.h) };
         }
         if (rest.size) I.probe(0);
       }

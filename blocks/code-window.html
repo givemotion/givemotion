@@ -1,10 +1,10 @@
 <!-- block:
 description: Editor window with syntax highlighting and an optional typing effect. Put the code between the tags as plain text (no escaping needed).
-params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p; scales with the short side, default 1200), size (font px, default 34), highlight (lines to highlight: "6" or "2-4,6"), focus (lines to keep bright, the others are dimmed), gutter (true = line numbers), grow (true = the window grows while typing instead of keeping its final size)
+params: title (file name), lang (js|ts|py|bash|json|html|css|go|rust), typing (chars per second, 0 = no typing), delay (seconds before typing), width (px at 1080p; scales with the short side, default 1200), size (font px, default 34), highlight (lines to highlight: "6" or "2-4,6"), focus (lines to keep bright, the others are dimmed), gutter (true = line numbers), grow (true = the window grows while typing instead of keeping its final size), enter (its entrance, default "scale 0.7 0 out-expo"; "none" when you bring it in yourself)
 targets: every line is <span class="gm-line" data-line="N"> (aim a camera at it, animate it with a timeline: '.gm-line[data-line="6"]'). Wrap a part of the code in ⟦ ⟧ to mark it: it becomes <span class="gm-mark" data-mark="1"> (2, 3… in order), e.g. await sleep(⟦2 ** i * 250⟧). The ⟦ ⟧ are not shown.
 usage: <gm-include src="blocks/code-window.html" title="app.ts" lang="ts" typing="40" data-duration="6">const answer = await ai.run(prompt);</gm-include>
 -->
-<div class="gmb-code" style="--w:{{width|1200}};--fs:{{size|34}}" data-enter="scale 0.7 0 out-expo">
+<div class="gmb-code" style="--w:{{width|1200}};--fs:{{size|34}}" data-enter="{{enter|scale 0.7 0 out-expo}}">
   <div class="gmb-code__bar"><i></i><i></i><i></i><span>{{title}}</span></div>
   <textarea hidden class="gmb-code__src">{{content}}</textarea>
   <pre class="gmb-code__pre"><code data-lang="{{lang|js}}" data-typing="{{typing|0}}" data-delay="{{delay|0.4}}" data-highlight="{{highlight}}" data-focus="{{focus}}" data-gutter="{{gutter}}" data-grow="{{grow}}"></code></pre>

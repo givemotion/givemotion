@@ -1,6 +1,6 @@
 <!-- block:
 description: A mouse pointer that glides between targets and clicks them. Aim at real elements with CSS selectors (the pointer follows them even while they move, through any camera zoom), or at "x,y" points (px at 1080p, in the box the cursor sits in: inside a gm.camera world that is world px). Add ! to click. Clicked elements get a short press, and the attribute data-gm-pressed while pressed and data-gm-hover while the pointer is over them, so you can style them. Put it inside a camera world (it zooms with the world) or after the world in the scene (it keeps its size and still lands on the targets in the world).
-params: points (e.g. "#email #submit! 1500,900"; a selector aims a little below its middle, or where you say after @: "#slot-thu@30%,55%" = 30% across and 55% down its box, "#row@40,50%" = 40 px in from its left edge (px at 1080p, zoomed with it) and halfway down; put the ! last: "#slot-thu@30%,55%!"), aim (default aim point for selector targets without their own @, same form, default "50%,56%"), ring (the click ripple's color, e.g. "#e5484d"; "light" = white; default: a dark ring with a light halo that reads on light and dark UIs, white with <html data-motion="classic">), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid, or words of the voice-over "@type @send-0.2" with <html data-words>), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, and fades out after its last point), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
+params: points (e.g. "#email #submit! 1500,900"; a selector aims a little below its middle, or where you say after @: "#slot-thu@30%,55%" = 30% across and 55% down its box, "#row@40,50%" = 40 px in from its left edge (px at 1080p, zoomed with it) and halfway down; put the ! last: "#slot-thu@30%,55%!"), aim (default aim point for selector targets without their own @, same form, default "50%,56%"), ring (the click ripple's color, e.g. "#e5484d"; "light" = white; default: a dark ring with a light halo that reads on light and dark UIs, white with <html data-motion="classic">), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid, or words of the voice-over "@type @send-0.2" with <html data-words>), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, fades out after its last point, and leaves during a wait of 3 s or more between two points), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
 usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node:nth-child(2)!" times="0.3 1.4 3 4.2" show="auto"></gm-include>
 -->
 <div class="gmb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-show="{{show|always}}" data-style="{{style|auto}}" data-aim="{{aim}}" data-ring="{{ring}}">
@@ -97,9 +97,16 @@ usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node
         x = q(P.x, mx, Q.x); y = q(P.y, my, Q.y);
       }
     }
-    const opacity = show === 'auto'
+    let opacity = show === 'auto'
       ? Math.min(gm.interpolate(t, [appear - 0.25, appear], [0, 1]), gm.interpolate(t, [leave, leave + 0.3], [1, 0]))
       : gm.interpolate(local, [0, 0.25], [0, 1]);
+    // show="auto" and a long wait between two points (3 s or more): the pointer leaves after the first and comes back
+    // just before it sets off for the next, instead of sitting on the screen
+    if (show === 'auto') for (let i = 0; i + 1 < n; i++) {
+      const a = ts[i] + (pts[i].click ? 0.6 : 0.25), b = ts[i + 1] - 0.9;
+      if (b - a < 2.1 || t <= a || t >= b) continue;
+      opacity = Math.min(opacity, Math.max(gm.interpolate(t, [a, a + 0.3], [1, 0]), gm.interpolate(t, [b - 0.3, b], [0, 1])));
+    }
     // clicks: press + ripple right after arriving at a point marked with !
     let press = 1, rp = -1;
     const nowPressed = new Set();

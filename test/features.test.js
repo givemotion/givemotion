@@ -1345,6 +1345,37 @@ test('check: camera-zoom-high when a fit zooms past 4x onto a small target, not 
   assert.ok(!(await check(mk(', maxZoom: 6'), { fast: true })).issues.some((i) => i.code === 'camera-zoom-high'));
 });
 
+test('camera fit frames where the target rests longest, not where its exit leaves it at the end of the hold', { skip }, async () => {
+  const d = tmp(), f = join(d, 'fx.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="6" style="position:absolute;inset:0;overflow:hidden"><div id="world" style="position:absolute;left:0;top:0;width:2000px;height:1200px">
+    <div id="ph" style="position:absolute;left:800px;top:300px;width:300px;height:500px;background:#36c"></div></div>
+    <script>gm.timeline().to('#ph', { y: 1400, duration: 0.2, ease: 'in-cubic' }, 4.3);
+    gm.camera('#world').shot(0, { center: { x: 1000, y: 600 }, zoom: 0.6 }).shot(1, { fit: '#ph', padding: 80, duration: 0.8 });</script></section>`, 'data-width="1280" data-height="720" data-fps="30" data-duration="6"'));
+  const box = await evalAt(f, 3, `(() => { const b = document.querySelector('#ph').getBoundingClientRect(); return [Math.round(b.top), Math.round(b.bottom)]; })()`);
+  assert.deepEqual(box, [80, 640], 'framed with its padding while it rests');
+});
+
+test('transcript: a bare word said more than once warns word-repeated with the later times; #1 keeps the first quietly', { skip }, async () => {
+  const d = tmp(), f = join(d, 'wr.html');
+  writeFileSync(join(d, 'voice.json'), JSON.stringify([['Tap', 0.3], ['for', 0.8], ['more', 1.0], ['follow', 3.0], ['for', 3.4], ['tips', 3.6]].map(([word, start]) => ({ word, start, end: start + 0.2 }))));
+  const mk = (w) => { writeFileSync(f, page(`<b data-start="${w}" style="position:absolute">x</b>`, 'data-width="320" data-height="180" data-fps="30" data-duration="4" data-words="voice.json"')); return f; };
+  const w1 = (await check(mk('@for'), { fast: true })).issues.find((i) => i.code === 'word-repeated');
+  assert.ok(w1 && /@for#2 \(3\.4 s\)/.test(w1.fix), w1 && w1.fix);
+  assert.ok(!(await check(mk('@for#1'), { fast: true })).issues.some((i) => i.code === 'word-repeated'));
+});
+
+test('captions fit="true" keeps every line on one line, smaller when too wide; phone enter="none" has no entrance', { skip }, async () => {
+  const d = tmp(), f = join(d, 'cf.html');
+  mkdirSync(join(d, 'blocks'));
+  for (const b of ['captions.html', 'phone.html']) copyFileSync(join(ROOT, 'blocks', b), join(d, 'blocks', b));
+  writeFileSync(join(d, 'voice.json'), JSON.stringify([['Subscriptions', 0.2], ['everywhere', 0.9], ['nobody', 1.5], ['remembers.', 2.0]].map(([word, start]) => ({ word, start, end: start + 0.4 }))));
+  const mk = (fit) => { writeFileSync(f, page(`<section class="scene" data-duration="3"><gm-include src="blocks/captions.html" size="150" words="4" ${fit}></gm-include><gm-include src="blocks/phone.html" enter="none"></gm-include></section>`, 'data-width="1080" data-height="1920" data-fps="30" data-words="voice.json"')); return f; };
+  const lines = (fit) => evalAt(mk(fit), 2.3, `(() => { const l = document.querySelector('.gmb-cap__line'); return Math.round(l.getBoundingClientRect().height / parseFloat(getComputedStyle(l).lineHeight)); })()`);
+  assert.ok((await lines('')) >= 2, 'wraps without fit');
+  assert.equal(await lines('fit="true"'), 1);
+  assert.equal(await evalAt(mk(''), 0.1, `+getComputedStyle(document.querySelector('.gmb-phone')).opacity`), 1, 'no entrance');
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

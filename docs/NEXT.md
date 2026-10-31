@@ -88,6 +88,10 @@ This is the reason people reach for React components; the answer is to have it i
   (`unwrapSceneIncludes` in the runtime). Scene starts from word times: `<html data-words>` and `data-cuts="0 @word …"` (done 2026-10-30).
 - **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
   `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
+- Fourth agent test (2026-10-30, vertical short): fixed from it: `word-repeated` (a bare @word said twice silently took
+  the first), camera fit takes the longest rest (an exit at the end of a hold moved the framing), cursor show="auto"
+  leaves during waits of 3 s+, `enter="none"` on device blocks (phone, browser-window, code-window) and data-enter="none",
+  captions `fit="true"` (one line, shrunk when too wide).
 - Third agent test (2026-10-30, UI product demo with voice-timed captions): fixed from it: cursor `times` take words,
   block styles sit in a cascade layer (the page's CSS always restyles a block), captions read the page transcript and
   take `color`/`shadow`, the CLI warns about options a command does not read (`snapshot --at`), a morph into a scene that

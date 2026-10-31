@@ -1,9 +1,9 @@
 <!-- block:
 description: Animated bar chart. Bars grow one after another and their values count up.
-params: values (comma list), labels (comma list), title, prefix, suffix, max (optional), color, highlight (index of bar to highlight, 0-based), height (px at 1080p; scales with the short side, default 560)
+params: values (comma list), labels (comma list), title, prefix, suffix, max (optional), color, highlight (index of bar to highlight, 0-based), height (px at 1080p; scales with the short side, default 560), direction (vertical|horizontal: rows that grow to the right with the value riding the bar's end, for comparisons), colors (comma list, one per bar)
 usage: <gm-include src="blocks/bar-chart.html" title="Revenue (k$)" values="12,19,31,48" labels="Q1,Q2,Q3,Q4" highlight="3" data-duration="5"></gm-include>
 -->
-<div class="gmb-bars" style="--c:{{color|#7c9cff}};--h:{{height|560}}" data-values="{{values|3,5,8,13}}" data-labels="{{labels}}" data-prefix="{{prefix}}" data-suffix="{{suffix}}" data-max="{{max}}" data-hl="{{highlight|-1}}">
+<div class="gmb-bars gmb-bars--{{direction|vertical}}" data-colors="{{colors}}" style="--c:{{color|#7c9cff}};--h:{{height|560}}" data-values="{{values|3,5,8,13}}" data-labels="{{labels}}" data-prefix="{{prefix}}" data-suffix="{{suffix}}" data-max="{{max}}" data-hl="{{highlight|-1}}">
   <div class="gmb-bars__title" data-enter="fade-up 0.6">{{title}}</div>
   <div class="gmb-bars__plot"></div>
 </div>
@@ -15,10 +15,23 @@ usage: <gm-include src="blocks/bar-chart.html" title="Revenue (k$)" values="12,1
   const labels = root.dataset.labels ? root.dataset.labels.split(',') : vals.map((_, i) => String(i + 1));
   const max = parseFloat(root.dataset.max) || Math.max(...vals) * 1.08;
   const hl = parseInt(root.dataset.hl, 10);
+  const colors = root.dataset.colors ? root.dataset.colors.split(',').map((c) => c.trim()) : [];
+  const horizontal = root.classList.contains('gmb-bars--horizontal');
   vals.forEach((v, i) => {
+    if (horizontal) {
+      // a row: label, then the bar growing to the right with its value just past its end
+      const row = document.createElement('div');
+      row.className = 'gmb-bars__row' + (i === hl ? ' is-hl' : '') + (hl >= 0 && i !== hl ? ' is-dim' : '');
+      row.style.setProperty('--i', i);
+      if (colors[i]) row.style.setProperty('--c', colors[i]);
+      row.innerHTML = `<div class="gmb-bars__lbl">${(labels[i] || '').trim()}</div><div class="gmb-bars__track"><div class="gmb-bars__bar" style="width:${(v / max) * 100}%"></div><div class="gmb-bars__val"><span data-count="${v}" data-count-duration="1.2" data-count-delay="${0.3 + i * 0.12}" data-count-prefix="${root.dataset.prefix}" data-count-suffix="${root.dataset.suffix}"></span></div></div>`;
+      plot.appendChild(row);
+      return;
+    }
     const col = document.createElement('div');
     col.className = 'gmb-bars__col' + (i === hl ? ' is-hl' : '') + (hl >= 0 && i !== hl ? ' is-dim' : '');
     col.style.setProperty('--i', i);
+    if (colors[i]) col.style.setProperty('--c', colors[i]);
     col.innerHTML = `<div class="gmb-bars__val"><span data-count="${v}" data-count-duration="1.2" data-count-delay="${0.35 + i * 0.12}" data-count-prefix="${root.dataset.prefix}" data-count-suffix="${root.dataset.suffix}"></span></div>
       <div class="gmb-bars__bar" style="height:${(v / max) * 100}%"></div><div class="gmb-bars__lbl">${(labels[i] || '').trim()}</div>`;
     plot.appendChild(col);
@@ -39,4 +52,12 @@ usage: <gm-include src="blocks/bar-chart.html" title="Revenue (k$)" values="12,1
 .gmb-bars__val{text-align:center;font-size:calc(var(--px)*40);font-weight:700;margin-bottom:calc(var(--px)*14);font-variant-numeric:tabular-nums;animation:fade-up .6s var(--ease-out-expo) calc(.35s + var(--i)*.12s) both}
 .gmb-bars__lbl{position:absolute;top:100%;left:0;right:0;text-align:center;margin-top:calc(var(--px)*16);font-size:calc(var(--px)*30);opacity:.7}
 @keyframes gmb-bar-grow{from{scale:1 0}}
+.gmb-bars--horizontal .gmb-bars__plot{flex-direction:column;align-items:stretch;justify-content:center;height:auto;gap:calc(var(--px)*26);border-bottom:0}
+.gmb-bars__row{display:flex;align-items:center;gap:calc(var(--px)*28)}
+.gmb-bars__row .gmb-bars__lbl{position:static;flex:0 0 calc(var(--px)*260);text-align:right;margin:0;font-size:calc(var(--px)*34)}
+.gmb-bars__track{flex:1;display:flex;align-items:center;gap:calc(var(--px)*18);height:calc(var(--px)*72)}
+.gmb-bars__row .gmb-bars__bar{height:100%;flex:none;border-radius:calc(var(--px)*4) calc(var(--px)*14) calc(var(--px)*14) calc(var(--px)*4);background:linear-gradient(90deg,var(--c),color-mix(in oklab,var(--c),white 18%));animation:gmb-hbar-grow 1.1s var(--ease-out-expo) calc(.3s + var(--i)*.12s) both}
+.gmb-bars__row .gmb-bars__val{margin:0;animation:fade-in .4s ease-out calc(.3s + var(--i)*.12s) both}
+.gmb-bars__row.is-dim .gmb-bars__bar{opacity:.38}
+@keyframes gmb-hbar-grow{from{width:0}}
 </style>

@@ -1400,6 +1400,18 @@ test('gm.chart.line series: one scale for every line, x labels once, names at th
   assert.equal(r.at, '2016');
 });
 
+test('bar-chart direction="horizontal": rows grow right, the value rides the end of its bar, colors per bar', { skip }, async () => {
+  const d = tmp(), f = join(d, 'hb.html');
+  mkdirSync(join(d, 'blocks'));
+  copyFileSync(join(ROOT, 'blocks', 'bar-chart.html'), join(d, 'blocks', 'bar-chart.html'));
+  writeFileSync(f, page(`<section class="scene" data-duration="3"><gm-include src="blocks/bar-chart.html" direction="horizontal" values="45,50,117" labels="Solar,Wind,Coal" colors="#e8a10c,#2b7bb9,#555"></gm-include></section>`, 'data-width="1280" data-height="720" data-fps="30" data-duration="3"'));
+  const at = (t) => evalAt(f, t, `[...document.querySelectorAll('.gmb-bars__row')].map((r) => { const b = r.querySelector('.gmb-bars__bar').getBoundingClientRect(), v = r.querySelector('.gmb-bars__val').getBoundingClientRect(); return [Math.round(b.right), Math.round(v.left - b.right), getComputedStyle(r.querySelector('.gmb-bars__bar')).backgroundImage.includes('232, 161, 12')]; })`);
+  const mid = await at(0.7), end = await at(2.8);
+  assert.ok(end[2][0] > mid[2][0] + 20, 'the bar grows');
+  assert.ok(end.every((r) => r[1] >= 0 && r[1] < 30) && mid.every((r) => r[1] >= 0 && r[1] < 30), 'the value sits just past the bar end while it grows');
+  assert.equal(end[0][2], true, 'first bar takes its own color');
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

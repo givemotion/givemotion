@@ -44,7 +44,9 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = [], sta
     if (!existsSync(file) || !statSync(file).isFile() || !linkIsSafe(file)) return `<div data-gm-include-error="${esc(attrs.src)}" data-check="ignore" style="color:#f33;font:24px monospace">gm-include not found: ${esc(attrs.src)}</div>`;
     if (seen.includes(file)) return `<!-- circular gm-include ${esc(attrs.src)} -->`;
     let body = readFileSync(file, 'utf8');
-    // Drop the block's documentation comment
+    // Drop the block's documentation comment. A block's own <style> goes in a cascade layer, so the page's CSS always
+    // restyles it (a brand's color, font, a light background), whatever the order or the specificity of its selectors.
+    const isBlock = /<!--\s*block:/.test(body);
     body = body.replace(/<!--\s*block:[\s\S]*?-->\s*/, '');
     // `scope`: this copy's ids, their #references and its <style> are private to it (see scopePart)
     const scoped = 'scope' in attrs && attrs.scope !== 'false';
@@ -57,6 +59,7 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = [], sta
       return def != null ? def.trim() : '';
     });
     if (scoped) body = scopePart(body, tag);
+    if (isBlock) body = body.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (m, o, css, c) => (/@import/i.test(css) ? m : `${o}@layer gm-block{${css}}${c}`));
     body = expandIncludes(body, dirname(file), rootDir, depth + 1, [...seen, file], state);
     const passthrough = Object.entries(attrs).filter(([k]) => k === 'class' || k === 'style' || k === 'id' || k.startsWith('data-'))
       .concat(scoped ? [['data-gm-scope', tag]] : [])

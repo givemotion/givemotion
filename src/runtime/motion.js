@@ -1192,7 +1192,20 @@
             an.pause(); I.addOwnAnim(an, ca.start);
           }
         };
-        fadeKids(A);
+        // A new scene that paints the whole frame fades in over the old one, which is the crossfade itself: fading the old
+        // scene's pieces one by one as well would let them show through each other (an app behind a toast)
+        const paintsFrame = (e) => {
+          if (!e) return false;
+          const cs = getComputedStyle(e), r = e.getBoundingClientRect();
+          const solid = cs.backgroundImage !== 'none' || /^rgb\(/.test(cs.backgroundColor) || /^rgba\(.*,\s*1\)$/.test(cs.backgroundColor);
+          return solid && r.left <= 1 && r.top <= 1 && r.right >= I.comp.width - 1 && r.bottom >= I.comp.height - 1;
+        };
+        // (measured with the new scene shown for a moment: before its start it is not displayed)
+        const hid = [];
+        for (let e = B; e; e = e.parentElement) if (e.hasAttribute && e.hasAttribute('data-gm-hidden')) { hid.push(e); e.removeAttribute('data-gm-hidden'); }
+        let covers = false;
+        try { covers = paintsFrame(B) || paintsFrame(B.firstElementChild); } finally { for (const e of hid) e.setAttribute('data-gm-hidden', ''); }
+        if (!covers) fadeKids(A);
       }
       if (!found) I.report('warning', 'morph-no-pairs', 'data-transition="morph" found no matching data-morph ids in the two scenes, so it is a plain crossfade.', B, 'Give the same data-morph="name" to an element in each scene.');
     }
@@ -1515,6 +1528,8 @@
         }
       }
       zoom = Math.max(sh.minZoom ?? 0.05, Math.min(sh.maxZoom ?? 20, zoom ?? 1));
+      // a fit on something small (a tag, an icon) fills the frame with it: say so once, unless a maxZoom was chosen
+      if (sh.fit != null && zoom > 4 && sh.maxZoom == null && !sh.__zoomWarned) { sh.__zoomWarned = true; I.report('warning', 'camera-zoom-high', `gm.camera shot at ${sh.at}s: the fit zooms ${Math.round(zoom * 10) / 10}x, so what it frames fills the screen (text looks huge, pictures soft).`, null, 'Fit a bigger area (the card, not the tag), add padding, or cap it with maxZoom: 2.5. If the close-up is meant, give maxZoom to say so.'); }
       const off = sh.offset || [0, 0];
       if (sh.fit == null && safe) { ix = sdx(zoom); iy = sdy(zoom); }
       return { cx: box.x + box.w / 2 + off[0] - ix, cy: box.y + box.h / 2 + off[1] - iy, zoom, rot: sh.rotate || 0 };

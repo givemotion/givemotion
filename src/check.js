@@ -616,15 +616,17 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
       if (a !== t.el && parseFloat(cs.opacity) < 0.99) return null;
     }
     if (!bgEl) return null;
+    if (bgEl === t.el) { t.bgEl = bgEl; return bg; } // the text's own background (a pill, a badge)
     const q = t.rs[0], st = document.elementsFromPoint((q.left + q.right) / 2, (q.top + q.bottom) / 2);
     let k = st.findIndex((e) => e === t.el || t.el.contains(e));
     if (k < 0) return null;
-    for (k++; k < st.length; k++) { const e = st[k]; if (e === bgEl) return bg; if (!e.contains(t.el)) return null; }
+    for (k++; k < st.length; k++) { const e = st[k]; if (e === bgEl) { t.bgEl = bgEl; return bg; } if (!e.contains(t.el)) return null; }
     return null;
   };
   const tNow = opt && opt.t != null ? opt.t : null;
   if (!window.__gmSigs) window.__gmSigs = {};
-  window.__gmTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && !t.fading && inFrame(t) && !underSomething(t)).map((t) => {
+  // (text still moving into place is judged once it rests: mid-entrance its pixels and its box do not line up)
+  window.__gmTextBoxes = transitioning ? [] : live.filter((t) => !t.clipText && t.op >= 0.75 && !t.fading && !t.moving && inFrame(t) && !underSomething(t)).map((t) => {
     const cs = getComputedStyle(t.el);
     // A dark/light text-shadow or outline gives text its own backing; be lenient then.
     const backed = (cs.textShadow && cs.textShadow !== 'none') || parseFloat(cs.webkitTextStrokeWidth) > 0;
@@ -634,7 +636,11 @@ const PAGE_ANALYZE = String.raw`((dt, opt) => {
     const sig = fb ? [t.color, fb, large ? 'L' : 'N'].join('|') : null;
     const s0 = sel(t.el);
     if (sig && tNow != null) { const g = window.__gmSigs[s0]; if (g && g.sig === sig) { g.times.push(tNow); } else window.__gmSigs[s0] = { sig, text: snippet(t.el), times: [tNow] }; }
-    return { sel: s0, text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, backed, large, sig };
+    // a solid backing that holds the whole text (a pill, a badge): judge against its color, not the pixels around its
+    // rounded corners that the text's line box also covers
+    const R = fb && t.bgEl ? t.bgEl.getBoundingClientRect() : null;
+    const flat = R && t.rs.every((r) => r.left >= R.left - 0.5 && r.right <= R.right + 0.5 && r.top >= R.top - 0.5 && r.bottom <= R.bottom + 0.5) ? fb : null;
+    return { sel: s0, text: snippet(t.el), rects: t.rs.map((r) => [r.left, r.top, r.width, r.height]), color: t.color, op: t.op, backed, large, sig, flat };
   });
   // 7. A tween or style on an element with display: contents (a <gm-include> without class or style is one): it draws
   //    no box, so its opacity, transform, filter and clip-path do nothing. Noted once, the first time it is seen.
@@ -1352,6 +1358,7 @@ function contrastScript(dataUrl, scale) {
       const step = Math.max(1, Math.floor((Wd * Hd) / 4000));
       for (let i = 0; i < Wd * Hd; i += step) samples.push([d[i * 4], d[i * 4 + 1], d[i * 4 + 2], d[i * 4 + 3]]);
     }
+    if (b.flat) { const f = parse(b.flat); samples.length = 0; samples.push([f[0], f[1], f[2], 255]); }
     if (!samples.length) continue;
     const [r, gg, bb, a0] = parse(b.color);
     const a = a0 * b.op;

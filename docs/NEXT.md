@@ -88,6 +88,12 @@ This is the reason people reach for React components; the answer is to have it i
   (`unwrapSceneIncludes` in the runtime). Scene starts from word times: `<html data-words>` and `data-cuts="0 @word …"` (done 2026-10-30).
 - **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
   `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
+- Third agent test (2026-10-30, UI product demo with voice-timed captions): fixed from it: cursor `times` take words,
+  block styles sit in a cascade layer (the page's CSS always restyles a block), captions read the page transcript and
+  take `color`/`shadow`, the CLI warns about options a command does not read (`snapshot --at`), a morph into a scene that
+  paints the frame no longer fades the old scene piece by piece (an app showed through a toast), low-contrast judges
+  text on its own pill against the pill and waits until moving text rests, and `camera-zoom-high` warns when a fit zooms
+  past 4x. Its "fit frames a later element at its from() state" did not reproduce.
 - Second agent test (2026-10-30, one Opus agent, three voice-timed videos from transcripts): word times, the
   highlight block, the kit and scene files all used; a stretched transcript moved every cut with no code change. Fixed
   from it: @word inside a scene was added to the scene's start (now always video time, also in data-enter/data-exit),

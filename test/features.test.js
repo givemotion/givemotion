@@ -1307,6 +1307,44 @@ test('path travel stops can name waypoints: [1, "#dock"] is where the route pass
   assert.ok(Math.abs((await cx(2.6)) - 460) <= 2, 'ends at the second dock');
 });
 
+test('blocks restyle from the page CSS (cascade layer); captions read the page transcript; cursor times take words', { skip }, async () => {
+  const d = tmp(), f = join(d, 'cap.html');
+  mkdirSync(join(d, 'blocks'));
+  for (const b of ['captions.html', 'cursor.html']) copyFileSync(join(ROOT, 'blocks', b), join(d, 'blocks', b));
+  writeFileSync(join(d, 'voice.json'), JSON.stringify([['Book', 0.3], ['a', 0.6], ['room', 0.8], ['now.', 1.1], ['Send', 2.0], ['it.', 2.3]].map(([word, start]) => ({ word, start, end: start + 0.25 }))));
+  writeFileSync(f, page(`<style>.gmb-cap__line{color:rgb(10, 20, 30)}</style><section class="scene" data-duration="3" style="background:#fff">
+    <button id="send" style="position:absolute;left:400px;top:200px">Send</button>
+    <gm-include src="blocks/captions.html" shadow="none"></gm-include>
+    <gm-include src="blocks/cursor.html" points="100,100 #send!" times="@book @send"></gm-include></section>`, 'data-width="640" data-height="360" data-fps="30" data-words="voice.json"'));
+  const r = await evalAt(f, 2.1, `(() => { const l = document.querySelector('.gmb-cap__line'); const cs = getComputedStyle(l); return { text: l.textContent.replace(/\\s+/g, ' ').trim(), color: cs.color, shadow: cs.textShadow }; })()`);
+  assert.equal(r.color, 'rgb(10, 20, 30)', 'the page CSS beats the block style, though it comes first');
+  assert.equal(r.shadow, 'none');
+  assert.match(r.text, /Send/, 'captions from <html data-words> with no file');
+  const rep = await check(f, { fast: true });
+  assert.ok(!rep.issues.some((i) => i.code === 'cursor-times'), 'cursor times="@book @send" is fine');
+});
+
+test('morph into a scene that paints the whole frame: the new scene fades in over the old one, whose pieces do not show through each other', { skip }, async () => {
+  const d = tmp(), f = join(d, 'mx.html');
+  writeFileSync(f, page(`<main data-sequence data-transition="morph 1"><section class="scene" data-duration="2" style="position:absolute;inset:0;background:#fff">
+      <div id="app" style="position:absolute;left:0;top:0;width:640px;height:360px"><b id="under" style="position:absolute;left:100px;top:100px;font-size:40px;color:#000">UNDER</b></div>
+      <div id="toast" style="position:absolute;left:60px;top:80px;width:400px;height:120px;background:#fff;z-index:2"><i data-morph="logo" style="position:absolute;right:10px;top:10px;width:30px;height:30px;background:#2a6"></i></div>
+      <div id="t1" style="position:absolute;left:60px;top:80px;width:300px;height:120px;background:#fff;z-index:3"></div></section>
+    <section class="scene" data-duration="2" style="position:absolute;inset:0;background:#fff"><i data-morph="logo" style="position:absolute;left:300px;top:160px;width:60px;height:60px;background:#2a6"></i></section></main>`, 'data-width="640" data-height="360" data-fps="30"'));
+  // halfway through the transition, over the opaque card, nothing of the text under it may show
+  const v = await evalAt(f, 1.6, `[getComputedStyle(document.querySelector('#app')).filter, getComputedStyle(document.querySelector('#t1')).filter]`);
+  assert.deepEqual(v, ['none', 'none'], 'the old scene pieces are not faded one by one');
+});
+
+test('check: camera-zoom-high when a fit zooms past 4x onto a small target, not when maxZoom says it is meant', { skip }, async () => {
+  const d = tmp();
+  const mk = (extra) => { const f = join(d, `z${extra.length}.html`); writeFileSync(f, page(`<section class="scene" data-duration="3" style="position:absolute;inset:0;overflow:hidden"><div id="world" style="position:absolute;left:0;top:0;width:1200px;height:700px">
+    <div id="tag" style="position:absolute;left:500px;top:300px;width:60px;height:24px;background:#36c"></div></div>
+    <script>gm.camera('#world').shot(0, { center: { x: 600, y: 350 }, zoom: 0.5 }).shot(1, { fit: '#tag', padding: 10, duration: 0.8${extra} });</script></section>`, 'data-width="640" data-height="360" data-fps="30"')); return f; };
+  assert.ok((await check(mk(''), { fast: true })).issues.some((i) => i.code === 'camera-zoom-high'));
+  assert.ok(!(await check(mk(', maxZoom: 6'), { fast: true })).issues.some((i) => i.code === 'camera-zoom-high'));
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

@@ -68,6 +68,7 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 | `travel-inline`, `travel-bad-side` | `gm.path.travel` on an inline element (a `<span>`: give it `display: inline-block`), or a `side` that is not `above` `below` `left` `right`. |
 | `chart-no-values`, `chart-no-size`, `chart-bad-point` | `gm.chart.line` got fewer than 2 numbers, its element has no width/height, or a point name is not an index, label, `last` or `max`. |
 | `data-missing` | A `{{data.…}}` came out empty: pass `--data`, add `data.json`, or give a default `{{data.x|default}}`. |
+| `camera-zoom-high` | A camera `fit` zooms past 4x on a small target (text huge, pictures soft). Fit a bigger area, add padding, or give `maxZoom` (also to say a close-up is meant). |
 | `include-not-found` | A `<gm-include src>` file does not exist. |
 | `word-not-found`, `words-missing`, `words-file` | A time names a word (`@pricing`) that the transcript does not have (the fix lists near spellings; a phrase joins words with `_`, a repeat is `#2`), or there is no `<html data-words>` transcript, or its file is missing or not a list of `{word, start, end}`. |
 | `load-timeout` | Something given to `gm.wait()` never finished. |

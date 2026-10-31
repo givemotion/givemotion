@@ -1,11 +1,11 @@
 <!-- block:
 description: Word-by-word captions (TikTok/Reels style) from a word-timed JSON file or an .srt file. The spoken word is highlighted.
-params: file (captions.json or .srt), words (max words per line, default 5), accent (color), position (bottom|center|top), offset (distance from the top/bottom edge in px at 1080p; default 120, or 420 on vertical video to stay above the app buttons), size (px at 1080p; scales with the short side, default 64), weight (font weight, default 800), upper (true = UPPERCASE)
+params: file (captions.json or .srt; leave it out to use the page's <html data-words> transcript), color (text, default #fff), shadow (dark|light|none: dark for a dark or busy video, none or light on a light background), words (max words per line, default 5), accent (color), position (bottom|center|top), offset (distance from the top/bottom edge in px at 1080p; default 120, or 420 on vertical video to stay above the app buttons), size (px at 1080p; scales with the short side, default 64), weight (font weight, default 800), upper (true = UPPERCASE)
 hold: seconds the last line stays after its last word (default 0.8; 0 = gone with the word, so it does not run into the next scene).
 Paging: lines break at sentence ends, pauses and commas, and are balanced, so a line never holds one lonely word.
 usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>   JSON: [{"word":"Hello","start":0.2,"end":0.5}, …] (times in seconds, relative to the block's start)
 -->
-<div class="gmb-cap gmb-cap--{{position|bottom}}" style="--accent:{{accent|#ffd23f}};--size:{{size|64}};--weight:{{weight|800}}" data-file="{{file}}" data-words="{{words|5}}" data-offset="{{offset}}" data-upper="{{upper}}" data-hold="{{hold|0.8}}"><div class="gmb-cap__line"></div></div>
+<div class="gmb-cap gmb-cap--{{position|bottom}} gmb-cap--shadow-{{shadow|dark}}" style="--accent:{{accent|#ffd23f}};--cap-color:{{color|#fff}};--size:{{size|64}};--weight:{{weight|800}}" data-file="{{file}}" data-words="{{words|5}}" data-offset="{{offset}}" data-upper="{{upper}}" data-hold="{{hold|0.8}}"><div class="gmb-cap__line"></div></div>
 <script>
 (() => {
   const root = document.currentScript.previousElementSibling;
@@ -57,7 +57,9 @@ usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>
     }
     return out.map((ws) => ({ start: ws[0].start, end: ws[ws.length - 1].end, words: ws }));
   };
-  gm.wait(fetch(file).then((r) => { if (!r.ok) throw new Error('captions file not found: ' + file); return r.text(); }).then((txt) => {
+  // no file: the page's voice-over transcript (<html data-words="voice.json">), in video time
+  let abs = false;
+  if (!file && gm.words.length) { abs = true; pages = build(gm.words); root.__gmPages = pages; } else gm.wait(fetch(file).then((r) => { if (!r.ok) throw new Error('captions file not found: ' + file); return r.text(); }).then((txt) => {
     let words;
     if (/\.srt$/i.test(file)) {
       words = [];
@@ -74,7 +76,8 @@ usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>
     root.__gmPages = pages; // read by `givemotion captions` (paging preview)
   }));
   let shown = -1;
-  gm.onFrame(root, (t) => {
+  gm.onFrame(root, (t, info) => {
+    if (abs) t = info.time;
     const hold = parseFloat(root.dataset.hold); const H = isFinite(hold) ? hold : 0.8;
     let pi = pages.findIndex((p, i) => t >= p.start - 0.05 && t < (pages[i + 1] ? Math.min(pages[i + 1].start - 0.05, p.end + H) : p.end + H));
     if (pi !== shown) {
@@ -102,8 +105,9 @@ usage: <gm-include src="blocks/captions.html" file="captions.json"></gm-include>
 <style>
 .gmb-cap{position:absolute;left:0;right:0;display:flex;justify-content:center;padding:0 calc(var(--px)*120);pointer-events:none;z-index:20}
 .gmb-cap--bottom{bottom:calc(var(--px)*var(--off,120))} .gmb-cap--top{top:calc(var(--px)*var(--off,120))} .gmb-cap--center{top:50%;translate:0 -50%}
-.gmb-cap__line{max-width:22ch;text-align:center;font-size:calc(var(--px)*var(--size));font-weight:var(--weight,800);line-height:1.18;color:#fff;letter-spacing:-.01em;
+.gmb-cap__line{max-width:22ch;text-align:center;font-size:calc(var(--px)*var(--size));font-weight:var(--weight,800);line-height:1.18;color:var(--cap-color);letter-spacing:-.01em;
   text-shadow:0 calc(var(--px)*4) calc(var(--px)*18) rgba(0,0,0,.55),0 0 2px rgba(0,0,0,.6);text-wrap:balance}
+.gmb-cap--shadow-none .gmb-cap__line{text-shadow:none} .gmb-cap--shadow-light .gmb-cap__line{text-shadow:0 0 calc(var(--px)*14) rgba(255,255,255,.7)}
 .gmb-cap__w{display:inline-block;padding:0 .12em;border-radius:.18em;transition:none}
 .gmb-cap__w.is-on{color:#111;background:var(--accent);text-shadow:none}
 </style>

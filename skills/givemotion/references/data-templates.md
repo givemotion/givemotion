@@ -52,7 +52,7 @@ A part with its own timeline and style: `<gm-include src="parts/card.html" scope
 
 ## Cursor demos
 
-The `cursor` block aims at real elements: `points="1700,980 #email #submit! .menu li:nth-child(3)!"` (selector or x,y; `!` = click) at `times="0.4 1.6 3"` (when it arrives at each point: seconds into its clip, or `times="video: 12.5 13.4"` / `"beats: 16 18"` / `"bars: 4 4.5"` for video times, which do not drift when a transition or `data-cut-align` moves the scene start).
+The `cursor` block aims at real elements: `points="1700,980 #email #submit! .menu li:nth-child(3)!"` (selector or x,y; `!` = click) at `times="0.4 1.6 3"` or on the voice `times="@type @send-0.2"` (when it arrives at each point: seconds into its clip, or `times="video: 12.5 13.4"` / `"beats: 16 18"` / `"bars: 4 4.5"` for video times, which do not drift when a transition or `data-cut-align` moves the scene start).
 - Add `show="auto"` so it fades in just before its first move and out after its last point (otherwise it sits there from the start of the scene).
 - A selector aims a little below the middle of its element. When the middle is the wrong spot (a tag or icon there, or the hand would cover the text), say where: `#slot-thu@30%,55%` (30% across, 55% down its box) or `#row@40,50%` (40 px in from its left edge, at 1080p, zoomed with it); the `!` goes last (`#slot-thu@30%,55%!`). `aim="20%,50%"` sets it for every selector without its own `@`. It keeps tracking the element live, through camera zoom.
 - `ring="#e5484d"` colors the click ripple (default: a dark ring with a light halo, readable on light and dark UIs; `ring="light"` = the white one).

@@ -146,6 +146,22 @@ async function main() {
   const cmd = argv[0] && !argv[0].startsWith('-') ? argv[0] : (argv.includes('--version') || argv.includes('-v') ? 'version' : 'help');
   const args = parseArgs(cmd === argv[0] ? argv.slice(1) : argv, { boolean: BOOLS, alias: { o: 'output', out: 'output', t: 'time', w: 'workers', q: 'quality', h: 'help', f: 'format' } });
   if (args.help && cmd !== 'help') return console.log(CMD_HELP[cmd] || HELP);
+  // an option the command does not read is easy to miss (snapshot --at 1,2 used to give the automatic times): say so.
+  // What a command reads is taken from its own code (and commonOpts when it uses it), so this list never goes stale.
+  const fns = { render: cmdRender, still: cmdStill, snapshot: cmdSnapshot, check: cmdCheck, inspect: cmdInspect, bundle: cmdBundle, export: cmdBundle, audio: cmdAudio, beats: cmdAudio, analyze: cmdAnalyze, analyse: cmdAnalyze, captions: cmdCaptions };
+  if (fns[cmd]) {
+    const src = fns[cmd].toString(), reads = (code) => [...code.matchAll(/args\.([a-zA-Z]+)/g)].map((m) => m[1]);
+    const helpers = { commonOpts, loadData }, seen = new Set(), all = [];
+    const walk = (code) => { all.push(...reads(code)); for (const [n, f] of Object.entries(helpers)) if (!seen.has(n) && new RegExp('\\b' + n + '\\(').test(code)) { seen.add(n); walk(f.toString()); } };
+    walk(src);
+    const known = new Set(['help', 'json', 'quiet', '_', ...all]);
+    const flag = (k) => '--' + k.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+    for (const k of Object.keys(args)) {
+      if (known.has(k)) continue;
+      const near = [...known].filter((x) => x !== '_' && (x.startsWith(k.slice(0, 3)) || k.startsWith(x.slice(0, 3)) || (k === 'at' && x === 'times')));
+      process.stderr.write(`givemotion ${cmd}: unknown option ${flag(k)}, ignored${near.length ? ` (did you mean ${near.slice(0, 3).map(flag).join(', ')}?)` : ''}. See givemotion ${cmd} --help.\n`);
+    }
+  }
   switch (cmd) {
     case 'help': return console.log(HELP);
     case 'version': return console.log(pkg.version);

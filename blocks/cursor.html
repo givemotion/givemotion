@@ -1,6 +1,6 @@
 <!-- block:
 description: A mouse pointer that glides between targets and clicks them. Aim at real elements with CSS selectors (the pointer follows them even while they move, through any camera zoom), or at "x,y" points (px at 1080p, in the box the cursor sits in: inside a gm.camera world that is world px). Add ! to click. Clicked elements get a short press, and the attribute data-gm-pressed while pressed and data-gm-hover while the pointer is over them, so you can style them. Put it inside a camera world (it zooms with the world) or after the world in the scene (it keeps its size and still lands on the targets in the world).
-params: points (e.g. "#email #submit! 1500,900"; a selector aims a little below its middle, or where you say after @: "#slot-thu@30%,55%" = 30% across and 55% down its box, "#row@40,50%" = 40 px in from its left edge (px at 1080p, zoomed with it) and halfway down; put the ! last: "#slot-thu@30%,55%!"), aim (default aim point for selector targets without their own @, same form, default "50%,56%"), ring (the click ripple's color, e.g. "#e5484d"; "light" = white; default: a dark ring with a light halo that reads on light and dark UIs, white with <html data-motion="classic">), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, and fades out after its last point), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
+params: points (e.g. "#email #submit! 1500,900"; a selector aims a little below its middle, or where you say after @: "#slot-thu@30%,55%" = 30% across and 55% down its box, "#row@40,50%" = 40 px in from its left edge (px at 1080p, zoomed with it) and halfway down; put the ! last: "#slot-thu@30%,55%!"), aim (default aim point for selector targets without their own @, same form, default "50%,56%"), ring (the click ripple's color, e.g. "#e5484d"; "light" = white; default: a dark ring with a light halo that reads on light and dark UIs, white with <html data-motion="classic">), times (one per point: when the pointer arrives there. Seconds into the clip by default; "video: 12.5 13.4" for video times, "beats: 16 18 20" or "bars: 4 4.5" on the <html data-bpm> grid, or words of the voice-over "@type @send-0.2" with <html data-words>), show (always|auto, default always: from the start of the clip. auto: fades in just before its first move, or just before its first point when that is a click, and fades out after its last point), size (px at 1080p, default 44), style (arrow|hand|auto, default auto: hand over clickable targets)
 usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node:nth-child(2)!" times="0.3 1.4 3 4.2" show="auto"></gm-include>
 -->
 <div class="gmb-cursor" style="--s:{{size|44}}" data-points="{{points|200,800 960,540!}}" data-times="{{times}}" data-show="{{show|always}}" data-style="{{style|auto}}" data-aim="{{aim}}" data-ring="{{ring}}">
@@ -28,11 +28,14 @@ usage: <gm-include src="blocks/cursor.html" points="1700,980 #run! #canvas .node
     if (at) { s = at[1]; aim = aimOf(at[2]); }
     return { sel: s, click, el: null, aim };
   });
-  // times: seconds into the clip, or "video: 12.5 13.4" / "beats: 16 18" / "bars: 4 4.5" (then video times)
+  // times: seconds into the clip, or words ("@book @send"), or "video: 12.5 13.4" / "beats: 16 18" / "bars: 4 4.5" (then video times)
   const tAttr = (root.dataset.times || '').trim();
   const unit = /^(video|global|beats?|bars?)\s*:/i.exec(tAttr);
-  const video = !!unit;
-  let ts = (unit ? tAttr.slice(unit[0].length) : tAttr).trim().split(/[\s,]+/).filter(Boolean).map(Number);
+  // a word of the voice-over ("@type @send-0.2", with <html data-words>) is a video time; then the whole list is
+  const toks = (unit ? tAttr.slice(unit[0].length) : tAttr).trim().split(/[\s,]+/).filter(Boolean);
+  const words = toks.some((x) => x[0] === '@');
+  const video = !!unit || words;
+  let ts = toks.map((x) => (x[0] === '@' ? gm.word(x) : Number(x)));
   if (ts.some((x) => !isFinite(x))) { gm.__report('error', 'cursor-times', `cursor: times="${tAttr}" has something that is not a number.`, root, 'Give one number per point: times="0.4 1.6 3", or times="video: 12.5 13.4" / "beats: 16 18".'); ts = ts.filter((x) => isFinite(x)); }
   if (unit && /^beat/i.test(unit[1])) ts = ts.map((b) => gm.beat(b));
   if (unit && /^bar/i.test(unit[1])) ts = ts.map((b) => gm.bar(b));

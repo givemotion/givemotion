@@ -268,7 +268,7 @@ async function cmdSnapshot(args) {
   const { snapshot } = await import('./check.js');
   try {
     const progress = args.json ? null : (i, n) => { if (n > 8 && (i === 1 || i % 10 === 0 || i === n)) process.stderr.write(`  frame ${i}/${n}\n`); };
-    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times, every: args.every, from: args.from, to: args.to, transitions: args.transitions, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, grid: args.grid, safeZone: args.safeZone, cols: args.cols ? +args.cols : undefined, onProgress: progress });
+    const r = await snapshot(inputOf(args), { ...commonOpts(args), transparent: args.transparent, output: args.output, times: args.times ?? args.at, every: args.every, from: args.from, to: args.to, transitions: args.transitions, max: args.max ? +args.max : undefined, sheetOnly: args.sheetOnly, grid: args.grid, safeZone: args.safeZone, cols: args.cols ? +args.cols : undefined, onProgress: progress });
     if (args.json) console.log(JSON.stringify(r, null, 2));
     else {
       console.log(`sheet: ${shortPath(r.sheet)}`);

@@ -1385,6 +1385,21 @@ test('data-exit="collapse": a list row slides away, then its height closes and t
   assert.ok(before - during >= 25, `Three moves up while the row closes, before the clip ends: ${before} -> ${during}`);
 });
 
+test('gm.chart.line series: one scale for every line, x labels once, names at the ends kept apart; numeric labels are labels, not indices', { skip }, async () => {
+  const d = tmp(), f = join(d, 'ms.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="5"><div id="c" style="position:absolute;left:40px;top:40px;width:1100px;height:560px"><b id="y20" data-point="2020 top 20">here</b></div>
+    <script>window.ch = gm.chart.line('#c', { labels: [2015, 2016, 2017, 2018, 2019, 2020], duration: 3, stops: [[0, 0], [3, '2020']],
+      series: [{ name: 'Solar', values: [300, 220, 160, 110, 70, 50], color: '#e8a10c' }, { name: 'Wind', values: [140, 120, 100, 85, 70, 60], color: '#2b7bb9' }, { name: 'Coal', values: [110, 110, 112, 110, 111, 112] }] });</script></section>`, 'data-width="1280" data-height="720" data-fps="30" data-duration="5"'));
+  const r = await evalAt(f, 4, `(() => {
+    const ns = [...document.querySelectorAll('.gm-chart-name')].map((e) => e.getBoundingClientRect());
+    const overlap = ns.some((a, i) => ns.some((b, j) => j > i && a.top < b.bottom && b.top < a.bottom && a.left < b.right && b.left < a.right));
+    return { series: ch.series.length, labels: document.querySelectorAll('.gm-chart-label').length, names: ns.length, overlap, reach: ch.timeOf('2020'), at: ch.pointAt('2016').label };
+  })()`);
+  assert.deepEqual([r.series, r.labels, r.names, r.overlap], [3, 6, 3, false]);
+  assert.ok(Math.abs(r.reach - 3) < 0.01, 'stop "2020" is the label 2020 (the last point), not index 2020: ' + r.reach);
+  assert.equal(r.at, '2016');
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

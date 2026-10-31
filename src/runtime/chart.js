@@ -28,6 +28,7 @@
 .gm-chart-tick{position:absolute;font-size:calc(var(--px,1px)*32);font-weight:600;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums;color:color-mix(in srgb,currentColor 58%,transparent)}
 .gm-chart-label{position:absolute;font-size:calc(var(--px,1px)*34);font-weight:700;line-height:1;white-space:nowrap;color:color-mix(in srgb,currentColor 42%,transparent)}
 .gm-chart-label[data-reached]{color:currentColor}
+.gm-chart-name{font-size:calc(var(--px,1px)*34);font-weight:700;line-height:1;white-space:nowrap;color:var(--chart-line)}
 .gm-chart-dot{position:absolute;box-sizing:border-box;width:calc(var(--px,1px)*22);height:calc(var(--px,1px)*22);margin:calc(var(--px,1px)*-11) 0 0 calc(var(--px,1px)*-11);border-radius:50%;background:var(--chart-bg,#0b0d12);border:calc(var(--px,1px)*5) solid var(--chart-line)}
 .gm-chart-head{position:absolute;width:calc(var(--px,1px)*32);height:calc(var(--px,1px)*32);margin:calc(var(--px,1px)*-16) 0 0 calc(var(--px,1px)*-16);border-radius:50%;background:var(--chart-color,var(--chart-line));
   box-shadow:0 0 0 calc(var(--px,1px)*10) color-mix(in oklab,var(--chart-color,var(--chart-line)),transparent 72%),0 0 calc(var(--px,1px)*48) calc(var(--px,1px)*6) color-mix(in oklab,var(--chart-color,var(--chart-line)),transparent 50%)}
@@ -109,10 +110,18 @@
     }
     // a point given as 2, -1, 'last', 'first', 'max', 'min' or one of the labels ('Mar')
     index(k) {
-      const n = this.n;
-      if (typeof k === 'number') return Math.round(k < 0 ? n + k : k);
-      const s = String(k).trim();
-      if (/^-?\d+$/.test(s)) { const i = parseInt(s, 10); return i < 0 ? n + i : i; }
+      const n = this.n, s = String(k).trim();
+      // a label wins over an index (labels 2015…2024: "2020" is that year); a bare number is an index unless it is out
+      // of range and a label has it
+      const lab = this.labels.findIndex((l) => String(l).trim().toLowerCase() === s.toLowerCase());
+      if (typeof k !== 'number' && lab >= 0) return lab;
+      if (typeof k === 'number' || /^-?\d+$/.test(s)) {
+        const i = Math.round(Number(s)), j = i < 0 ? n + i : i;
+        if (j >= 0 && j < n) return j;
+        if (lab >= 0) return lab;
+        I.report('warning', 'chart-bad-point', `gm.chart.line: point ${s} is past the end (${n} points: 0 to ${n - 1}).`, this.el, 'Use a 0-based index, -1 for the last point, or one of the labels.');
+        return NaN;
+      }
       const low = s.toLowerCase();
       if (low === 'last' || low === 'end') return n - 1;
       if (low === 'first' || low === 'start') return 0;
@@ -260,7 +269,7 @@
       frag.appendChild(svg);
       this.tickBox = div('gm-chart-ticks', frag);
       this.tickBox.setAttribute('aria-hidden', 'true');
-      this.labelEls = this.labels.length ? this.vals.map((_, i) => { const d = div('gm-chart-label', frag); d.textContent = this.labels[i] ?? ''; return d; }) : [];
+      this.labelEls = this.labels.length && !this.opts.__noLabels ? this.vals.map((_, i) => { const d = div('gm-chart-label', frag); d.textContent = this.labels[i] ?? ''; return d; }) : [];
       this.dots = this.vals.map((_, i) => { const d = div('gm-chart-dot', frag); d.setAttribute('data-i', i); if (this.colors[i]) d.style.borderColor = this.colors[i]; if (o.dots === false) d.style.display = 'none'; return d; });
       this.head = div('gm-chart-head', frag);
       if (o.head === false) this.head.style.display = 'none';
@@ -590,7 +599,58 @@
   I.hooks.init.unshift(() => { for (const ch of charts) { if (!ch.el.isConnected) continue; try { ch.geom(); ch.frame(0); } catch (e) { I.pageError(e); } } });
   I.hooks.seek.push(update);
 
-  function line(target, opts) { return new LineChart(target, opts); }
+  // series: [{ name, values, color }, …]: several lines on one scale (the axis and the x labels drawn once), each named
+  // at its end; they draw together with the same timing, stops and holds. The first series is the chart returned (its
+  // head, callouts and camera follow); the others are in .series.
+  function line(target, opts) {
+    if (!opts || !Array.isArray(opts.series) || !opts.series.length) return new LineChart(target, opts);
+    const el = typeof target === 'string' ? document.querySelector(target) : target;
+    if (!el) return new LineChart(target, Object.assign({}, opts, { series: undefined, values: opts.series[0].values }));
+    const nums = (v) => list(v).map((x) => (typeof x === 'number' ? x : parseFloat(String(x).replace(/[^\d.eE+-]/g, '')))).filter((x) => isFinite(x));
+    const all = opts.series.flatMap((sr) => nums(sr.values));
+    const lo = opts.min != null ? +opts.min : Math.min(0, ...all), top = Math.max(...all), hi = opts.max != null ? +opts.max : top + (top - lo) * 0.12 || 1;
+    const ax = String(opts.axis ?? 'left').trim().split(/\s+/)[0], axis = opts.axis === false ? 'none' : ax, labs = list(opts.labels);
+    const padding = opts.padding ?? [40, (axis === 'right' ? 150 : 40) + 170, labs.length ? 80 : 30, axis === 'left' ? 150 : 40];
+    // (several filled areas on top of each other turn muddy: lines only, unless area is asked for)
+    const common = Object.assign({ area: false }, opts, { series: undefined, min: lo, max: hi, padding, rescale: false });
+    const name = (host, sr) => {
+      if (!sr.name) return;
+      const d = document.createElement('div');
+      d.className = 'gm-chart-name';
+      d.setAttribute('data-point', 'last right 18');
+      d.setAttribute('data-enter', 'fade 0.4');
+      d.textContent = String(sr.name);
+      host.appendChild(d);
+      names.push({ d, v: nums(sr.values).slice(-1)[0] });
+    };
+    const names = [];
+    const first = opts.series[0];
+    if (first.color) el.style.setProperty('--chart-line', String(first.color));
+    name(el, first);
+    const main = new LineChart(el, Object.assign({}, common, { values: first.values }));
+    /** @type {any} */ (main).series = [main];
+    for (const sr of opts.series.slice(1)) {
+      const layer = document.createElement('div');
+      layer.className = 'gm-chart-layer';
+      layer.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none' + (sr.color ? ';--chart-line:' + sr.color : '');
+      el.appendChild(layer);
+      name(layer, sr);
+      /** @type {any} */ (main).series.push(new LineChart(layer, Object.assign({}, common, { values: sr.values, axis: 'none', grid: false, base: false, __noLabels: true })));
+    }
+    // end names whose lines finish close together are pushed apart (a fixed nudge, the same on every frame)
+    if (names.length > 1) {
+      // (the chart measures itself later; the vertical scale is known now: its height less the top and bottom padding)
+      const P = PX(), t0 = (padding[0] ?? 40) * P, b0 = (el.offsetHeight || 0) - (padding[2] ?? padding[0] ?? 40) * P;
+      const yOf = (v) => b0 - ((v - lo) / (hi - lo || 1)) * (b0 - t0), gap = 40 * P;
+      const order = names.map((x) => ({ ...x, y: yOf(x.v) })).sort((a, b) => a.y - b.y);
+      for (let k = 1; k < order.length; k++) order[k].y2 = Math.max(order[k].y, (order[k - 1].y2 ?? order[k - 1].y) + gap);
+      order[0].y2 = order[0].y;
+      // centre the shifted group on where the lines are
+      const shift = (order.reduce((a, x) => a + x.y2 - x.y, 0) / order.length);
+      for (const x of order) { const dy = Math.round((x.y2 - x.y - shift) * 100) / 100; if (dy) x.d.style.translate = `0 ${dy}px`; }
+    }
+    return main;
+  }
   // the chart drawn in (or inside) an element: gm.chart.get('#growth') for a chart made by the line-chart block
   function get(target) {
     const el = typeof target === 'string' ? document.querySelector(target) : target;

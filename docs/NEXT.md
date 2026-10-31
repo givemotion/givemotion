@@ -88,6 +88,9 @@ This is the reason people reach for React components; the answer is to have it i
   (`unwrapSceneIncludes` in the runtime). Scene starts from word times: `<html data-words>` and `data-cuts="0 @word …"` (done 2026-10-30).
 - **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
   `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
+- Fifth agent test (2026-10-30, data explainer): fixed from it: numeric chart labels ('2020') were read as indices,
+  `gm.chart.line` `series` (several lines on one scale, labels once, end names kept apart), `snapshot --at`. Its
+  "opacity tween on a data-point callout does nothing" did not reproduce (likely the label bug: the callout was unplaced).
 - Fourth agent test (2026-10-30, vertical short): fixed from it: `word-repeated` (a bare @word said twice silently took
   the first), camera fit takes the longest rest (an exit at the end of a hold moved the framing), cursor show="auto"
   leaves during waits of 3 s+, `enter="none"` on device blocks (phone, browser-window, code-window) and data-enter="none",

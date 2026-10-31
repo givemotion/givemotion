@@ -43,6 +43,12 @@ gm.camera('#world')
 </script>
 ```
 
+## Several lines (solar vs wind vs coal)
+
+`gm.chart.line('#c', { labels: [2015, 2016, 2017, 2018, 2019, 2020], duration: 6, series: [{ name: 'Solar', values: [300, 220, 160, 110, 70, 50], color: '#e8a10c' }, { name: 'Wind', values: […], color: '#2b7bb9' }, { name: 'Coal', values: […] }] })`: one scale for all lines (min/max over every series), the axis and x labels drawn once, each line named at its end in its color (names that end close together are pushed apart), all drawing together with the same `stops`/`holds`. The chart returned is the first series (its head, `data-point` callouts and the camera's `follow`); the others are in `chart.series`. No area fill unless `area: true`.
+
+Points are named by index (`2` = the third), `'last'`, `'max'`, or a label. Year labels are labels: `'2020'` (a string, in `stops`, `holds` or `data-point="2020 top 30"`) is the year 2020, not the index 2020.
+
 ## Axis, grid and ticks
 
 A fixed scale with a labelled grid that draws itself on, no CSS hacks needed:

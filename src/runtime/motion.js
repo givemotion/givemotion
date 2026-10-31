@@ -1923,6 +1923,24 @@
     // a sketched shape (data-sketch) is a group: travel along its exact shape
     if (pth && pth.nodeType === 1 && !pth.getTotalLength && pth.querySelector) pth = pth.querySelector('[data-gm-sketch-guide]') || pth.querySelector('path') || pth;
     if (!el) { I.report('error', 'travel-no-element', `gm.path.travel: "${tr.el}" matched nothing.`, null); return; }
+    // a stop may name a waypoint instead of a progress: [2, '#dock'] = where the path passes closest to #dock's centre
+    if ((tr.opts.stops || []).some((s0) => typeof (Array.isArray(s0) ? s0[1] : s0 && s0.to) === 'string')) {
+      const geo = pth && pth.getTotalLength && pth.getScreenCTM ? pth : null, M = geo && geo.getScreenCTM(), len = geo ? geo.getTotalLength() : 0;
+      const N = Math.max(100, Math.min(2000, Math.round(len / 2))), pts = [];
+      if (M) for (let i = 0; i <= N; i++) { const q = geo.getPointAtLength((i / N) * len), sp = new DOMPoint(q.x, q.y).matrixTransform(M); pts.push([sp.x, sp.y]); }
+      const resolved = tr.opts.stops.map((s0) => {
+        const [t, to] = Array.isArray(s0) ? s0 : [s0.at, s0.to];
+        if (typeof to !== 'string') return [t, to];
+        const w = document.querySelector(to), r = w && w.getBoundingClientRect();
+        if (!pts.length || !r || !(r.width || r.height)) { I.report('error', 'travel-bad-stop', `gm.path.travel: the stop "${to}" ${!w ? 'matched nothing' : !pts.length ? 'needs a path element (an SVG <path>, a shape or a sketched shape) to measure on' : 'is not displayed when the travel is set up'}.`, el, 'Name an element on or near the route, or give a progress from 0 to 1.'); return [t, 0]; }
+        const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+        let best = 0, bd = Infinity;
+        pts.forEach(([x, y], i) => { const dd = (x - cx) ** 2 + (y - cy) ** 2; if (dd < bd) { bd = dd; best = i; } });
+        return [t, Math.round((best / N) * 1e4) / 1e4];
+      });
+      tr.opts = Object.assign({}, tr.opts, { stops: resolved });
+      tr.stops = resolved.slice().sort((x, y) => x[0] - y[0]);
+    }
     // an inline box (a <span>, an <a>) cannot be moved by offset-path or transforms
     if (el instanceof HTMLElement && getComputedStyle(el).display === 'inline') I.report('warning', 'travel-inline', `gm.path.travel: "${typeof tr.el === 'string' ? tr.el : el.tagName.toLowerCase()}" is an inline element, so it cannot move.`, el, 'Give it display: inline-block (or block), or travel a <div> around it.');
     // along an gm.connect arrow: its path changes every frame, so sketch.js lays it out each frame (I.liveTravels)

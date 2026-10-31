@@ -44,12 +44,7 @@ second. Do not reformat files you are not changing.
   pacing checks (`short-hold`, `cut-exit`, `sliver-start`, `stepped-move`, `contents-no-box`), text on the timeline,
   `onFrame(sel, (local, info, el))`, `--cache-dir`, `--progress json`, fractional `--scale`, and Chrome's tile memory
   raised so 4K frames with many composited layers draw every tile (blank or stale rectangles before).
-- **Open: determinism of opacity + movement on text (macOS, screenshot capture).** A `gm.timeline` `.from('#h', { opacity: 0,
-  y: 40 })` gives frames that differ by 1 colour level in the text between `--workers 1` and `--workers 2`. Opacity alone or
-  `y` alone is exact. A page that played through the fade keeps the 1-worker pixels; a fresh seek or `resetPaint()`
-  gives the 2-worker pixels, so some raster state of the text survives until `resetPaint`, which the render loop
-  only calls at the start of a part. Fix idea: reset that state per frame cheaply, or at every part boundary in both
-  modes, and add a 1 == N test with this exact tween.
+- Done (see 2026-10-30 below): determinism of opacity + movement on text.
 - Done 2026-10-29: steady text. Elements moved by an inline transform or by the page's own CSS animation / Web Animation get a tiny
   `rotate` (runtime `steadyText`), so their text lands at quarter pixels instead of stepping whole pixels (rms 2nd
   difference 0.64 → 0.02 px on a slow move, 0.15 → 0.02 on a camera drift). A plain `@keyframes` move is now also
@@ -73,8 +68,7 @@ second. Do not reformat files you are not changing.
   loaded nor installed.
 - Done 2026-10-30: `check` `layout-shift` (text going up and down because its line's height changes, like the caret
   bug seen in a React video) and the typewriter keeps the untyped text in the layout (no drift, no word jumping).
-- Open: tile memory is now 4 GB per Chrome (a ceiling, not an allocation). With many workers on a very heavy 4K page,
-  watch memory; the worker count could take it into account.
+- Done 2026-10-30: the default worker count takes the frame size into account (~700 MB a worker at 1080p, ~1.5 GB at 4K).
 
 ## Reusable parts and brand kits (decided 2026-10-29, not started)
 A real 90 s product demo (16 scenes, many rounds of edits) showed what agents hand-build when they need reuse. The agent
@@ -83,7 +77,7 @@ scenes, kept a shared helpers file for camera and highlight functions, and kept 
 This is the reason people reach for React components; the answer is to have it in HTML (CLAUDE.md, "Authoring format").
 - **Scoped parts.** Done 2026-10-30, opt-in: `<gm-include scope>` (`scopePart` in `src/server.js`) suffixes the ids a part
   declares, rewrites the `#id` names in its CSS and script strings, applies its `<style>` with `@scope` and suffixes
-  its `@keyframes`. Not tried by a fresh agent yet. Next: parts that bring behaviour (own element and clip time in the script), then brand kits.
+  its `@keyframes`. Tried by two fresh agents (see below); a part's own timeline is `gm.timeline('[data-gm-scope="{{scope}}"]')`.
 - **Parts that bring behaviour.** A part's script runs with its own element and its own clip time, so a part is a
   component with params, style, timeline and helpers in one file.
 - **Brand kits.** Done 2026-10-30 as a convention, no new engine feature: a folder (tokens in `kit.css`, fonts, scoped parts,
@@ -91,7 +85,7 @@ This is the reason people reach for React components; the answer is to have it i
   parts); in `data-templates.md`. A `data-kit` option was not added: it would need support in the server, the part
   fingerprints and `bundle` for what a link already does. Taste stays in the kit, never in engine defaults.
 - **Scene assembly in the page.** Done 2026-10-30: a scene file included in a `data-sequence` is the sequence's child
-  (`unwrapSceneIncludes` in the runtime). Not done: scene starts from word times (a transcript) in the page.
+  (`unwrapSceneIncludes` in the runtime). Scene starts from word times: `<html data-words>` and `data-cuts="0 @word …"` (done 2026-10-30).
 - **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
   `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
 - Second agent test (2026-10-30, one Opus agent, three voice-timed videos from transcripts): word times, the
@@ -124,7 +118,8 @@ editor flag a misspelled `gm.timline()`; today `gm` is `any` (`typings/env.d.ts`
 ## N7. Natural, real-world motion (Leo's request; start here)
 **Status 2026-10-30: mostly built.** `gm.motion` is 'natural' by default (physical easing, operator camera that blends
 shots, arcs, natural exits), `check` has `camera-stop` and `fast-no-blur`, and `--motion-blur auto` exists. Still open:
-motion blur on by default (done 2026-10-30: auto costs 0-3% on bench and data-story and its smear has no steps;
+motion blur on by default (done 2026-10-30; elements that grow or shrink in a frame are not smeared, because a filter
+on a layer whose scale changes is rastered at a scale Chrome picks by timing: 4 of 30 loaded runs differed, 0 of 24 after; auto costs 0-3% on bench and data-story and its smear has no steps;
 classic stays sharp; the breathing drift was already there), a smoothness number in `analyze`, and the blind-judge comparison of old vs new motion.
 The list below is the original plan; check the code before building any item.
 
@@ -196,8 +191,8 @@ renders cost half the CPU time. Ideas, measured with `bench/agents` (tokens per 
   scaleY measured once at load where both boxes rest (animations taken off, hidden clips shown for the measure).
   `check` no longer reports text covered by something flying over it, and text-overlap / text-overflows-box need
   0.15 s (a tween's first frame was reported). **Ride**: no new API; SKILL.md has the recipe (one leg per vehicle,
-  a package copy per vehicle with `data-anchor`, swap at the hand-over). Open: travel stops by point or waypoint id
-  (`stops: [[t, '#dock']]`) would remove the remaining progress math (explainer-2).
+  a package copy per vehicle with `data-anchor`, swap at the hand-over). Done 2026-10-30: travel stops by waypoint
+  (`stops: [[t, '#dock']]`).
 - **Balance check**: judges marked layouts that leave most of the frame empty or crowd the top half (5 notes). Tried:
   the centre of the picture's edges per half second did not match the judges at all (year-recap-2, "crowds the top
   left", scored balanced; code-explainer-2, judged polished, scored off-centre 16 times), so nothing was added. A

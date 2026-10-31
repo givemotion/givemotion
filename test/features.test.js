@@ -1295,6 +1295,18 @@ test('a scene file whose script calls gm.timing still becomes the sequence child
   assert.equal(await evalAt(f, 1, `document.querySelectorAll('main > section.scene').length`), 2);
 });
 
+test('path travel stops can name waypoints: [1, "#dock"] is where the route passes closest to #dock', { skip }, async () => {
+  const d = tmp(), f = join(d, 'tv.html');
+  writeFileSync(f, page(`<section class="scene" data-duration="3"><div id="w" style="position:absolute;left:0;top:0;width:640px;height:360px">
+    <svg width="640" height="360" style="position:absolute;left:0;top:0"><path id="route" d="M40 200 L600 200" stroke="#888" fill="none"/></svg>
+    <div id="d1" style="position:absolute;left:170px;top:150px;width:20px;height:20px;background:#3a3"></div><div id="d2" style="position:absolute;left:450px;top:230px;width:20px;height:20px;background:#3a3"></div>
+    <div id="pkg" style="position:absolute;left:0;top:0;width:24px;height:24px;background:#f80"></div></div>
+    <script>gm.path.travel('#pkg', '#route', { stops: [[0, 0], [1, '#d1'], [1.5, '#d1'], [2.5, '#d2']] });</script></section>`, 'data-width="640" data-height="360" data-fps="30"'));
+  const cx = (t) => evalAt(f, t, `(() => { const r = document.querySelector('#pkg').getBoundingClientRect(); return Math.round(r.left + r.width / 2); })()`);
+  assert.ok(Math.abs((await cx(1.2)) - 180) <= 2, 'holds at the first dock');
+  assert.ok(Math.abs((await cx(2.6)) - 460) <= 2, 'ends at the second dock');
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

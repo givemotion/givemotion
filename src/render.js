@@ -105,9 +105,11 @@ export function resolveInput(input) {
   return { file, root, rel: relative(root, file) };
 }
 
-function defaultWorkers(totalFrames) {
+function defaultWorkers(totalFrames, pixels = 1920 * 1080) {
   const cores = cpus().length || 2;
-  const memWorkers = Math.max(1, Math.floor(totalmem() / (700 * 1024 * 1024)));
+  // a browser needs ~700 MB at 1080p, more at 4K (tiles and layers grow with the frame): ~1.5 GB a worker at 4K
+  const per = (450 + 250 * Math.max(1, pixels / (1920 * 1080))) * 1024 * 1024;
+  const memWorkers = Math.max(1, Math.floor(totalmem() / per));
   let w = Math.max(1, Math.min(cores, memWorkers, 16));
   // Short videos are not worth many browsers
   w = Math.min(w, Math.max(1, Math.floor(totalFrames / 24)));
@@ -313,7 +315,7 @@ export async function render(input, opts = {}) {
       ranges = [{ a: f0, b: f1, file: format === 'png' ? null : join(tmp, `seg.${plan.segExt}`) }];
     }
     const todoFrames = ranges.reduce((s, r) => s + r.b - r.a, 0);
-    const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames), Math.max(1, todoFrames)));
+    const workers = Math.max(1, Math.min(opts.workers || defaultWorkers(todoFrames, size.width * size.height), Math.max(1, todoFrames)));
     const auto = blur.mode === 'auto';
     // each worker gets a run of neighbouring frames
     const groups = splitRanges(ranges, workers, useParts ? 1 : 0, tmp, plan);
@@ -529,6 +531,9 @@ export async function velocityBlur(t, dt, o = {}) {
   for (const [el, b] of B) {
     const a = A.get(el);
     if (!a || (a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height)) continue;
+    // (a filter on a layer whose scale is changing is rastered at a scale Chrome picks by timing: not the same bytes
+    // every render, so what grows or shrinks is not smeared)
+    if (Math.abs(b.width / a.width - 1) > 1e-4 || Math.abs(b.height / a.height - 1) > 1e-4) continue;
     if (!seen(a) && !seen(b)) continue;
     if (reflow) { const p = layA.get(el), q = layB.get(el); if (!(p === q || (p && q && p[0] === q[0] && p[1] === q[1] && p[2] === q[2] && p[3] === q[3]))) continue; }
     // own move: where the centre went, against where the parent's move+scale would have taken it

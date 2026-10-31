@@ -94,6 +94,11 @@ This is the reason people reach for React components; the answer is to have it i
   (`unwrapSceneIncludes` in the runtime). Not done: scene starts from word times (a transcript) in the page.
 - **Highlight primitive.** Done 2026-10-30: `data-anchor="#x fit 6"` (the element takes the target's box every frame) and
   `blocks/highlight.html` (wash, ring, underline, glow). Not tried by a fresh agent; the look to use is the brand's (kit).
+- Second agent test (2026-10-30, one Opus agent, three voice-timed videos from transcripts): word times, the
+  highlight block, the kit and scene files all used; a stretched transcript moved every cut with no code change. Fixed
+  from it: @word inside a scene was added to the scene's start (now always video time, also in data-enter/data-exit),
+  a scene file calling gm.timing() stayed wrapped (provisional build now reports nothing and plain wrappers are marked
+  by the server), and a rounded built-in font (Nunito). Its short-hold report on a word pop did not reproduce.
 - First agent test of these (2026-10-30, one Opus agent, a two-video series): the kit, scene files, scoped parts and
   `fit` all worked from the docs (398 lines for the kit and two videos, each rendered in ~3.7 s). It found and we fixed:
   a CSS-hidden `fromTo` shown early when the sequence has a morph pair, a false `empty-start` (a shape with no text),

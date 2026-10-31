@@ -124,7 +124,9 @@
   // ---------------------------------------------------------------------------
   const issues = [];
   const issueKeys = new Set();
+  let muted = 0; // a provisional timeline built while the page still loads (gm.timing in a script) reports nothing
   function report(severity, code, message, el, fix, time) {
+    if (muted) return;
     const sel = el ? selectorOf(el) : null;
     const key = code + '|' + sel + '|' + message;
     if (issueKeys.has(key)) return;
@@ -548,11 +550,14 @@
         info.set(el, r);
         return r;
       }
-      start = P.start + (parseTime(el.getAttribute('data-start'), el, 'data-start') || 0);
+      // a word (data-start="@pricing") is a moment of the whole video, not a time inside the parent clip
+      const isWord = (a) => String(el.getAttribute(a) || '').trim()[0] === '@';
+      const st0 = parseTime(el.getAttribute('data-start'), el, 'data-start') || 0;
+      start = isWord('data-start') ? st0 : P.start + st0;
       dur = parseTime(el.getAttribute('data-duration'), el, 'data-duration');
       if (dur == null) {
         const e = parseTime(el.getAttribute('data-end'), el, 'data-end');
-        if (e != null) dur = P.start + e - start;
+        if (e != null) dur = (isWord('data-end') ? 0 : P.start) + e - start;
       }
       // A sequence container without explicit duration lasts as long as its children.
       if (dur == null && el.hasAttribute('data-sequence')) dur = seqLayout(el).length;
@@ -1073,12 +1078,19 @@
     const out = { name: toks[0] || 'fade', dur: defDur, delay: 0, ease: defEase, durSet: false, easeSet: false };
     if (isBand(out.name)) { out.band = bandOpts(toks.slice(1)); toks = [out.name, ...out.band.rest]; }
     const nums = [];
+    let at = null; // a word ("rise 0.5 @thirsty"): the moment it is said, in video time, wherever the element sits
     for (const t of toks.slice(1)) {
       if (isEasingName(t)) { out.ease = t; out.easeSet = true; }
+      else if (t[0] === '@') at = parseTime(t, el, attr);
       else { const n = parseTime(t, el, attr); if (n != null) nums.push(n); }
     }
     if (nums[0] != null) { out.dur = nums[0]; out.durSet = true; }
     if (nums[1] != null) out.delay = nums[1];
+    if (at != null) {
+      const c = nearestClip(el);
+      // an entrance starts on the word; an exit starts on it too (its delay counts back from the clip's end)
+      out.delay = attr === 'data-exit' ? Math.max(0, (c && isFinite(c.end) ? c.end : comp.duration) - at - out.dur) : at - (c ? c.start : 0);
+    }
     return out;
   }
   function eeTargets(el, stagger) {
@@ -1735,7 +1747,9 @@
   function unwrapSceneIncludes() {
     for (const seq of document.querySelectorAll('[data-sequence]')) {
       for (const w of [...seq.children]) {
-        if (!w.hasAttribute('data-gm-include') || [...w.attributes].some((x) => !/^(data-gm-include|data-gm-scope)$/.test(x.name) && !(x.name === 'style' && /^display:\s*contents;?$/.test(x.value)))) continue;
+        // (data-gm-plain: the include had no class, style, id or data-* of its own; what the engine added since goes)
+        if (!w.hasAttribute('data-gm-plain')) continue;
+        for (const x of [...w.attributes]) if (!/^(data-gm-include|data-gm-scope|data-gm-plain|style)$/.test(x.name)) w.removeAttribute(x.name);
         const kids = [...w.childNodes], scene = /** @type {Element | undefined} */ (kids.find((n) => n.nodeType === 1 && !SKIP_TAGS.has(/** @type {Element} */ (n).tagName)));
         if (!scene) continue;
         for (const x of ['data-gm-include', 'data-gm-scope']) if (w.hasAttribute(x) && !scene.hasAttribute(x)) scene.setAttribute(x, w.getAttribute(x));
@@ -2067,7 +2081,7 @@
     word(spec) { const t = wordTime(String(spec)[0] === '@' ? spec : '@' + spec, null, 'gm.word'); return t == null ? 0 : t; },
     get words() { const W = words(); return W ? W.list.map(({ word, start, end }) => ({ word, start, end })) : []; },
     bar(n = 0) { const g = beatGrid(); return g.barOffset + n * g.perBar * g.period; },
-    timing(el) { if (typeof el === 'string') el = document.querySelector(el); if (!clips.length) { try { buildTimeline(); timelineDirty = true; } catch (e) {} } const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
+    timing(el) { if (typeof el === 'string') el = document.querySelector(el); if (!clips.length) { muted++; try { buildTimeline(); timelineDirty = true; } catch (e) {} finally { muted--; } } const c = nearestClip(el); return c ? { start: c.start, end: c.end, duration: c.end - c.start } : { start: 0, end: comp.duration, duration: comp.duration }; },
     interpolate, spring, noise, easing,
     ease: new Proxy({}, { get: (_, k) => easing(String(k).replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())) }),
     clamp: (v, a = 0, b = 1) => Math.min(b, Math.max(a, v)),

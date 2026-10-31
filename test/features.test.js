@@ -1271,6 +1271,30 @@ test('word times: data-words names the voice-over transcript; @word in data-cuts
   assert.match(bad.fix, /three/);
 });
 
+test('word times inside a scene are video times: data-start="@word" and data-enter="rise 0.4 @word" on elements of a later scene', { skip }, async () => {
+  const d = tmp(), f = join(d, 'ws.html');
+  writeFileSync(join(d, 'voice.json'), JSON.stringify([['One', 0.2], ['two', 1.0], ['waters', 3.1], ['thirsty', 3.6]].map(([word, start]) => ({ word, start, end: start + 0.3 }))));
+  writeFileSync(f, page(`<main data-sequence data-cuts="0 @two"><section class="scene" id="a">A</section><section class="scene" id="b" data-duration="4">
+    <h1 id="h" data-start="@waters" style="position:absolute">W</h1><p id="p" data-enter="rise 0.4 @thirsty" style="position:absolute;top:80px">T</p></section></main>`, 'data-width="320" data-height="180" data-fps="30" data-words="voice.json"'));
+  const info = await inspect(f);
+  assert.equal(info.clips.find((c) => c.selector === '#h').start, 3.1, 'the word, not the scene start (1.0) plus the word');
+  const op = (t) => evalAt(f, t, `+getComputedStyle(document.querySelector('#p')).opacity`);
+  assert.equal(await op(3.5), 0, 'hidden until the word');
+  assert.equal(await op(4.2), 1, 'in after the word');
+});
+
+test('a scene file whose script calls gm.timing still becomes the sequence child (transitions work, no stale errors)', { skip }, async () => {
+  const d = tmp(), f = join(d, 'ec.html');
+  mkdirSync(join(d, 'scenes'));
+  writeFileSync(join(d, 'scenes', 'a.html'), '<section class="scene" data-duration="2" style="background:#c33"><h1 id="first">Hi</h1></section><script>window.__t = gm.timing("#first")</script>');
+  writeFileSync(join(d, 'scenes', 'b.html'), '<section class="scene" data-duration="2" style="background:#33c;color:#fff"><h1>Two</h1></section>');
+  writeFileSync(f, page(`<main data-sequence data-transition="push-left 0.5"><gm-include src="scenes/a.html" scope></gm-include><gm-include src="scenes/b.html"></gm-include></main>`, 'data-width="320" data-height="180" data-fps="30"'));
+  const rep = await check(f, { fast: true });
+  assert.deepEqual(rep.issues.filter((i) => i.severity === 'error' || i.code === 'contents-no-box').map((i) => i.code), []);
+  assert.equal(rep.info.duration, 3.5);
+  assert.equal(await evalAt(f, 1, `document.querySelectorAll('main > section.scene').length`), 2);
+});
+
 test('highlight block: wash, ring, underline and glow sit on the target and follow it', { skip }, async () => {
   const d = tmp(), f = join(d, 'hl.html');
   mkdirSync(join(d, 'blocks'));

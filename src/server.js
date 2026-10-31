@@ -64,7 +64,8 @@ export function expandIncludes(html, fileDir, rootDir, depth = 0, seen = [], sta
     // The wrapper takes no space in layout (display: contents) unless it needs its own box
     // for animation or styling (data-enter/exit, class or style on the include).
     const needsBox = ['data-enter', 'data-exit', 'class', 'style'].some((k) => k in attrs);
-    return `<div data-gm-include="${esc(attrs.src)}"${needsBox ? '' : ' style="display:contents"'} ${passthrough}>${body}</div>`;
+    const plain = !Object.keys(attrs).some((k) => k === 'class' || k === 'style' || k === 'id' || k.startsWith('data-'));
+    return `<div data-gm-include="${esc(attrs.src)}"${plain ? ' data-gm-plain' : ''}${needsBox ? '' : ' style="display:contents"'} ${passthrough}>${body}</div>`;
   });
 }
 /**

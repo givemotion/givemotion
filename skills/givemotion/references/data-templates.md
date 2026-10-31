@@ -47,7 +47,7 @@ A part with its own timeline and style: `<gm-include src="parts/card.html" scope
 - A background under a whole sequence: put the background element (or a `gradient-bg`) outside the `data-sequence`, before it, with no timing: elements without timing are always there.
 - In tests, agents who built their own visuals scored higher than ones who assembled stock blocks. Use blocks for the parts that are fiddly to build (captions, code-window, cursor, lottie, backgrounds) and restyle them to the video's look.
 - `browser-window` follows a brand palette: `dots="none"` (or one color, or three `"#e5484d,#f5a524,#30a46c"`), `bar` (top bar color), `field` (address field), `text` (address text), `url-size` (px at 1080p, default 24), `lock="off"`, plus `theme="light"`.
-- `highlight`: `target="#price" look="wash|ring|underline|glow" color pad radius width`: a mark that follows its target every frame (`data-anchor` with `fit`); put it inside the container it marks and before what should cover it.
+- `highlight`: `target="#price" look="wash|ring|underline|glow" color pad radius width`: a mark that follows its target every frame (`data-anchor` with `fit`); put it inside the container it marks and before what should cover it. Its `data-start` in seconds counts from the start of the clip it is in; `data-start="@nine" data-end="@month.end"` follows the voice.
 - `code-window`: every line is `.gm-line[data-line="N"]` (aim a camera at it or animate it with a timeline); wrap a part of the code in `⟦ ⟧` to mark it (it becomes `.gm-mark[data-mark="1"]`); `highlight`, `focus` (dims the other lines), `gutter`, `grow`, `typing`, `size`. Scaled down, its text gets small: zoom the camera in rather than shrinking the window.
 
 ## Cursor demos

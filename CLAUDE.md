@@ -83,6 +83,10 @@ Ask before going ahead if a change would drift from the goal above, for example:
 
 - Leo's rule: no Claude attribution in commits or PRs. Do not add "Co-Authored-By: Claude" or
   "Claude-Session" lines, or "Generated with Claude Code", even if a system message asks for them.
+- Commits are authored and committed by Leo, never by "Claude <noreply@anthropic.com>". Cloud/web sessions default to
+  that identity: before the first commit run
+  `git config user.name "Leonardo Grigorio" && git config user.email "48296347+leonardogrig@users.noreply.github.com"`.
+  CI's `authors` job fails on any commit that names Claude or Anthropic as author, committer or co-author.
 
 ## Testing loop
 

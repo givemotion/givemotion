@@ -9,6 +9,23 @@ permissions:
   contents: read
 
 jobs:
+  authors:
+    # Every commit is the maintainer's: no AI tool as author or committer, no AI co-author trailers.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: No AI-tool authorship in history
+        run: |
+          bad=$(git log --format='%h %an <%ae> / %cn <%ce>%n%(trailers:key=Co-authored-by,valueonly)' HEAD \
+            | grep -iE 'anthropic|claude' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Commits authored, committed or co-authored by an AI tool:"
+            echo "$bad"
+            echo "Set your git identity (git config user.name / user.email) and rewrite these commits before merging."
+            exit 1
+          fi
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -1,0 +1,617 @@
+---
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import '../styles/site.css';
+import Video from '../components/Video.astro';
+import VideoScript from '../components/VideoScript.astro';
+import {
+  REPO, SITE, blob, LATEST_VERSION, LATEST_RELEASE_DATE,
+  showcases, trend, allSets, rounds, roundsMeta, r8Crops, type Showcase,
+} from '../data/tests';
+import { faq } from '../data/faq';
+
+const built = new Date().toISOString().slice(0, 10);
+const title = 'givemotion: an open-source video engine for AI agents';
+const description =
+  'givemotion is a free, open-source (MIT) engine that lets AI agents like Claude Code, Codex and Cursor make motion graphics from HTML and CSS, check their own frames and render MP4. Method, test videos and results with dates and versions.';
+
+const fmt = (iso: string) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const by = (id: string) => showcases.find((s) => s.id === id)!;
+const tools = showcases.filter((s) => s.group === 'tools');
+const lighthouse = showcases.filter((s) => s.id.startsWith('lighthouse'));
+const docsMade = showcases.filter((s) => s.group === 'docs');
+
+/** The line under every figure: when it ran and on which versions. */
+const meta = (s: Showcase) =>
+  `Tested ${fmt(s.date)}${s.dateNote ? ` (${s.dateNote})` : ''} · givemotion ${s.givemotion.label}${s.givemotion.note ? ` (${s.givemotion.note})` : ''}${s.others ? ` · ${s.others}` : ''} · ${s.models}.`;
+const scoreLine = (s: Showcase) =>
+  s.scores ? `Judges' mean (1–10): ${s.scores.map((x) => `${x.name} ${x.score?.toFixed(1)}`).join(', ')}.` : '';
+
+// Round 7/8 videos are linked only if their files are in public/videos (see scripts/build-media.mjs).
+const roundVideo = (n: number, set: string, tool: string) => {
+  const rel = `/videos/round-${n}/${set}-${tool}.mp4`;
+  return existsSync(join(process.cwd(), 'public', rel)) ? rel : null;
+};
+
+// Dot plot, in plain HTML: points placed by percentage on a 5.5–8.0 axis.
+const lo = 5.5, hi = 8.0;
+const pct = (v: number) => `${(((v - lo) / (hi - lo)) * 100).toFixed(2)}%`;
+const ticks = [5.5, 6, 6.5, 7, 7.5, 8];
+const lanes = [
+  { key: 'gm', name: 'givemotion', top: '20%' },
+  { key: 'rem', name: 'Remotion', top: '50%' },
+  { key: 'hf', name: 'HyperFrames', top: '80%' },
+] as const;
+
+const bibtex = `@software{grigorio_givemotion_2026,
+  author  = {Grigorio, Leonardo},
+  title   = {givemotion: an open-source video engine for AI agents},
+  year    = {2026},
+  version = {${LATEST_VERSION}},
+  url     = {${SITE}},
+  note    = {${REPO}},
+  license = {MIT}
+}`;
+
+// ------------------------------------------------------------ structured data
+const abs = (p: string) => `${SITE}${p}`;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    { '@type': 'WebSite', '@id': `${SITE}/#website`, url: `${SITE}/`, name: 'givemotion', description, inLanguage: 'en', publisher: { '@id': `${SITE}/#author` } },
+    {
+      '@type': 'WebPage', '@id': `${SITE}/#webpage`, url: `${SITE}/`, name: title, description,
+      isPartOf: { '@id': `${SITE}/#website` }, about: { '@id': `${SITE}/#software` },
+      primaryImageOfPage: abs('/og.png'), dateModified: built, inLanguage: 'en',
+    },
+    { '@type': 'Person', '@id': `${SITE}/#author`, name: 'Leonardo Grigorio', url: 'https://github.com/leonardogrig' },
+    {
+      '@type': ['SoftwareApplication', 'SoftwareSourceCode'],
+      '@id': `${SITE}/#software`,
+      name: 'givemotion',
+      alternateName: 'motionwright',
+      description:
+        'A free, open-source video engine that lets AI coding agents make motion graphics from HTML, CSS and JavaScript, check their own frames, and render MP4, WebM, ProRes or GIF. Re-renders only the parts that changed, byte-identical to a full render.',
+      url: `${SITE}/`,
+      applicationCategory: 'MultimediaApplication',
+      applicationSubCategory: 'Video rendering',
+      operatingSystem: 'macOS, Linux, Windows',
+      softwareVersion: LATEST_VERSION,
+      datePublished: '2026-10-31',
+      dateModified: LATEST_RELEASE_DATE,
+      license: 'https://opensource.org/licenses/MIT',
+      isAccessibleForFree: true,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      codeRepository: REPO,
+      downloadUrl: 'https://www.npmjs.com/package/givemotion',
+      programmingLanguage: ['JavaScript', 'HTML', 'CSS'],
+      runtimePlatform: 'Node.js 20+',
+      softwareRequirements: 'Node.js 20 or newer, ffmpeg, Chrome (downloaded by npx givemotion install)',
+      keywords: 'AI video, motion graphics, Claude Code, Codex, Cursor, HTML to video, programmatic video, open source, MIT',
+      author: { '@id': `${SITE}/#author` },
+      image: abs('/icon-512.png'),
+      featureList: [
+        'AI agents write videos in plain HTML, CSS and JavaScript',
+        'check finds cut-off, covered, overlapping, tiny and low-contrast text and pacing problems',
+        'snapshot and review pick the frames worth looking at',
+        'Re-renders only the 1-2 second parts that changed, byte-identical to a full render',
+        'Camera, motion paths, shape morphs, shared-element transitions, kinetic type, live charts, hand-drawn shapes, beat-synced cuts',
+        'MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3',
+        'Zero npm dependencies, no telemetry, no account',
+      ],
+    },
+    {
+      '@type': 'FAQPage', '@id': `${SITE}/#faq`,
+      mainEntity: faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a.join(' ') } })),
+    },
+    ...showcases.map((s) => ({
+      '@type': 'VideoObject',
+      '@id': `${SITE}/#video-${s.id}`,
+      name: s.title,
+      description: `${s.kind}. ${s.summary} ${meta(s)}`,
+      thumbnailUrl: abs(s.video.poster),
+      contentUrl: abs(s.video.src),
+      uploadDate: `${s.date}T12:00:00+00:00`,
+      duration: `PT${s.video.seconds}S`,
+      width: s.video.width,
+      height: s.video.height,
+      isFamilyFriendly: true,
+      inLanguage: 'en',
+      creator: { '@id': `${SITE}/#author` },
+      isPartOf: { '@id': `${SITE}/#webpage` },
+    })),
+  ],
+};
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={`${SITE}/`} />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+  <meta name="author" content="Leonardo Grigorio" />
+  <meta name="theme-color" content="#fbfaf7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#151a19" media="(prefers-color-scheme: dark)" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="citation_title" content={title} />
+  <meta name="citation_author" content="Grigorio, Leonardo" />
+  <meta name="citation_publication_date" content="2026/10/31" />
+
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon-512.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+  <link rel="preload" href="/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="givemotion" />
+  <meta property="og:url" content={`${SITE}/`} />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image" content={abs('/og.png')} />
+  <meta property="og:image:width" content="1280" />
+  <meta property="og:image:height" content="640" />
+  <meta property="og:image:alt" content="givemotion: motion graphics, made by your AI agent" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content={title} />
+  <meta name="twitter:description" content={description} />
+  <meta name="twitter:image" content={abs('/og.png')} />
+
+  <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wide">
+      <a class="name" href="/"><img src="/favicon.svg" alt="" width="22" height="22" />givemotion</a>
+      <nav aria-label="Sections">
+        <a href="#method">Method</a>
+        <a href="#evaluation">Evaluation</a>
+        <a href="#videos">Videos</a>
+        <a href="#related">Related tools</a>
+        <a href="#limitations">Limitations</a>
+        <a href={REPO} rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- ============================================================ TITLE -->
+    <div class="col title">
+      <h1>givemotion: an open-source video engine for AI agents</h1>
+      <p class="authors"><a href="https://github.com/leonardogrig" rel="noopener author">Leonardo Grigorio</a></p>
+      <p class="meta">Independent project · MIT license · version {LATEST_VERSION}, <time datetime={LATEST_RELEASE_DATE}>{fmt(LATEST_RELEASE_DATE)}</time></p>
+      <ul class="links">
+        <li><a href={REPO} rel="noopener">Code</a></li>
+        <li><a href="https://www.npmjs.com/package/givemotion" rel="noopener">npm</a></li>
+        <li><a href={blob('skills/givemotion/SKILL.md')} rel="noopener">Agent docs</a></li>
+        <li><a href={blob('docs/experiments/README.md')} rel="noopener">Experiments &amp; data</a></li>
+        <li><a href="#cite">Cite</a></li>
+      </ul>
+    </div>
+
+    <figure class="col" style="margin-top:44px">
+      <Video {...by('models').video} label={by('models').title} eager />
+      <figcaption>
+        <b>Figure 1.</b> The same brief (“Code in, motion out”: 20 s in one continuous take) made with givemotion by four
+        Claude models: Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, each in a fresh session with only the docs.
+        <span class="cap-meta">{meta(by('models'))}</span>
+      </figcaption>
+    </figure>
+
+    <!-- ============================================================ ABSTRACT -->
+    <section class="col abstract" aria-labelledby="abstract">
+      <h2 id="abstract">Abstract</h2>
+      <p>
+        givemotion is a free, open-source (MIT) video engine built for AI coding agents such as Claude Code, Codex and
+        Cursor. The agent writes a video as one HTML, CSS and JavaScript page; givemotion plays the page on a virtual
+        clock in headless Chrome and records it frame by frame. Because every frame is a function of time, the same
+        input produces the same bytes, and after an edit only the 1–2 second parts whose inputs changed are rendered
+        again. The engine also gives the agent ways to check its own work: a checker for unreadable or colliding text
+        and pacing, and tools that pick the frames worth looking at. We evaluate it in blind rounds against Remotion
+        and HyperFrames on randomly drawn briefs: givemotion was behind in the early rounds, tied in round 7, and led
+        round 8 (judges' mean 7.61 against 6.94 and 6.75), while writing about a third of the code and rendering
+        fastest. Its agents spent the most per video. All briefs, prompts, raw scores and the harness are published.
+      </p>
+      <div class="install"><code>npx givemotion init my-video</code><button class="copy" type="button" data-copy="npx givemotion init my-video">Copy</button></div>
+    </section>
+
+    <!-- ============================================================ 1 -->
+    <section class="col" aria-labelledby="s1">
+      <h2 id="s1"><span class="n">1</span>What is givemotion?</h2>
+      <p>
+        givemotion lets an AI agent make motion graphics for a person: launch videos, explainers, animated charts,
+        vertical shorts, title sequences. You describe the video in plain words; the agent builds it, looks at its own
+        frames, fixes what is off and renders an MP4. Then you ask for changes the way you would ask a motion
+        designer, and only what you asked about changes.
+      </p>
+      <p>
+        It is not a generative video model. Nothing is painted from scratch, so text is typeset and spelled the way
+        you wrote it, a logo is your actual file, and rendering again gives the same video. It cannot film a
+        photorealistic scene; it makes designed motion out of type, shapes, illustrations, charts, app screens, a
+        camera, and the photos, clips and music you provide.
+      </p>
+      <p>
+        It is independent, not tied to any company, and free for any use, including commercial use and selling a
+        fork. It has zero npm dependencies, sends no usage data, and needs no account.
+      </p>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section class="col" id="method" aria-labelledby="s2">
+      <h2 id="s2"><span class="n">2</span>How it works</h2>
+      <h3><span class="n">2.1</span>The authoring format</h3>
+      <p>
+        A video is one HTML file with normal CSS and JavaScript. Models have seen far more web pages than any video
+        format, so this is what they write best; in an internal test, blind judges ranked plain HTML above HTML with
+        ready-made blocks and above React in 6 of 8 cases
+        (<a href={blob('docs/experiments/2026-10-format-test.md')} rel="noopener">format test, October 2026</a>).
+        Everything that moves on a page is driven by a virtual clock: CSS animations and transitions, the Web
+        Animations API, timers, <code>requestAnimationFrame</code>, canvas, WebGL, GSAP and Lottie. The engine adds
+        motion-design primitives on top: a camera, motion paths, shape morphs, elements that fly between scenes, more
+        than 25 transitions, kinetic type, live charts, hand-drawn shapes and beat-synced cuts.
+      </p>
+      <pre aria-label="Example composition"><code>{`<html data-width="1920" data-height="1080" data-fps="30">
+<body>
+  <main data-sequence data-transition="fade 0.6">
+    <section data-duration="3" data-camera="push 1.1">
+      <h1 data-enter="rise">Hello</h1>
+    </section>
+    <section data-duration="4">
+      <h1 data-split="words" data-enter="fade-up 0.6" data-stagger="0.08">Any HTML. Any CSS.</h1>
+    </section>
+  </main>
+</body>
+</html>`}</code></pre>
+
+      <h3><span class="n">2.2</span>Rendering</h3>
+      <figure style="margin-top:.6em">
+        <pre aria-label="Rendering pipeline"><code>{`HTML ──► local server (adds the runtime, expands blocks and {{data}})
+           │
+           ▼
+ headless Chrome × N ── virtual clock: every animation seeked to the exact time
+           │  capture each frame
+           ▼
+ ffmpeg × N (1–2 s parts, fingerprinted, reused when unchanged) ──► join + audio ──► MP4`}</code></pre>
+        <figcaption><b>Figure 2.</b> The render pipeline. Each part carries a fingerprint of everything that can affect its pixels; after an edit, only parts whose fingerprint changed are rendered, and the result is byte-identical to a full render. One worker and N workers give the same bytes, which the test suite checks.</figcaption>
+      </figure>
+
+      <h3><span class="n">2.3</span>The agent's feedback loop</h3>
+      <p>An agent cannot watch a video, so the engine does part of the watching:</p>
+      <ul>
+        <li><code>check</code> reports text that is cut off, off screen, covered, overlapping, too small or low in contrast, lines through labels, smudged transitions, script errors, and pacing problems such as dead stretches or an empty opening, each with a fix.</li>
+        <li><code>snapshot</code> reads the timeline and picks the frames that matter (each scene once its entrances settle, each camera shot once it arrives) into one image.</li>
+        <li><code>review</code> writes what a viewer would see, with motion strips at the busiest moments and a scoring rubric, so a fresh critic sub-agent can judge the cut.</li>
+      </ul>
+      <p>
+        The skill pack the agent reads holds the motion-design knowledge (timing, easing, camera grammar, continuity),
+        15 technique recipes and guides for 9 kinds of video. The engine is improved in rounds: fresh agents make real
+        videos from the docs alone, and where they struggle becomes engine fixes.
+      </p>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section class="col" id="evaluation" aria-labelledby="s3">
+      <h2 id="s3"><span class="n">3</span>Evaluation against Remotion and HyperFrames</h2>
+
+      <h3><span class="n">3.1</span>Method</h3>
+      <ul>
+        <li><strong>Briefs nobody tuned for.</strong> Each brief was drawn at random (genre, subject, three motion techniques, format, length) from fixed lists with a recorded seed, and written by a fresh session that knew nothing of the tools. Nothing was re-drawn.</li>
+        <li><strong>Same makers.</strong> Per brief and tool, a fresh session of {roundsMeta.models.replace(', for makers and judges', '')}, with only that tool's official agent docs and the same prompt. Rounds 7 and 8 used two independent makers per tool per brief.</li>
+        <li><strong>Blind judges.</strong> Six fresh Claude Opus 5.5 sessions per set scored the three videos without knowing which tool made which.</li>
+        <li><strong>Same machine.</strong> {roundsMeta.machine[0].toUpperCase() + roundsMeta.machine.slice(1)}; all makers of a round ran at the same time.</li>
+        <li><strong>Versions.</strong> givemotion 0.1.3–0.1.4 (development branch; 0.1.4 was released on npm as 0.1.5), Remotion 4.0.541, HyperFrames 0.9.17 in round 2 and 0.9.18 after. Rounds 2–8 ran on 5–6 November 2026.</li>
+      </ul>
+      <p>
+        What was not equal, and in whose favour, is listed in the
+        <a href={blob(roundsMeta.method)} rel="noopener">full report</a>; for example, the fonts offered were the ones
+        givemotion bundles. The briefs, prompts, raw scores and the harness to rerun everything are in
+        <a href={`${REPO}/tree/main/${roundsMeta.kit}`} rel="noopener">{roundsMeta.kit}</a>.
+      </p>
+
+      <h3><span class="n">3.2</span>Results</h3>
+      <div class="table-wrap">
+        <table>
+          <caption><b>Table 1.</b> Random-brief rounds 2–8: sixteen briefs, twenty-two judged sets. Best value in bold.</caption>
+          <thead><tr><th scope="col"></th><th scope="col" class="num">givemotion</th><th scope="col" class="num">Remotion</th><th scope="col" class="num">HyperFrames</th></tr></thead>
+          <tbody>
+            {allSets.map((r) => (
+              <tr>
+                <th scope="row">{r.row}</th>
+                <td class={`num${r.best === 'gm' ? ' best' : ''}`}>{r.gm}</td>
+                <td class={`num${r.best === 'rem' ? ' best' : ''}`}>{r.rem}</td>
+                <td class="num">{r.hf}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <figure>
+        <ul class="dp-legend" aria-hidden="true">
+          <li><span class="dp-pt gm">givemotion</span></li>
+          <li><span class="dp-pt rem">Remotion</span></li>
+          <li><span class="dp-pt hf">HyperFrames</span></li>
+        </ul>
+        <div class="dotplot" role="img" aria-label={trend.map((t) => `${t.label}: givemotion ${t.gm}, Remotion ${t.rem}, HyperFrames ${t.hf}`).join('. ')}>
+          <div class="dp-axis" aria-hidden="true">
+            <span></span>
+            <div class="dp-scale">{ticks.map((t) => <span style={`left:${pct(t)}`}>{t.toFixed(1)}</span>)}</div>
+          </div>
+          {trend.map((t) => (
+            <div class="dp-row" aria-hidden="true">
+              <div class="label">{t.label}<small>{t.sub}</small></div>
+              <div class="dp-track">
+                {lanes.map((ln) => (
+                  <span class={`dp-pt ${ln.key}`} style={`left:${pct(t[ln.key])};top:${ln.top}`} title={`${t.label}, ${ln.name}: ${t[ln.key].toFixed(2)}`}>{t[ln.key].toFixed(2)}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <figcaption>
+          <b>Figure 3.</b> Judges' mean score (1–10; axis shown from 5.5 to 8.0) by stage of the test. Rounds 2–6 had one
+          maker per tool per brief; rounds 7–8 had two. The engine changed between rounds (a review loop and fixes for
+          vertical video), so this is a running record, not one fixed benchmark.
+        </figcaption>
+      </figure>
+
+      <p>
+        In the latest round givemotion made the best videos: it won five of six sets, both vertical ones included, and
+        24 of 36 judges ranked it first. Over all 22 sets the means are close (7.13, 7.09, 6.75), because Remotion led
+        rounds 2–6. givemotion wrote far less code and rendered fastest on every brief timed. The cost of its review
+        loop: in round 8 its agents spent about 40% more than the cheapest and took about a quarter longer.
+      </p>
+
+      <h3><span class="n">3.3</span>Every set of rounds 7 and 8</h3>
+      {rounds.map((r) => (
+        <details class="round" open={r.n === 8}>
+          <summary>Round {r.n} <span class="muted">· <time datetime={r.date}>{fmt(r.date)}</time> · two makers per tool per brief</span></summary>
+          <div class="table-wrap" style="margin-top:0">
+            <table>
+              <caption><b>Table {r.n === 8 ? 2 : 3}.</b> Round {r.n}, judges' mean per set (1–10). {r.versions}.</caption>
+              <thead><tr><th scope="col">Set</th><th scope="col">Brief</th><th scope="col" class="num">givemotion</th><th scope="col" class="num">Remotion</th><th scope="col" class="num">HyperFrames</th></tr></thead>
+              <tbody>
+                {r.sets.map((s) => {
+                  const best = Math.max(s.gm, s.rem, s.hf);
+                  const cell = (tool: string, v: number) => {
+                    const vid = roundVideo(r.n, s.set, tool);
+                    return <td class={`num${v === best ? ' best' : ''}`}>{vid ? <a href={vid}>{v.toFixed(2)}</a> : v.toFixed(2)}</td>;
+                  };
+                  return (
+                    <tr>
+                      <th scope="row">{s.set}</th>
+                      <td><a href={blob(`${roundsMeta.kit}/${s.briefFile}`)} rel="noopener">{s.brief}</a>{s.vertical && <span class="muted"> (vertical)</span>}</td>
+                      {cell('givemotion', s.gm)}{cell('remotion', s.rem)}{cell('hyperframes', s.hf)}
+                    </tr>
+                  );
+                })}
+                <tr class="mean">
+                  <th scope="row">Mean</th><td></td>
+                  {r.mean.map((m) => <td class={`num${m === Math.max(...r.mean) ? ' best' : ''}`}>{m.toFixed(2)}</td>)}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ))}
+      <p class="table-note" style="margin-top:10px">
+        Judges' notes and caveats: <a href={blob(roundsMeta.report78)} rel="noopener">report on rounds 7 and 8</a>.
+        Rounds 2–6 (one maker per tool, before the review loop) are in the <a href={blob(roundsMeta.method)} rel="noopener">full report</a>.
+      </p>
+
+      <h3><span class="n">3.4</span>Qualitative comparison</h3>
+      <p>
+        Round 8, brief P (“Locked Tight”, a vertical year in review), at the moments that decided it. Each panel shows
+        givemotion, Remotion and HyperFrames left to right, full-resolution frames from each tool's first maker,
+        unedited. Judges' means for this set: 7.83, 7.67 and 6.67, a close set rather than givemotion's widest margin.
+      </p>
+    </section>
+
+    <figure class="wide">
+      {r8Crops.map((c, i) => (
+        <div style="margin-bottom:22px">
+          <img src={c.src} srcset={`${c.src.replace('.webp', '-1400.webp')} 1400w, ${c.src} ${c.w}w`}
+            sizes="(max-width: 1072px) calc(100vw - 32px), 1040px" width={c.w} height={c.h} loading="lazy" decoding="async"
+            style="border-radius:4px;background:#0e1312"
+            alt={`Brief P at ${c.t}: givemotion, Remotion and HyperFrames side by side. ${c.text}`} />
+          <p class="table-note" style="margin:6px 0 0"><strong>({String.fromCharCode(97 + i)}) {c.t}.</strong> {c.text}</p>
+        </div>
+      ))}
+      <figcaption><b>Figure 4.</b> Round 8, brief P, set 1 (<time datetime="2026-11-06">6 Nov 2026</time>; givemotion 0.1.4 development branch, released as 0.1.5; Remotion 4.0.541; HyperFrames 0.9.18).</figcaption>
+    </figure>
+
+    <!-- ============================================================ 4 -->
+    <section class="col" id="videos" aria-labelledby="s4">
+      <h2 id="s4"><span class="n">4</span>Test videos</h2>
+      <p>
+        Every clip in this section came out of a test: a fresh agent, only the docs, a brief it had never seen. Each
+        caption gives the date of the test and the versions it ran on. Videos load only when you press play. One run
+        per tool or model per brief: read these as showcases, not benchmarks.
+      </p>
+      <h3><span class="n">4.1</span>One brief, three tools</h3>
+    </section>
+
+    <div class="wide fig-grid three">
+      {tools.map((s, i) => (
+        <figure id={`video-${s.id}`}>
+          <Video {...s.video} label={s.title} />
+          <figcaption>
+            <b>({String.fromCharCode(97 + i)}) {s.title}.</b> {s.summary} {scoreLine(s)}
+            <span class="cap-meta">{meta(s)} <a href={blob(s.report)} rel="noopener">Report</a>.</span>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+    <p class="col table-note" style="margin-top:14px"><b>Figure 5.</b> Head-to-head showcases. (c) is shown because givemotion lost it clearly; it led to the sketch tools now in the engine.</p>
+
+    <section class="col" aria-labelledby="s42">
+      <h3 id="s42"><span class="n">4.2</span>Models and effort levels</h3>
+    </section>
+    <div class="col">
+      <figure id="video-efforts">
+        <Video {...by('efforts').video} label={by('efforts').title} />
+        <figcaption>
+          <b>Figure 6.</b> {by('efforts').title}: Claude Opus 5.5 at effort low, medium, high and xhigh, each in an
+          independent session. {by('efforts').summary} {scoreLine(by('efforts'))}
+          <span class="cap-meta">{meta(by('efforts'))} <a href={blob(by('efforts').report)} rel="noopener">Report</a>.</span>
+        </figcaption>
+      </figure>
+    </div>
+    <div class="wide fig-grid four">
+      {lighthouse.map((s, i) => (
+        <figure id={`video-${s.id}`}>
+          <Video {...s.video} label={s.title} />
+          <figcaption>({String.fromCharCode(97 + i)}) {s.models.replace(' (not judged)', '')}</figcaption>
+        </figure>
+      ))}
+    </div>
+    <p class="col table-note" style="margin-top:14px">
+      <b>Figure 7.</b> “The last lighthouse”, a 15 s title sequence, by four models from the same brief and docs. Not
+      judged. Tested <time datetime="2026-10-27">27 Oct 2026</time> (the day the clips were added to the repository) ·
+      givemotion 0.1.0 (pre-release; first on npm 31 Oct 2026).
+    </p>
+
+    <section class="col" aria-labelledby="s43">
+      <h3 id="s43"><span class="n">4.3</span>Made from the docs alone</h3>
+      <p>
+        In round 3, fresh Claude Opus agents remade three examples that looked like slides. Three blind judges per brief
+        compared each remake with the example it replaced and preferred the remake in 9 of 9 cases, by about four
+        points (<a href={blob('docs/experiments/2026-10-t2-examples.md')} rel="noopener">report</a>).
+      </p>
+    </section>
+    <div class="wide fig-grid three">
+      {docsMade.map((s, i) => (
+        <figure id={`video-${s.id}`}>
+          {s.video.height > s.video.width
+            ? <div class="vertical-wrap" style="aspect-ratio:16/9;display:flex;align-items:center"><div style="height:100%;aspect-ratio:300/532;margin-inline:auto"><Video {...s.video} label={s.title} /></div></div>
+            : <Video {...s.video} label={s.title} />}
+          <figcaption>
+            <b>({String.fromCharCode(97 + i)}) {s.title}.</b> {s.summary}
+            <span class="cap-meta">{meta(s)}</span>
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+    <p class="col table-note" style="margin-top:14px"><b>Figure 8.</b> Round-3 remakes, October 2026. The data story's source is in <a href={`${REPO}/tree/main/examples/data-story`} rel="noopener">examples/data-story</a>.</p>
+
+    <!-- ============================================================ 5 -->
+    <section class="col" id="related" aria-labelledby="s5">
+      <h2 id="s5"><span class="n">5</span>Related tools</h2>
+      <p>
+        Three tools turn HTML in headless Chrome into video, and all three encode with ffmpeg. Table 4 lists where they
+        differ, from each project's own docs, license and repository, checked on 27 October 2026 (HyperFrames
+        0.8.209, Remotion 4.0.539). These projects move quickly; corrections are welcome as
+        <a href={`${REPO}/issues`} rel="noopener">issues</a>.
+      </p>
+    </section>
+    <div class="wide">
+      <div class="table-wrap compare">
+        <table>
+          <caption><b>Table 4.</b> givemotion, HyperFrames and Remotion, as documented on 27 October 2026.</caption>
+          <thead><tr><th scope="col"></th><th scope="col">givemotion</th><th scope="col">HyperFrames</th><th scope="col">Remotion</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Made by</th><td>Independent project</td><td>HeyGen</td><td>Remotion</td></tr>
+            <tr><th scope="row">License</th><td>MIT</td><td>Apache 2.0</td><td>Source-available, its own license¹</td></tr>
+            <tr><th scope="row">Free for companies</th><td>Yes, any size</td><td>Yes, any size</td><td>Up to 3 people; paid at 4 or more¹</td></tr>
+            <tr><th scope="row">Videos written in</th><td>HTML, CSS, JavaScript</td><td>HTML, CSS, JavaScript</td><td>React</td></tr>
+            <tr><th scope="row">Re-render after a small change</th><td>Only changed parts, automatically, byte-identical</td><td>No reuse of unchanged parts that we found</td><td>No automatic reuse that we found; a frame range you pick</td></tr>
+            <tr><th scope="row">Agent checks its own video</th><td>check: text, layout, transitions, script errors, pacing</td><td>lint and check: errors, layout, motion assertions, contrast, audio</td><td>ESLint plugin; no layout checker found</td></tr>
+            <tr><th scope="row">Cloud rendering</th><td>None</td><td>AWS Lambda, Google Cloud Run, HeyGen's cloud</td><td>AWS Lambda, Google Cloud Run (alpha), Vercel Sandbox</td></tr>
+            <tr><th scope="row">Editor</th><td>Browser preview</td><td>Browser studio, desktop app</td><td>Remotion Studio</td></tr>
+            <tr><th scope="row">Built-in AI extras</th><td>None</td><td>Text to speech, transcription, background removal</td><td>Whisper caption packages</td></tr>
+            <tr><th scope="row">Output</th><td>MP4, WebM, MOV (ProRes 4444), GIF, PNG, MP3</td><td>MP4, WebM, MOV, GIF, PNG, HLS, HDR</td><td>H.264, H.265, VP8/9, AV1, ProRes, GIF, images, audio</td></tr>
+            <tr><th scope="row">npm packages installed²</th><td>1 (zero dependencies)</td><td>about 66</td><td>about 237, plus React</td></tr>
+            <tr><th scope="row">Usage data sent</th><td>None</td><td>On by default, can be turned off</td><td>With a license key set, and from in-browser rendering</td></tr>
+            <tr><th scope="row">GitHub stars</th><td>New and small</td><td>about 74k</td><td>about 68k</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">
+        ¹ Our summary of Remotion's <a href="https://github.com/remotion-dev/remotion/blob/main/LICENSE.md" rel="noopener nofollow">license</a>
+        and <a href="https://www.remotion.dev/docs/license/faq" rel="noopener nofollow">license FAQ</a>, not legal advice.
+        ² From the npm registry, without optional and peer dependencies. Sources: HyperFrames
+        <a href="https://hyperframes.heygen.com" rel="noopener nofollow">docs</a>, Remotion
+        <a href="https://www.remotion.dev/docs" rel="noopener nofollow">docs</a>. Full table in the
+        <a href={`${REPO}#how-it-compares`} rel="noopener">README</a>.
+      </p>
+    </div>
+    <section class="col">
+      <p>
+        <strong>When another tool fits better.</strong> HyperFrames has the larger feature set today (cloud
+        rendering, a desktop app, voice and transcription tools, HDR and HLS output, a large block catalog) and a large
+        community. Remotion suits teams that already work in React and want its mature ecosystem, if its license fits
+        their company size. givemotion fits when you want no license conditions, no dependencies or telemetry, quick
+        re-renders after many small edits, and checks that also look at pacing.
+      </p>
+
+      <!-- ============================================================ 6 -->
+      <h2 id="limitations"><span class="n">6</span>Limitations</h2>
+      <ul>
+        <li><strong>The evaluation is small.</strong> One or two runs per tool per brief, AI judges looking at frames rather than people watching, one machine. Read it as a running record.</li>
+        <li><strong>No cloud rendering</strong>; it renders on your machine or server.</li>
+        <li><strong>No visual editor</strong>; <code>givemotion dev</code> is a preview, and the agent is the editor.</li>
+        <li><strong>No voice or transcription tools</strong>; bring a voice-over and a word-timed captions file or <code>.srt</code>.</li>
+        <li><strong>No HDR or HLS output.</strong></li>
+        <li><strong>Slow on heavy pages without a GPU</strong>, and speed on a Mac is not benchmarked yet.</li>
+        <li><strong>One open determinism case on macOS</strong> under heavy load; renders match on an idle machine.</li>
+        <li><strong>It is young (0.x)</strong>; options may still change between minor versions.</li>
+      </ul>
+
+      <!-- ============================================================ 7 -->
+      <h2 id="start"><span class="n">7</span>Getting started</h2>
+      <p>Requirements: Node.js 20 or newer and ffmpeg. Chrome is downloaded for you (<code>npx givemotion install</code>).</p>
+      <pre><code>{`# a new project: a starter video plus the agent instructions
+npx givemotion init my-video
+
+# an existing project: only the agent instructions (Claude Code, Codex, AGENTS.md)
+npx givemotion skill
+
+# Claude Code plugin
+/plugin marketplace add givemotion/givemotion
+/plugin install givemotion@givemotion`}</code></pre>
+      <p>Then ask your agent, for example: “Make a 20-second launch video for our app. Use our logo and colors, and put music under it.” Preview and scrub it with <code>npx givemotion dev my-video</code>.</p>
+
+      <!-- ============================================================ 8 -->
+      <h2 id="faq"><span class="n">8</span>Questions</h2>
+      <div class="faq">
+        {faq.map((f) => (
+          <details>
+            <summary><h3>{f.q}</h3></summary>
+            <div class="ans">{f.a.map((p) => <p>{p}</p>)}</div>
+          </details>
+        ))}
+      </div>
+
+      <h2 id="cite">Citation</h2>
+      <p>If givemotion is useful in your work, you can cite it as:</p>
+      <pre id="bibtex"><code>{bibtex}</code></pre>
+      <button class="copy" type="button" data-copy="" data-copy-from="bibtex">Copy BibTeX</button>
+    </section>
+  </main>
+
+  <footer>
+    <div class="col">
+      <p>
+        givemotion is an independent open-source project by <a href="https://github.com/leonardogrig" rel="noopener author">Leonardo Grigorio</a>,
+        released under the MIT license. <a href={REPO} rel="noopener">Code</a> ·
+        <a href="https://www.npmjs.com/package/givemotion" rel="noopener">npm</a> ·
+        <a href="/llms.txt">llms.txt</a> ·
+        <a href={blob('CONTRIBUTING.md')} rel="noopener">Contributing and fair-comparison policy</a>
+      </p>
+      <p>
+        givemotion is not affiliated with Remotion or HeyGen. Remotion and HyperFrames are trademarks of their owners
+        and are named here only to identify them. Fonts: Inter and JetBrains Mono (SIL Open Font License).
+        Page updated <time datetime={built}>{fmt(built)}</time>.
+      </p>
+    </div>
+  </footer>
+
+  <VideoScript />
+</body>
+</html>

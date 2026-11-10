@@ -1,0 +1,13 @@
+{
+  "name": "givemotion",
+  "short_name": "givemotion",
+  "description": "Make videos with AI agents, free and open source (MIT).",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#fbfaf7",
+  "theme_color": "#3b7774",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}

@@ -14,8 +14,9 @@ const SALT = 'givemotion-independence:';
 export const HASHES = new Set(`a8349b673292fa5736abf057d9cc2ed778087bdbe09acece8d6c25007bf750e6 612891c31e7e76660ad2a7ae6da4b55a0e61c4fb082159d6dbe0197c72c6ddba 4061b7a8d8db64530bceca246fe30ceaf39f8b42202aca884160ba6c6181ee5f `.trim().split(/\s+/));
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const hash = (w) => createHash('sha256').update(SALT + w).digest('hex');
-/** Where comparisons live: the README (its comparison sections), the research of each round, the benchmarks. */
-export const COMPARISON_PLACES = [/^README\.md$/, /^docs\/experiments\//, /^benchmarks\//, /^\.gitignore$/];
+/** Where comparisons live: the README (its comparison sections), the research of each round, the benchmarks, and the
+ * website (givemotion.org), which shows the same results and test videos. */
+export const COMPARISON_PLACES = [/^README\.md$/, /^docs\/experiments\//, /^benchmarks\//, /^website\//, /^\.gitignore$/];
 const DATED = /\b20\d\d-\d\d-\d\d\b|\b(January|February|March|April|May|June|July|August|September|October|November|December) 20\d\d\b/;
 const VERSIONED = /\b\d+\.\d+\.\d+\b/;
 const BINARY = /\.(png|jpe?g|gif|webp|avif|ico|mp4|webm|mov|mp3|wav|m4a|ogg|woff2?|ttf|otf|pdf|zip|gz|tgz)$/i;

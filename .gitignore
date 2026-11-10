@@ -14,6 +14,8 @@ snapshots/
 *.wav
 !examples/**/assets/*.mp4
 !docs/media/*.gif
+!website/public/media/*.mp4
+!website/public/videos/**/*.mp4
 
 # Secrets and local config: never commit these
 .env
@@ -23,6 +25,10 @@ snapshots/
 *.key
 *.p12
 .npmrc
+
+# Website build output
+website/dist/
+website/.astro/
 
 # Packaging
 *.tgz

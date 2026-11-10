@@ -91,7 +91,7 @@ is how we find our own weak spots. What makes a comparison acceptable is how it 
   tool named on them. Code, docs or assets from another tool are never copied into this repository; a harness installs
   each tool from its public registry instead.
 - **Where it lives.** Comparisons belong in the README's comparison sections, in `docs/experiments/` (the full
-  research of each round) and in `benchmarks/`. Engine code, the skill pack, tests and examples describe givemotion on
+  research of each round), in `benchmarks/` and on the website (`website/`, givemotion.org). Engine code, the skill pack, tests and examples describe givemotion on
   its own terms and do not mention other products.
 - **Corrections.** If a fact about another tool is wrong or outdated, fix it promptly and note the correction in the
   same place.

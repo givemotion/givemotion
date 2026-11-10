@@ -1,0 +1,33 @@
+<script is:inline>
+  // Click-to-play: swap the poster button for a real <video> only when asked, so the page loads no video bytes.
+  // Also: copy buttons. That is all the JavaScript on the page.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.vid-btn');
+    if (btn) {
+      const v = document.createElement('video');
+      v.src = btn.dataset.src;
+      v.controls = true;
+      v.muted = true;
+      v.loop = true;
+      v.playsInline = true;
+      v.autoplay = true;
+      const img = btn.querySelector('img');
+      if (img) { v.poster = img.currentSrc || img.src; v.width = img.width; v.height = img.height; }
+      v.setAttribute('aria-label', btn.getAttribute('aria-label').replace(/^Play video: /, ''));
+      btn.replaceWith(v);
+      v.play().catch(() => {});
+      v.focus();
+      return;
+    }
+    const copy = e.target.closest('[data-copy]');
+    if (copy && navigator.clipboard) {
+      const text = copy.dataset.copy || document.getElementById(copy.dataset.copyFrom)?.textContent || '';
+      navigator.clipboard.writeText(text.trim()).then(() => {
+        const old = copy.textContent;
+        copy.textContent = 'Copied';
+        copy.classList.add('copied');
+        setTimeout(() => { copy.textContent = old; copy.classList.remove('copied'); }, 1500);
+      });
+    }
+  });
+</script>

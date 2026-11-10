@@ -1,0 +1,16 @@
+{
+  "name": "givemotion-website",
+  "private": true,
+  "type": "module",
+  "description": "The givemotion.org landing page. Static, one page, built with Astro. Not part of the npm package.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "media": "node scripts/build-media.mjs"
+  },
+  "devDependencies": {
+    "astro": "7.4.8"
+  }
+}

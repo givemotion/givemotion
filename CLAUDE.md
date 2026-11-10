@@ -67,7 +67,7 @@ The repository is public. Follow the independence and clean-room policy in `CONT
 from scratch (never read or reproduce other code-to-video tools' source, docs or assets). Comparisons with other tools
 are welcome, and must be true, dated, versioned, sourced and fair: same conditions for every tool, blind judging, the
 full method and raw data published, losses reported as clearly as wins, facts not attacks, plain names and no logos.
-They live in the README's comparison sections, `docs/experiments/` and `benchmarks/` only. If something that breaks
+They live in the README's comparison sections, `docs/experiments/`, `benchmarks/` and the website (`website/`) only. If something that breaks
 the policy slips into an unpushed branch, rewrite that branch's history before pushing.
 
 ## When to stop and ask Leo

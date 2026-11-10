@@ -1,0 +1,30 @@
+---
+// A video that costs nothing until someone asks for it: a lazy WebP poster and a play button.
+// The <video> element (and the MP4 download) only happens on click; see VideoScript.astro.
+interface Props {
+  src: string;
+  poster: string;
+  width: number;
+  height: number;
+  seconds: number;
+  label: string;
+  eager?: boolean;
+}
+const { src, poster, width, height, seconds, label, eager = false } = Astro.props;
+const dur = `${Math.floor(seconds / 60)}:${String(Math.round(seconds % 60)).padStart(2, '0')}`;
+---
+<div class="vid" style={`aspect-ratio:${width}/${height}`}>
+  <button type="button" class="vid-btn" data-src={src} aria-label={`Play video: ${label} (${seconds} seconds)`}>
+    <img
+      src={poster}
+      width={width}
+      height={height}
+      alt={`Frame from: ${label}`}
+      loading={eager ? 'eager' : 'lazy'}
+      fetchpriority={eager ? 'high' : 'auto'}
+      decoding="async"
+    />
+    <span class="vid-play" aria-hidden="true">Play · {dur}</span>
+  </button>
+  <noscript><a class="vid-noscript" href={src}>Watch the video (MP4)</a></noscript>
+</div>

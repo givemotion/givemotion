@@ -5,131 +5,23 @@
 
 # givemotion: make videos with AI, free and open source
 
-**Ask your AI agent for a video and get a finished MP4.** givemotion lets AI agents like Claude Code, Codex and
-Cursor make motion graphics for you: launch videos, explainers, animated charts, social shorts, title sequences. You
-describe the video in plain words. The agent builds it, looks at its own frames, fixes what's off and renders the
-file. Then you ask for changes the way you'd ask a motion designer, and only what you asked about changes.
+**Ask your AI agent for a video and get a finished MP4.** givemotion is a free, open-source (MIT) video engine that lets AI coding agents like **Claude Code**, **Codex** and **Cursor** make motion graphics for you: launch videos, explainers, animated charts, vertical shorts, UI demos and title sequences.
 
-It's free and open source (MIT): no account, no seats, no fee per video, and you can fork it and make it your own.
+You describe the video in plain words. The agent builds it, looks at its own frames, fixes what is off, and renders the file. Then you ask for changes the way you would ask a motion designer, and only what you asked about changes.
 
-Created by [Leonardo Grigorio](https://github.com/leonardogrig) as an independent project. Website:
-[givemotion.org](https://givemotion.org). (Formerly called motionwright.)
+It is free and open source (MIT): no account, no seats, no fee per video, zero npm dependencies, and you can fork it and make it your own. Created by [Leonardo Grigorio](https://github.com/leonardogrig) as an independent project (formerly called *motionwright*). Full research paper and test videos: **[givemotion.org](https://givemotion.org)**.
 
-If you are looking for a way to **make videos with Claude Code**, an **AI motion graphics tool you can run in your own
-project**, or a **free, open-source way to make videos with code**, this is it.
+If you are looking for a way to **make videos with Claude Code**, an **AI motion graphics tool you can run in your own project**, or a **free, open-source way to make videos with code** (an MIT alternative to Remotion and HyperFrames), this is it.
 
 <p>
-  <img src="docs/media/data-story.gif" width="49%" alt="Data story made by an AI agent with givemotion: the camera rides a growing line chart">
-  <img src="docs/media/lighthouse-opus.gif" width="49%" alt="The last lighthouse, a cinematic title sequence made by an AI agent with givemotion: a light beam sweeps a night sea and carries into the title">
-</p>
-<p>
-  <img src="docs/media/vertical-short.gif" width="24%" alt="Vertical short for social media made by an AI agent with givemotion, with word-by-word captions">
+  <img src="docs/media/data-story.gif" width="42%" alt="Data story made by an AI agent with givemotion: the camera rides a growing line chart">
+  <img src="docs/media/lighthouse-opus.gif" width="42%" alt="The last lighthouse, a cinematic title sequence made by an AI agent with givemotion: a light beam sweeps a night sea and carries into the title">
+  <img src="docs/media/vertical-short.gif" width="13%" alt="Vertical short for social media made by an AI agent with givemotion, with word-by-word captions">
 </p>
 
-*Each of these was made by a Claude agent from a one-paragraph brief, using only this project's docs.
-The data story is in [`examples/data-story`](examples/data-story); more are in [`examples/`](examples).*
+*Each of these was made by a fresh Claude Opus agent from a one-paragraph brief, using only this project's docs (data story and vertical short: 24 October 2026, [round-3 remakes](docs/experiments/2026-10-t2-examples.md); lighthouse: 27 October 2026; `givemotion 0.1.0` pre-release). The data story is in [`examples/data-story`](examples/data-story); more are in [`examples/`](examples) and on **[givemotion.org](https://givemotion.org#videos)**.*
 
 ---
-
-## givemotion vs HyperFrames vs Remotion, on briefs nobody tuned for
-
-Each brief is drawn at random (genre, subject, three motion techniques, length), written by a fresh AI session that does
-not know the tools, and made once (in rounds 7 and 8 twice) with each tool by Claude Opus 5.5 (effort high) in independent sessions that see only
-their own tool's docs. Six blind AI judges score the three videos of each brief
-([the rounds](docs/experiments/2026-11-random-briefs.md); the kit to run your own is in
-[`docs/experiments/data/2026-11-random-briefs`](docs/experiments/data/2026-11-random-briefs)).
-
-**Watch the videos:** every video of the latest rounds, all three tools, every set, with its scores:
-[round 8](docs/experiments/videos/round-8/) · [round 7](docs/experiments/videos/round-7/) ·
-[all test videos](docs/experiments/videos/).
-
-**Round 8, brief P** ("Locked Tight", a vertical year in review for a password manager), at the moments that decided
-it. The full videos: [givemotion](docs/experiments/videos/round-8/P-givemotion.mp4) ·
-[Remotion](docs/experiments/videos/round-8/P-remotion.mp4) ·
-[HyperFrames](docs/experiments/videos/round-8/P-hyperframes.mp4). Full-resolution crops from each tool's first maker, unedited; judges' means: givemotion 7.83, Remotion 7.67,
-HyperFrames 6.67 (a close set, not givemotion's widest margin).
-
-<img src="docs/media/r8p-1-handover.jpg" width="100%" alt="Brief P at 2.92 s: givemotion's next card is already drawing in under the rising band; Remotion and HyperFrames show an almost empty frame">
-
-*2.92 s, the hand-over. givemotion's next card is already drawing under the rising band, so the eye always has
-something to hold; Remotion's and HyperFrames' frames are empty here (the judges named the empty frame at 2.92 s for both).*
-
-<img src="docs/media/r8p-2-carousel.jpg" width="100%" alt="Brief P at 5.75 s: the carousel slide; givemotion's card is motion-blurred, Remotion's and HyperFrames' are crisp">
-
-*5.75 s, the carousel. Remotion's is the best: both cards crisp and clearly framed. givemotion's maker turned motion
-blur on, and the sliding number smears.*
-
-<img src="docs/media/r8p-3-rebuild.jpg" width="100%" alt="Brief P at 12.0 s: givemotion's 37 has re-formed from its shards before the wipe; Remotion's and HyperFrames' are still scattered particles">
-
-*12.0 s, the "37". The brief asks for the number to burst, rebuild, and only then wipe to the next word. givemotion's
-has rebuilt on time; the other two are still scattered while the wipe has already started.*
-
-<img src="docs/media/r8p-4-padlock.jpg" width="100%" alt="Brief P at 17.9 s, the last frame: three padlocks around a 0 with the line Locked tight">
-
-*17.9 s, the last frame. The brief asks for the padlock body around the lower half of the `0`. givemotion breaks the
-body's top edge around the digit; Remotion puts the `0` fully inside (cleanest, but not what was asked);
-HyperFrames' body edge runs straight through the `0`.*
-
-Sixteen random briefs in seven rounds, 5-6 November 2026, twenty-two judged sets (rounds 7 and 8 had two makers
-per tool per brief). givemotion 0.1.3-0.1.4 at its development branch, Remotion 4.0.541, HyperFrames 0.9.17 in round 2
-and 0.9.18 after; Claude Opus 5.5 at effort high for makers and judges; one 4-core Linux machine, no GPU.
-
-| | givemotion | Remotion | HyperFrames |
-|---|---|---|---|
-| Latest round (8: three briefs, two makers per tool each) | **7.61** | 6.94 | 6.75 |
-| Sets won in round 8 (of 6) | **5** | 1 | 0 |
-| Judges' overall, mean of all 22 sets (1-10) | **7.13** | 7.09 | 6.75 |
-| Judges ranking it first, all sets (132 in all) | **57** | 50 | 25 |
-| Cost at list prices, all 22 sets | $125 | **$105** | $122 |
-| Code the agents wrote, all 22 sets | **12,502 lines** | 33,257 lines | 26,545 lines |
-| Render time, the 15 briefs timed (each tool's own command, one at a time) | **387 s** | 1404 s | 1214 s |
-
-In the latest round givemotion made the best videos: it won five of six sets, both vertical ones included, and 24 of
-36 judges ranked it first. It got there over the rounds: last in rounds 2-6, a tie in round 7, a clear lead in round 8,
-after a review loop (the agent checks every beat of the brief at its own time and has a fresh critic look) and fixes for
-vertical videos. The cost of that: its agents now spend more than the others (about 40% more than the cheapest in
-round 8, and about a quarter more time). It writes far less code and rendered fastest on every brief we timed. One or
-two runs per tool per brief and AI judges looking at frames: read it as a running record, not a final benchmark. The report on the latest two rounds is
-[`docs/experiments/2026-11-rounds-7-8.md`](docs/experiments/2026-11-rounds-7-8.md); every round, with versions, prompts, raw scores, the harness and a correction (vertical videos had first been judged from
-squashed frames, then re-judged), is in
-[`docs/experiments/2026-11-random-briefs.md`](docs/experiments/2026-11-random-briefs.md). Earlier single-brief
-showcases: [`2026-11-tools-showcase.md`](docs/experiments/2026-11-tools-showcase.md) and
-[`2026-11-kinetic-three-engines.md`](docs/experiments/2026-11-kinetic-three-engines.md).
-
----
-
-## How it differs from AI video generators
-
-AI video generators (the models that turn a prompt into a clip) paint every frame from scratch. That's what you want
-for footage of things that were never filmed. It gets hard when you need one specific video: ask for one word to be
-fixed and the model makes the whole clip again, and something else comes out different. Text gets misspelled, logos
-get warped, and every attempt is paid for.
-
-givemotion works the way a motion designer works. The agent builds the video out of real pieces (your logo file,
-your fonts, your exact words and numbers, shapes, illustrations, a camera, your music), and givemotion plays it back
-and records it frame by frame. For you that means:
-
-- **The same video every time.** Render it again tomorrow and you get the same video. Nothing drifts between
-  versions.
-- **Change one thing and only that changes.** "Make the title blue" turns the title blue and leaves the rest exactly
-  as you approved it. Only the stretch of video the change touches is rendered again, so a small fix usually takes
-  seconds.
-- **Text and logos come out right.** Words are typeset, not drawn by a model, so they're sharp and spelled the way
-  you wrote them. Your logo is your actual file.
-- **Cheap to make and to change.** It renders on your own computer, with no fee per second of video. You pay
-  for your AI agent as you already do; givemotion itself costs nothing to run.
-- **Many versions from one video.** Swap the name, the numbers or the language and render as many copies as you
-  need.
-- **You keep the source.** The video is saved as a project file. Your agent can open it next month and change the
-  price, the date or the ending.
-
-Under the hood, the agent writes the video as code, the same kind web pages are made of. That's why every change can
-be exact. You never have to read it or touch it; the agent does that part. (If you're a developer: it's plain HTML,
-CSS and JavaScript, and [For developers](#for-developers) has the details.)
-
-What it doesn't do is generate footage. It can't film a photorealistic dog on a beach. It makes designed motion:
-type, shapes, illustrations, charts, app screens, and the photos and video clips you give it. If you need generated
-footage, make it with a video model and have the agent put the clip into a givemotion video.
 
 ## Try it in 1 minute
 
@@ -139,340 +31,173 @@ In your project folder, run:
 npx givemotion init my-video
 ```
 
-If you'd rather not use the terminal, ask your agent to do it: "Set up givemotion in this folder." Either way you get
-a starter video and the instructions your agent needs. Then ask for the video you want:
+If you'd rather not use the terminal, ask your agent to do it: *"Set up givemotion in this folder."* Either way you get a starter video and the instructions your agent needs. Then ask for the video you want:
 
 > "Make a 20-second launch video for our app. Use our logo and colors, and put music under it."
 
-The agent writes the video, runs the checks, looks at the frames, fixes what is wrong, and renders
-`out/video.mp4`. You can watch and scrub it live with `npx givemotion dev my-video`.
+The agent writes the video, runs the checks, looks at the frames, fixes what is wrong, and renders `out/video.mp4`. You can watch and scrub it live with `npx givemotion dev my-video`.
 
-Then ask for changes the way you would ask a motion designer: "make the title blue", "hold the chart two seconds
-longer". The agent edits the video and renders again, and only the parts that changed are redone.
+Then ask for changes the way you would ask a motion designer: *"make the title blue"*, *"hold the chart two seconds longer"*. The agent edits the video and renders again, and only the parts that changed are redone.
 
-Already have a project? `npx givemotion skill` adds just the agent instructions: a skill pack (a short
-`SKILL.md` plus topic files the agent reads when it needs them) in `.claude/skills/givemotion/` for Claude Code and
-`.agents/skills/givemotion/` for Codex, and a section in `AGENTS.md` for Cursor and other agents. Run it again after
-updating givemotion; `npx givemotion doctor` tells you when the installed pack is older than the engine.
+**Already have a project?** Add just the agent instructions:
 
-Other ways to install the skill:
+```bash
+# Installs .claude/skills/givemotion/ (Claude Code), .agents/skills/givemotion/ (Codex), and AGENTS.md (Cursor & others)
+npx givemotion skill
 
-- Claude Code plugin: `/plugin marketplace add givemotion/givemotion`, then `/plugin install givemotion@givemotion`
-- Skills CLI (Claude Code, Codex, Cursor and more): `npx skills add givemotion/givemotion`
+# Or as a Claude Code plugin:
+/plugin marketplace add givemotion/givemotion
+/plugin install givemotion@givemotion
 
-**You need:** Node.js 20+ and ffmpeg. Chrome is downloaded for you (`npx givemotion install`).
+# Or with the Skills CLI:
+npx skills add givemotion/givemotion
+```
 
-## What you can make
+**You need:** Node.js 20+ and `ffmpeg`. Chrome is found on your machine or downloaded for you (`npx givemotion install`). Run `npx givemotion doctor` to check your setup and skill version.
 
-- Product launch videos and app promos (with a cursor that really clicks the right button)
-- Explainers with a camera that moves over a map, a diagram or a whole UI
-- Hand-drawn whiteboard (Excalidraw-style) explainers: sketchy shapes and arrows that draw themselves on, handwriting
-- Animated charts and data stories, from your own numbers
-- Vertical shorts for TikTok, Reels and YouTube Shorts, with word-by-word captions
-- Code explainers for developer channels
-- Logo stings, title cards, lower thirds, end cards
-- Many personalized videos from one template (a different name, number or logo in each)
-- Transparent overlays to drop into Premiere, DaVinci Resolve or Final Cut
+---
 
-## Same brief, different models
+## How it differs from AI video generators
 
-Each model got the same brief and only this project's docs. "The last lighthouse" asked for a 15 s cinematic title
-sequence: a night sea, and a light beam that carries into the title.
+AI video generators (the models that turn a prompt into a clip) paint every frame from scratch. That is what you want for footage of things that were never filmed. It gets hard when you need one specific video: ask for one word to be fixed and the model makes the whole clip again, and something else comes out different. Text gets misspelled, logos get warped, and every attempt is paid for.
 
-| Claude Opus 5.5 | Claude Sonnet 5.5 |
-|---|---|
-| <img src="docs/media/lighthouse-opus.gif" width="100%" alt="The last lighthouse, made by Claude Opus 5.5 with givemotion"> | <img src="docs/media/lighthouse-sonnet.gif" width="100%" alt="The last lighthouse, made by Claude Sonnet 5.5 with givemotion"> |
-| **Claude Haiku 5.5** | **Gemini 4 Argon** |
-| <img src="docs/media/lighthouse-haiku.gif" width="100%" alt="The last lighthouse, made by Claude Haiku 5.5 with givemotion"> | <img src="docs/media/lighthouse-gemini.gif" width="100%" alt="The last lighthouse, made by Gemini 4 Argon with givemotion"> |
+givemotion works the way a motion designer works. The agent builds the video out of real pieces (your logo file, your fonts, your exact words and numbers, shapes, illustrations, a camera, your music), and givemotion plays it back and records it frame by frame. For you that means:
 
-A later round with Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1, "Code in, motion out": 20 s in one
-continuous take, a typed `<motion>` that breaks into 3D shapes, a tilted orbiting ring, a collapse into the title
-([the experiment](docs/experiments/2026-10-models-showcase.md)).
+- **The same video every time.** Render it again tomorrow and you get the same video. Nothing drifts between versions.
+- **Change one thing and only that changes.** *"Make the title blue"* turns the title blue and leaves the rest as you approved it. Only the 1–2 second stretch of video the change touches is rendered again, byte-identical to a full render, so a small fix usually takes seconds.
+- **Text and logos come out right.** Words are typeset, not drawn by a model, so they are sharp and spelled the way you wrote them. Your logo is your actual file.
+- **Cheap to make and to change.** It renders on your own computer, with no fee per second of video. You pay for your AI agent as you already do; givemotion itself costs nothing to run.
+- **Many versions from one video.** Swap the name, the numbers or the language (`--data`) and render as many copies as you need, while keeping the source file for next month's update.
 
-<img src="docs/media/models-showcase.gif" width="100%" alt="The same brief made by Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 with givemotion, playing side by side in a 2x2 grid">
+**What you can make:** launch videos and app promos (with a cursor that clicks the real button), explainers with a camera that moves over a map or UI, hand-drawn whiteboard explainers (Excalidraw-style sketchy shapes and self-drawing arrows), live animated charts from your own numbers, vertical shorts for TikTok, Reels and Shorts with word-by-word captions, code explainers, logo stings, and transparent overlays (ProRes 4444 / WebM) for Premiere, DaVinci Resolve or Final Cut.
 
-### Same model, four effort levels
+What it doesn't do is generate footage—it cannot film a photorealistic dog on a beach. If you need generated footage, make the clip with a video model and have the agent place it into a givemotion video.
 
-Claude Opus 5.5 at effort low, medium, high and xhigh, each in a fresh session with the same prompt, made one
-illustrated 20 s short: a dog's morning walk with a walk cycle, a gallop, a leap over a puddle and a title. Eight
-blind AI judges scored them ([the experiment](docs/experiments/2026-11-efforts-showcase.md)).
+---
+
+## Why it exists
+
+I started givemotion because of how AI video models handle changes. When one detail is wrong, you ask again and the model makes the whole video again, and something else often comes out different. With code, a change is an edit: the agent changes one color or one timing and everything else stays as it was. I wanted an engine built around that loop—where the agent writes, checks, looks and fixes, and where a small fix costs a small render—and I wanted it under MIT so anyone, at any company size, can use it, fork it, or build a product on it without conditions.
+
+It is an independent project, and it gets better in rounds: fresh agents make real videos from the docs alone, blind judges score them, and where the agents struggled becomes engine fixes.
+
+— Leo
+
+---
+
+## Why it works well with AI agents
+
+Most video tools were built for people dragging layers on a timeline. AI agents work differently, so givemotion is built around how they actually behave:
+
+1. **It uses what AI already knows best: plain HTML, CSS and JavaScript.** A video is one HTML file with no build step. Models have seen billions of web pages, so they write them well. In our **October 2026 format test** (`givemotion 0.1.0` pre-release; 12 fresh Claude Opus agents, 4 briefs, 8 blind judges), plain HTML ranked first in 6 of 8 cases ahead of HTML with ready-made blocks and React ([the experiment](docs/experiments/2026-10-format-test.md)), matching outside research (DesignBench, 2025).
+2. **The agent can check its own work.** An agent cannot watch a video in real time, so the engine does it for them:
+   - `check` finds text that is cut off, off screen, covered, overlapping, too small or low in contrast, lines running through labels, two scenes' text smudged together in a transition, broken files and script errors, plus pacing faults (long dead stretches, an empty opening, text that leaves before you can read it, or a camera move that arrives too late), and says how to fix each one.
+   - `snapshot` reads the timeline and picks the settled moments of each scene and camera shot into one contact sheet, so the agent sees the whole video at a glance instead of guessing timestamps.
+   - `review` checks every timed beat of a brief (`beats.png`), builds motion strips at the hand-overs and busiest moments, and gives a scoring rubric for a fresh critic sub-agent. `analyze` does the same for any reference MP4 (`--compare` lists how yours differs).
+3. **Motion design tools are built in, not hand-coded from scratch.** Camera moves and 3D worlds that blend like an operator, motion along paths, shape morphs, elements that fly from one scene into the next, 25+ transitions, kinetic type, particle bursts, live line charts the camera can ride, hand-drawn sketch shapes with line boil and tapered ink, labels pinned to shapes, rolling number readouts, and cuts that land on the music's beats are all built in.
+4. **Change one thing, render one part.** Every 1–2 second segment carries a fingerprint of everything that can affect its pixels, and 1 worker and N workers produce the same bytes. After an edit, only the segments whose fingerprint changed are re-rendered.
+5. **Motion craft lives in the agent's docs.** The skill pack has a short core (`SKILL.md`) plus topic files the agent reads only when needed: 15 render-verified technique recipes, 8 named looks, 9 genre guides, and 7 bundled OFL fonts (`Inter`, `JetBrains Mono`, `Playfair Display`, `Space Grotesk`, `Bebas Neue`, `Nunito`, `Caveat`) so renders look identical on every machine.
+
+---
+
+## Tested with AI agents (research & evaluation)
+
+Every test below ran with fresh, isolated agent sessions that saw only their own tool's official docs, scored by blind AI judges. The full paper, interactive video players, side-by-side frame crops and raw data are on **[givemotion.org](https://givemotion.org#evaluation)** and in [`docs/experiments/`](docs/experiments/).
+
+### 1. givemotion vs Remotion vs HyperFrames on random briefs (5–6 November 2026)
+
+Each brief was drawn at random (genre, subject, three motion techniques, format, length) with a recorded seed and written by a fresh AI session that did not know the tools. Across rounds 2–8 (**5–6 November 2026**), fresh **Claude Opus 5.5** agents (effort `high`) built each brief in each tool on one 4-core Linux machine without a GPU. Rounds 7 and 8 (**6 November 2026**) used **two independent makers per tool per brief** (16 briefs, 22 judged sets in total). Six blind Claude Opus 5.5 judges scored each set of three videos.
+
+- **Versions:** `givemotion 0.1.3` (rounds 2–6) and `0.1.4` development branch (rounds 7–8, released on npm as `0.1.5` on 9 November 2026) · `Remotion 4.0.541` · `HyperFrames 0.9.17` (round 2) and `0.9.18` (rounds 3–8).
+
+| | givemotion | Remotion | HyperFrames |
+|---|---:|---:|---:|
+| **Latest round (Round 8, 6 Nov 2026):** judges' mean (1–10, 6 sets) | **7.61** | 6.94 | 6.75 |
+| **Sets won in Round 8** (of 6, both vertical sets included) | **5** | 1 | 0 |
+| **Round 7 (6 Nov 2026):** judges' mean (1–10, 6 sets) | **7.20** | 7.17 | 6.30 |
+| **Rounds 2–6 (5–6 Nov 2026):** judges' mean (1–10, 10 sets, 1 maker/tool) | 6.80 | **7.13** | 7.02 |
+| **All 22 sets (Rounds 2–8):** judges' overall mean (1–10) | **7.13** | 7.09 | 6.75 |
+| **Judges ranking it first, all 22 sets** (132 rankings) | **57** | 50 | 25 |
+| **Cost at API list prices, all 22 sets** | $125 | **$105** | $122 |
+| **Code the agents wrote, all 22 sets** | **12,502 lines** | 33,257 lines | 26,545 lines |
+| **Render time, the 15 briefs timed** (one at a time, no cache) | **387 s** | 1,404 s | 1,214 s |
+
+<img src="docs/media/r8p-3-rebuild.jpg" width="100%" alt="Round 8, Brief P at 12.0 s: givemotion's 37 has re-formed from its shards before the wipe; Remotion's and HyperFrames' are still scattered particles">
+
+*One moment from Round 8, Brief P ("Locked Tight", a vertical year in review, 6 November 2026) at 12.0 s: the brief asks for the "37" to burst, rebuild, and only then wipe to the next word. givemotion's has rebuilt on time (left); Remotion's (middle) and HyperFrames' (right) are still scattered while the wipe has already started. All four decision moments, including where Remotion's carousel beat givemotion's, are in the [rounds 7–8 report](docs/experiments/2026-11-rounds-7-8.md) and on [givemotion.org](https://givemotion.org#evaluation).*
+
+**What the rounds showed:**
+- givemotion trailed in rounds 2–6 (including a clear loss to HyperFrames on Brief A, *"The City Hive"*, 6.0 vs 6.2 vs **8.0**, which led to new sketch ink and boil tools), tied at the top in round 7 (7.20 vs 7.17), and led round 8 (**7.61** vs 6.94 vs 6.75, 5 of 6 sets and 24 of 36 #1 judge picks) after adding beat-by-beat `review` verification and vertical layout rules.
+- givemotion agents wrote roughly a third of the code of Remotion and rendered fastest on every brief timed, but the `review` and critic passes meant givemotion agents spent ~40% more in tokens than Remotion in round 8 ($33.08 vs $23.53) and took ~25% longer.
+- Small sample (1–2 runs per brief on one machine) and AI judges looking at frames and 10 fps strips: read it as a running record, not a final benchmark.
+- **Watch & reproduce:** [Round 8 videos](docs/experiments/videos/round-8/) · [Round 7 videos](docs/experiments/videos/round-7/) · [Rounds 7–8 report (6 Nov 2026)](docs/experiments/2026-11-rounds-7-8.md) · [All rounds 2–8 report (5–6 Nov 2026)](docs/experiments/2026-11-random-briefs.md) · [Reproducible kit](docs/experiments/data/2026-11-random-briefs).
+
+**Earlier single-brief showcases & internal rounds:**
+- **KINETIC 20 s motion reel (5 November 2026):** `givemotion 0.1.3` (`26c811f`) vs `Remotion 4.0.541` vs `HyperFrames 0.9.15`, Claude Opus 5.5 (effort `high`), 6 blind judges. **givemotion 7.8** (first for 5 of 6 judges, 347 lines), **Remotion 7.2** (1,252 lines), **HyperFrames 6.2** (763 lines). On this heavy 24-card 3D blurred grid without a GPU, givemotion rendered slowest (331 s after fixing browser selection, vs 176 s and 142 s) ([report](docs/experiments/2026-11-kinetic-three-engines.md)).
+- **FLUX 20 s opener (2 November 2026):** `givemotion 0.1.2` vs `Remotion 4.0.539` vs `HyperFrames 0.8.230`, Claude Opus 5.5 (effort `medium`), 6 blind judges. **Remotion 7.7**, **givemotion 7.5** (tied 1.5 average rank, 3 #1 picks each), **HyperFrames 6.2**. Rendered on an Apple M4 Pro Mac (with GPU): **HyperFrames 11.1 s**, **givemotion 15.4 s**, **Remotion 50.6 s** ([report](docs/experiments/2026-11-tools-showcase.md)).
+- **9-brief givemotion vs Remotion test (October 2026):** `givemotion 0.1.0` pre-release vs `Remotion 4.0.538`, 9 genres × 2 runs (36 videos), 27 blind judges: **givemotion 7.2** vs **Remotion 6.8** (5 of 9 briefs won, 240 vs 617 median lines, 547 s vs 1,102 s render time on 4 CPUs without a GPU).
+
+### 2. Models and effort levels
+
+**Same model, four effort levels — *"Biscuit's morning walk"* (2 November 2026, `givemotion 0.1.2`):**
+Claude Opus 5.5 at effort `low`, `medium`, `high` and `xhigh`, each in a fresh session with the same prompt, made a 20 s illustrated short: a dog's walk cycle, a gallop, a leap over a puddle and a title. Eight blind Opus judges scored them ([the experiment](docs/experiments/2026-11-efforts-showcase.md)).
 
 <img src="docs/media/efforts-showcase.gif" width="100%" alt="Biscuit's morning walk made by Claude Opus 5.5 at effort low, medium, high and xhigh with givemotion, playing side by side in a 2x2 grid, then a scoreboard">
 
 | | low | medium | high | xhigh |
-|---|---|---|---|---|
-| Judges' overall (1-10) | 5.3 | 6.9 | 6.6 | **8.0** |
-| Tokens / tool calls | **0.6M / 13** | 5.1M / 39 | 5.0M / 34 | 30.8M / 110 |
-| Cost at API prices / minutes | **$1.15 / 5** | $4.06 / 17 | $4.43 / 20 | $14.46 / 53 |
+|---|---:|---:|---:|---:|
+| **Judges' overall (1–10, mean of 8)** | 5.3 | 6.9 | 6.6 | **8.0** |
+| **Tokens / tool calls** | **0.6M / 13** | 5.1M / 39 | 5.0M / 34 | 30.8M / 110 |
+| **Cost at API prices / minutes** | **$1.15 / 5 min** | $4.06 / 17 min | $4.43 / 20 min | $14.46 / 53 min |
 
-xhigh was first for 7 of 8 judges. Medium was the best value. Low framed the dog too small to read and looked at
-its own frames only four times. One brief and one run per level, so read it as a showcase, not a benchmark.
+`xhigh` was first for 7 of 8 judges; `medium` was the best value ($4.06 vs $14.46). `low` framed the dog too small to read and checked its own frames only four times.
 
-## Why it exists
+**Same brief, different models:**
+- ***"Code in, motion out"* (31 October 2026, `givemotion 0.1.1` dev):** Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 each built a 20 s continuous take (a typed `<motion>` breaking into 3D shapes, a tilted orbiting ring, a collapse into the title); all four delivered every beat at 1080p ([report](docs/experiments/2026-10-models-showcase.md) · [watch 2×2 video on givemotion.org](https://givemotion.org#main)).
+- ***"The last lighthouse"* (27 October 2026, `givemotion 0.1.0` pre-release):** Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Gemini 4 Argon on a 15 s title sequence ([watch all four on givemotion.org](https://givemotion.org#videos)).
 
-I started givemotion because of how AI video models handle changes. When one detail is wrong, you ask again and
-the model makes the whole video again, and something else often comes out different. With code, a change is an edit:
-the agent changes one color or one timing and everything else stays exactly as it was. I wanted an engine built
-around that loop, where the agent writes, checks, looks and fixes, and where a small fix costs a small render.
-
-I also wanted it to be free for everyone without conditions. Companies of any size, agencies, people building their
-own video tools on top of it: MIT allows all of that, including selling a modified copy.
-
-It's an independent project, not tied to any company, and it's young. It gets better in rounds: fresh agents make
-real videos from the docs, I read where they got stuck, and the engine is fixed. What it can't do yet is listed
-below, next to what it can.
-
-Leo
-
-## Why it works well with AI agents
-
-Most video tools were made for people. AI agents work differently, so givemotion is built around how they actually
-behave, and we test it with real agents instead of guessing.
-
-**1. Change one thing, render one part.** A render is split into fixed parts of 1 to 2 seconds, each with a
-fingerprint of everything that can affect its pixels. Render again after an edit and only the parts whose fingerprint
-changed are redone. Edit one scene and only that scene's parts are rendered; in one long scene, an edit to something
-that first appears at 40 s keeps the first 40 s. The result is byte-identical to a full render. Neither HyperFrames
-nor Remotion reuses unchanged parts on its own (Remotion can render a frame range you pick by hand). There are limits:
-a script that reads the whole page, for example, turns the finer reuse inside a long scene off, and the render
-report says why.
-
-**2. It uses what AI already knows best: web pages.** A video is one HTML file with normal CSS and JavaScript.
-Models have seen billions of web pages, so they write them well. In our test, 12 Claude agents made the same 4 videos
-in plain HTML, in HTML with ready-made blocks, and in React; blind AI judges ranked plain HTML first in 6 of 8 cases,
-with React a little behind ([the experiment](docs/experiments/2026-10-format-test.md)). That's a small test, and
-it agrees with outside research (DesignBench, 2025) that models do best with plain HTML and CSS. HyperFrames also
-uses plain HTML; Remotion uses React.
-
-**3. The agent can check its own work.** An agent can't watch a video, so the engine does it for them:
-- `check` finds text that is cut off, off screen, covered, overlapping, too small or hard to read, lines running
-  through labels, two scenes' text smudged together in a transition, broken files and script errors, and says how
-  to fix each one. It knows the difference between text that is *moving* past the edge and text that is *stuck* there.
-- It also flags pacing: long stretches where nothing happens, a dead end card, an empty opening, an element that
-  leaves before you could read it, or a camera move that only arrives after its scene has started to leave.
-- It prints a "motion strip", a one-line picture of the video's rhythm.
-
-**4. It picks the frames worth looking at.** `snapshot` reads the timeline and chooses the moments itself: each scene
-once its entrances are done and before it starts to leave, and each camera shot once the camera has arrived. It puts
-them in one image, so the agent sees the whole video in one look instead of guessing timestamps. `analyze` does the
-same for any video file, including a reference you want to match, and `--compare` lists how yours differs.
-
-**5. Motion design, not slides.** The tools that make video feel like animation are built in, so the agent doesn't
-have to write them: a camera that follows and frames things, motion along paths, shape morphs, shared elements that
-fly from one scene into the next, more than 25 scene transitions, kinetic type, particle bursts, live data charts the
-camera can ride, hand-drawn sketch shapes and arrows that draw themselves on, labels that stay attached to their
-shapes, and cuts and pulses that land on the music's beats. In our test against Remotion, the givemotion agents
-wrote a median of 240 lines per video and the Remotion agents 617, mostly because they had to build a camera, beat
-detection and hand-drawn shapes themselves.
-
-**6. Natural motion by default.** Entrances spring in and settle, diagonal moves travel on a slight arc, exits
-accelerate away, and the camera moves like an operator (back-to-back shots flow into one move, `follow` trails its
-target and settles). `<html data-motion="classic">` brings back plain curves. We are still working out how to
-measure whether viewers see the difference; so far our AI judges, who look at stills, don't.
-
-**7. The know-how of a motion designer, in the agent's docs.** The skill pack has a short core plus files the
-agent reads only when it needs them: 15 technique recipes (kinetic type, camera moves, scene transitions, logo
-reveals, charts, UI demos, hand-drawn...), each checked by rendering it; 8 ready-made looks (palette, fonts,
-background, motion personality); and guides for 9 kinds of video. Seven fonts are built in (Inter, JetBrains Mono,
-Playfair Display, Space Grotesk, Bebas Neue, Nunito, Caveat), so a video looks the same on every machine.
-
-**8. Built from what agents struggled with.** We give fresh agents only the docs and a real brief, read their
-notes on what got in their way, and fix the engine, not just the instructions. In the latest full round, 18 agents
-made 9 kinds of video (promo, explainer, data story, UI demo, whiteboard, code explainer, logo sting, year recap,
-vertical short); blind AI judges gave them 7.1 out of 10 on average, none below 6, and their notes led to about 20
-engine fixes. Every round and what it changed is in [`docs/experiments/`](docs/experiments/).
-
-**9. Same input, same video.** Frames are a pure function of time, and 1 worker and N workers produce the same bytes;
-the test suite checks it. That is what makes the reuse in point 1 safe. One known case still differs on macOS: there
-Chrome draws on its own clock, and on a busy machine a layer whose scale keeps changing (with text moving nearby)
-can come out slightly different between renders. On an idle machine renders match. It's on the fix list.
-
-**10. Small and private.** givemotion has zero npm dependencies (installing it adds one package), sends no usage
-data, and never needs an account. It renders wherever Node runs, and once Chrome is installed it works offline.
-
-## What it doesn't do yet
-
-- **No cloud rendering.** It renders on your machine or your server. HyperFrames and Remotion both run on AWS Lambda
-  and Google Cloud Run.
-- **No visual editor.** `givemotion dev` is a preview (timeline, scrubbing, frame stepping, sound), not an editor.
-  Your agent is the editor. If you want to drag things around yourself, the HyperFrames desktop app and Remotion
-  Studio do more.
-- **No voice or transcription tools.** Bring your own voice-over and a word-timed captions file or `.srt`.
-- **No HDR or HLS output.**
-- **Slow on heavy pages without a GPU.** Pages with many full-screen effects render slowly on machines without one.
-- **Speed on a Mac is not benchmarked yet.** All our timing numbers come from Linux cloud machines (see below).
-- **It's new.** The community is small, and options may still change between 0.x versions.
+---
 
 ## How it compares
 
-Three tools turn HTML in headless Chrome into video: **givemotion**, **HyperFrames** (by HeyGen) and **Remotion**.
-All three encode with ffmpeg. Here is where they differ, from each project's own docs, license and repository.
-Checked on 27 October 2026 (HyperFrames 0.8.209, Remotion 4.0.539); these projects move fast, so tell us if something
-changed.
+Three tools turn HTML in headless Chrome into video and encode with `ffmpeg`: **givemotion**, **HyperFrames** (by HeyGen) and **Remotion**. Here is where they differ, from each project's own docs, license and repository, checked on **27 October 2026** (`givemotion 0.1.5`, `HyperFrames 0.8.209`, `Remotion 4.0.539`); tell us via an [issue](https://github.com/givemotion/givemotion/issues) if something changed.
 
 | | givemotion | HyperFrames | Remotion |
 |---|---|---|---|
-| Made by | Independent project by Leonardo Grigorio | HeyGen | Remotion |
-| License | MIT | Apache 2.0 | Source-available, its own license (not open source by the OSI definition)¹ |
-| Free for companies | Yes, any size | Yes, any size | Up to 3 people; at 4 or more people (all staff, not only users) a paid license, per seat or per render¹ |
-| Fork it and sell your fork | Yes | Yes | No, selling or licensing your own derivative is not allowed¹ |
-| Videos are written in | HTML, CSS, JavaScript | HTML, CSS, JavaScript | React |
-| Instructions for agents | Skill pack, Claude Code plugin, `AGENTS.md`, `llms.txt` | 7 skills, Claude Code plugin, hosted MCP server (beta), `llms.txt` | 12 Agent Skills, Claude Code plugin, WebMCP in Studio, docs as Markdown |
-| Agent checks its own video | `check`: cut-off, covered, overlapping, tiny and low-contrast text, lines through labels, smudged transitions, broken files, script errors, pacing | `lint` and `check`: script errors, layout (overflow, clipping, occlusion), motion assertions, WCAG contrast, craft warnings, audio | ESLint plugin; we found no layout checker |
-| Agent looks at frames | `review` writes what a viewer sees (overview, the frames people read, motion strips at the busy moments) with a scoring rubric; `snapshot` picks key moments; `analyze` and `--compare` for any video | `snapshot` at times you give, an onion-skin image of one element's motion, side by side with a reference | `still`, or chosen frames as images |
-| Render again after a small change | Only the parts that changed, automatically, byte-identical to a full render | No reuse of unchanged parts that we found (it caches frames taken from source videos) | No automatic reuse that we found; you can render a frame range you choose |
-| Same bytes with 1 or N workers | Yes, tested (one open macOS case) | "Same input, identical output"; pixels can vary by machine, Docker for exact output | Frames must be a pure function of the frame number; no byte-identical claim |
-| Built-in motion | Camera, paths, morphs, fly, hand-drawn shapes, live charts, beat-synced cuts; 21 blocks | A catalog of about 450 blocks; GSAP, Lottie, Three.js, Anime.js | `spring()`, `interpolate()`, add-on packages (transitions, paths, shapes, GSAP) |
-| Frame capture | Chrome's frame-by-frame capture on Linux and Windows, screenshots on macOS | Frame-by-frame on Linux; screenshots for parallel renders on macOS and Windows | Screenshots; a custom Chromium with shared-memory capture on Linux and Apple Silicon Macs (macOS 15+) |
-| Output | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3 | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR | H.264, H.265, VP8, VP9, AV1, ProRes, GIF, image sequences, MP3/WAV/AAC |
-| Cloud rendering | None | AWS Lambda, Google Cloud Run, HeyGen's cloud (credits) | AWS Lambda, Google Cloud Run (alpha), Vercel Sandbox |
-| Editor | Browser preview | Browser studio and a desktop app with a built-in agent (HeyGen sign-in) | Remotion Studio; a paid editor template |
-| Built-in AI extras | None | Text to speech, transcription, background removal | Whisper caption packages |
-| npm packages installed² | 1 (zero dependencies) | about 66 | about 237, plus React |
-| Usage data sent | None | On by default, can be turned off; tied to your HeyGen email after login | With a license key set, and always from in-browser rendering |
-| Community (GitHub stars) | New and small | about 74k | about 68k |
+| **Made by** | Independent project by Leonardo Grigorio | HeyGen | Remotion |
+| **License** | MIT | Apache 2.0 | Source-available, its own license (not open source by the OSI definition)¹ |
+| **Free for companies** | Yes, any size | Yes, any size | Up to 3 people; at 4 or more people (all staff), a paid license per seat or per render¹ |
+| **Fork it and sell your fork** | Yes | Yes | No¹ |
+| **Videos are written in** | HTML, CSS, JavaScript | HTML, CSS, JavaScript | React |
+| **Instructions for agents** | Skill pack, Claude Code plugin, `AGENTS.md`, `llms.txt` | 7 skills, Claude Code plugin, hosted MCP server (beta), `llms.txt` | 12 Agent Skills, Claude Code plugin, WebMCP in Studio, docs as Markdown |
+| **Agent checks its own video** | `check`: cut-off, covered, overlapping, tiny and low-contrast text, lines through labels, smudged transitions, broken files, script errors, pacing | `lint` and `check`: script errors, layout (overflow, clipping, occlusion), motion assertions, WCAG contrast, craft warnings, audio | ESLint plugin; we found no layout checker |
+| **Agent looks at frames** | `review` (brief beats, motion strips, rubric), `snapshot` (auto key moments), `analyze` and `--compare` | `snapshot` at times you give, onion-skin trail, side by side with a reference | `still`, or chosen frames as images |
+| **Render again after a small change** | Only the 1–2 s parts that changed, automatically, byte-identical to a full render | No reuse of unchanged parts that we found (caches frames taken from source videos) | No automatic reuse that we found; you can render a frame range you choose |
+| **Same bytes with 1 or N workers** | Yes, tested (one open macOS case under load) | "Same input, identical output"; Docker recommended for exact output across machines | Pure function of the frame number; no byte-identical claim |
+| **Built-in motion** | Camera, paths, morphs, fly, hand-drawn shapes, live charts, rolling readouts, beat-synced cuts; 22 blocks | A catalog of about 450 blocks; GSAP, Lottie, Three.js, Anime.js | `spring()`, `interpolate()`, add-on packages (transitions, paths, shapes, GSAP) |
+| **Output** | MP4, WebM, MOV (ProRes 4444 with transparency), GIF, PNG frames, MP3/WAV/M4A | MP4, WebM, MOV (ProRes 4444), GIF, PNG frames, HLS, HDR | H.264, H.265, VP8, VP9, AV1, ProRes, GIF, image sequences, MP3/WAV/AAC |
+| **Cloud rendering** | None | AWS Lambda, Google Cloud Run, HeyGen's cloud (credits) | AWS Lambda, Google Cloud Run (alpha), Vercel Sandbox |
+| **Editor** | Browser preview (`givemotion dev`) | Browser studio and a desktop app with a built-in agent (HeyGen sign-in) | Remotion Studio; a paid editor template |
+| **Built-in AI extras** | None | Text to speech, transcription, background removal | Whisper caption packages |
+| **npm packages installed²** | **1** (zero dependencies) | about 66 | about 237, plus React |
+| **Usage data sent** | None | On by default, can be turned off; tied to your HeyGen email after login | With a license key set, and always from in-browser rendering |
 
-¹ Remotion's [license](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md),
-[terms](https://www.remotion.dev/docs/terms) and [license FAQ](https://www.remotion.dev/docs/license/faq). Read them
-yourself before you decide; this is our summary, not legal advice. The FAQ also allows building an AI tool that
-writes and renders Remotion code, and counts it as an automation (billed per render).
-² Counted from the npm registry for `givemotion`, `hyperframes` and `@remotion/cli`, without optional and peer
-dependencies.
-
-HyperFrames facts are from its [docs](https://hyperframes.heygen.com) and
-[repository](https://github.com/heygen-com/hyperframes). Remotion facts are from its [docs](https://www.remotion.dev/docs)
-and [repository](https://github.com/remotion-dev/remotion).
-
-### Tested with AI agents (givemotion vs Remotion)
-
-Fresh Claude Opus agents made the same 9 briefs (promo, explainer, data story, UI demo, whiteboard, code explainer,
-logo sting, year recap, vertical short), twice each, once with givemotion and once with Remotion 4.0.538, in
-October 2026. 27 blind AI judges scored the 36 videos, 4 at a time per brief. HyperFrames was not in this test; it is in the
-[random-brief rounds](#givemotion-vs-hyperframes-vs-remotion-on-briefs-nobody-tuned-for) at the top.
-
-| | givemotion | Remotion |
-|---|---|---|
-| Judges' overall score (1-10) | **7.2** | 6.8 |
-| Briefs won | 5 of 9 | 4 of 9 |
-| Render time for all 18 videos (4 CPUs, no GPU) | **547 s** | 1102 s |
-| Same animation in both tools, default settings | **14.6 s** | 27.1 s |
-| Code the agent wrote per video (median) | **240 lines** | 617 lines |
-
-The quality edge is small and mostly fewer visible mistakes; Remotion won the year recap, explainer, whiteboard and
-promo briefs. The speed edge is larger: givemotion rendered every video faster. These are AI judges looking at frames,
-on one machine, and the test harness and raw scores are not in this repository yet, so read this as our report, not
-yet a benchmark you can rerun. givemotion agents also read more context per video (we estimate 10-20% more cost in
-tokens at list prices), which we are working to bring down. The test used Remotion only as a user does.
-
-### Speed vs HyperFrames
-
-The same GSAP animation (10 s at 1080p) on a small cloud machine with 2 CPUs and no GPU: givemotion 22.2 s,
-HyperFrames 0.8.188 36.8 to 40.0 s at the same quality. That's one animation on one machine, and HyperFrames has faster
-capture paths we could not test there. The script is in [`benchmarks/vs-hyperframes`](benchmarks/vs-hyperframes)
-so you can run it yourself. On a Mac with a GPU (M4 Pro) the order changes: rendering the 20 s showcase video at the top
-with each tool's defaults took HyperFrames 11.1 s, givemotion 15.4 s and Remotion 50.6 s.
+¹ Remotion's [license](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md), [terms](https://www.remotion.dev/docs/terms) and [license FAQ](https://www.remotion.dev/docs/license/faq). Read them yourself before you decide; this is our summary as of 27 October 2026, not legal advice.
+² Counted from the npm registry for `givemotion`, `hyperframes` and `@remotion/cli`, without optional and peer dependencies. Sources: HyperFrames [docs](https://hyperframes.heygen.com) and [repo](https://github.com/heygen-com/hyperframes); Remotion [docs](https://www.remotion.dev/docs) and [repo](https://github.com/remotion-dev/remotion).
 
 ### Which one to pick
 
-**Pick givemotion if** you want an engine with no license conditions you can fork and sell, no dependencies and no
-data sent anywhere; if your agent will make many small changes and you want each re-render to be quick; or if you want
-checks that also look at pacing and motion-design tools built in.
+- **Pick givemotion if** you want an engine with no license conditions you can fork and sell, no dependencies and no data sent anywhere; if your agent will make many small changes and you want each re-render to be quick; or if you want built-in motion tools and checks that also look at pacing.
+- **Pick HyperFrames if** you want the biggest feature set right now: cloud rendering, a desktop app, voice and transcription tools, HDR and HLS output, a large block catalog, and a large community backed by HeyGen.
+- **Pick Remotion if** you or your team already work in React, you want its mature ecosystem (Lambda rendering, the Player, years of examples), and its license fits your company size.
 
-**Pick HyperFrames if** you want the biggest feature set right now: cloud rendering, a desktop app, voice and
-transcription tools, HDR and HLS output, a large block catalog, and a large community backed by HeyGen.
+### What it doesn't do yet
 
-**Pick Remotion if** you or your team already work in React, you want its mature ecosystem (Lambda rendering, the
-Player, years of examples), and its license fits your company size.
-
-HyperFrames and Remotion are good projects and inspired parts of this one. givemotion shares the idea of turning a
-web page into a video, not the code. We are not affiliated with either.
-
-## Make your own version (fork it)
-
-MIT means you can take this and build on it, keep your fork private, or sell it. The only condition is that the
-license notice stays in. One idea we like: **a fork focused on one style.** For example a "whiteboard" edition, a
-"tech launch" edition, or your company's brand edition:
-
-1. Fork the repo.
-2. Add blocks in [`blocks/`](blocks) for your style: your title cards, your lower thirds, your charts, your
-   transitions, in your colors and fonts. Put your fonts in `src/runtime/fonts/`, with an `@font-face` for each in
-   `src/runtime/preset.css`, so every render has them.
-3. Add your look to the agent instructions. [`skills/givemotion/references/styles.md`](skills/givemotion/references/styles.md)
-   holds the built-in looks; add yours with the blocks to use, the colors, the fonts, the motion personality and what
-   to avoid. Point to it from [`SKILL.md`](skills/givemotion/SKILL.md) so the agent reads it first.
-4. Ship it with `npx givemotion skill` (or your own package name), so your team's agents get your edition.
-
-Agents then make videos in that style faster and more consistently, because they start from pieces that already look
-right instead of inventing everything each time. You get most of what people hope for from "fine-tuning a model on
-our brand", without training anything.
-
-For a single project you may not need a fork: copy blocks into the project with `npx givemotion add <name>`, edit them
-to your brand, and write your rules into the project's `AGENTS.md`.
-
-## Where it's going
-
-givemotion is maintained as an independent project and improved in rounds: agents make real videos, judges score
-them, and what went wrong becomes engine fixes and better docs. The open work is public in
-[`docs/NEXT.md`](docs/NEXT.md). Near the top of the list:
-
-- close the quality gap the random-brief rounds show, and run more makers per brief so the scores are less noisy;
-- benchmark all three tools on a Mac;
-- fix the open macOS determinism case;
-- lower the token cost per video for agents;
-- find a fair way to measure whether natural motion looks better.
-
-If you use it, the most useful thing you can send is a video that came out wrong, with the HTML. Issues and pull
-requests are welcome.
-
-## Questions people ask
-
-**Is this an AI video generator?** No. It doesn't generate footage from a prompt. Your agent builds the video from
-real pieces (your text, logo, fonts, images, clips, data) and givemotion renders it. That's why the result is the
-same every time, a change touches only what you asked about, and text is spelled the way you wrote it. See
-[How it differs from AI video generators](#how-it-differs-from-ai-video-generators).
-
-**Is there a free, open-source way to turn code into video?** Yes. givemotion (MIT) and HyperFrames (Apache 2.0) are
-both free for any use, including big companies. Remotion is free for individuals and companies of up to 3 people.
-See [How it compares](#how-it-compares).
-
-**Is it a free alternative to Remotion?** It does the same job (code in, video out) with HTML instead of React,
-under MIT for everyone, and it's built for AI agents to write. It renders faster in every test we ran. On quality it
-scored a little higher in our October 9-brief test; in the random-brief rounds of November 2026 it started behind
-and led the latest round (7.61 vs 6.94); see [the comparison at the top](#givemotion-vs-hyperframes-vs-remotion-on-briefs-nobody-tuned-for)
-and [How it compares](#how-it-compares).
-
-**How is it different from HyperFrames?** Both are free and both use HTML. givemotion re-renders only what changed,
-has no dependencies, sends no data, needs no account and is independent of any company. HyperFrames has far more
-features today (cloud rendering, a desktop app, voice tools) and a much larger community.
-
-**Can Claude Code make videos?** Yes. Run `npx givemotion init` (or `npx givemotion skill` in an existing
-project) and ask Claude Code for a video. It also works with Cursor, Codex and other agents that read an
-`AGENTS.md` file.
-
-**If I don't like one part, does the whole video render again?** No. The agent edits that part, and only the 1-2
-second pieces of the video that changed are rendered again. The result is the same file you would get from a full
-render.
-
-**Do I need to know how to code?** No. You talk to your agent in plain words and it does the rest, including the
-setup if you ask it to. The code is there so that every change is exact; you don't have to look at it. If you do know
-HTML and CSS, you can open the file and change anything.
-
-**How much does it cost?** givemotion is free. You pay for your AI agent as you already do (a subscription or
-tokens), and rendering runs on your own computer. A change re-renders only the part of the video it touches,
-so revisions stay cheap.
-
-**Can I use it for client work or commercially?** Yes, for free, at any company size. MIT license.
-
-**Can I build my own video product on it?** Yes. You can embed it, run it on your servers, fork it and sell the fork.
-
-**Can I put my own music, voice-over, logos and videos in?** Yes. Audio tracks with volume curves and ducking
-under a voice, video clips, images, fonts, and captions from a word-timed file or an `.srt`.
-
-**How fast is it?** Fast on a normal computer, faster with more cores and a GPU. It renders with several browsers
-at once, skips frames that did not change, and re-renders only the parts you changed. See [Performance](#performance).
-
-**Who made it?** [Leonardo Grigorio](https://github.com/leonardogrig) started it in 2026. It's an independent
-open-source project, and contributions are welcome.
+- **No cloud rendering** (it renders on your machine or your server) and **no visual editor** (`givemotion dev` is a preview; your agent is the editor).
+- **No built-in voice or transcription tools** (bring your own voice-over and a word-timed captions file or `.srt`) and **no HDR or HLS output**.
+- **Slow on heavy 3D/filter pages without a GPU**, and **speed on a Mac is not fully benchmarked yet**.
+- **One open determinism case on macOS** under heavy load (renders match on an idle machine).
+- **Agent token cost:** the `review` and critic passes that lifted quality in round 8 use ~40% more tokens than the cheapest tool. Trimming that cost, fixing the macOS load case, and Mac benchmarks are open in [`docs/NEXT.md`](docs/NEXT.md).
 
 ---
 
@@ -504,50 +229,32 @@ open-source project, and contributions are welcome.
 </html>
 ```
 
-No imports and no build step: the runtime is added for you. Everything that moves on a web page is played
-on a virtual clock and captured frame by frame: CSS animations, transitions, the Web Animations API, timers,
-`requestAnimationFrame`, canvas, WebGL, GSAP, Lottie. There is also a built-in GSAP-style timeline
-(`gm.timeline()`), a camera (`gm.camera()`), path travel, shape morphs, `gm.fly()` (move an element in from where
-another one is), live line charts (`gm.chart.line()`), hand-drawn shapes (`data-sketch`), labels pinned to shapes
-(`data-anchor`), particle bursts, and music analysis (`gm.audio()`, `gm.beat(n)`, `data-pulse`, cuts written in beats).
+No imports and no build step: the runtime is injected for you. Everything that moves on a web page runs on a virtual clock and is captured frame by frame: CSS animations and transitions, the Web Animations API, timers, `requestAnimationFrame`, canvas, WebGL, SVG SMIL, GSAP and Lottie. Built-in primitives on `window.gm` include `gm.timeline()`, `gm.camera()`, `gm.path.travel()`, `gm.path.stream()`, shape morphs, `gm.fly()`, live line charts (`gm.chart.line()`), hand-drawn shapes (`data-sketch`, `data-sketch-boil`, `data-sketch-ink`, `gm.connect()`), pinned labels (`data-anchor`), rolling readouts (`data-roll`), particle bursts (`gm.burst()`), and beat analysis (`gm.audio()`, `gm.beat()`, `data-pulse`).
 
-The full reference is the skill pack written for agents (and good for humans too):
-[`skills/givemotion/SKILL.md`](skills/givemotion/SKILL.md) and the topic files in
-[`skills/givemotion/references/`](skills/givemotion/references).
+Full reference: [`skills/givemotion/SKILL.md`](skills/givemotion/SKILL.md) and [`skills/givemotion/references/`](skills/givemotion/references/).
 
 ### Commands
 
 | Command | What it does |
 |---|---|
-| `init [dir]` | New project: starter video, agent instructions, AGENTS.md |
-| `skill` | Add the agent instructions to an existing project |
+| `init [dir]` | New project: starter video, agent instructions, `AGENTS.md` |
+| `skill [dir]` | Add or update the agent instructions in an existing project |
 | `dev [file]` | Live preview with a timeline, scrubbing, frame stepping and sound |
-| `render [file] -o out.mp4` | Render to `.mp4` `.webm` `.mov` `.gif`, a folder of PNGs, or just the soundtrack (`.mp3`) |
-| `still [file] -t 2.5 -o f.png` | One exact frame |
-| `check [file]` | Problems with fixes, plus the motion strip |
-| `snapshot [file]` | Key moments of every scene in one image |
-| `review [file]` | The video as a viewer sees it: overview, the frames people read, motion strips at the busy moments, the check report and a scoring rubric (`review/REVIEW.md`) |
-| `inspect [file]` | Timeline as JSON; `--at 3.2 --el "#logo"` says where anything is at any moment |
+| `render [file] -o out.mp4` | Render to `.mp4`, `.webm`, `.mov` (ProRes 4444), `.gif`, PNG frames, or audio only (`.mp3`/`.wav`/`.m4a`) |
+| `still [file] -t 2.5 -o f.png` | Render one exact frame |
+| `check [file]` | Problems with fixes, plus the one-line motion strip |
+| `snapshot [file]` | Key settled moments of every scene in one image (`--trail` for an onion-skin motion trail) |
+| `review [file]` | Viewer review pack (`review/REVIEW.md`, overview, readable holds, motion strips, `beats.png`) |
+| `inspect [file]` | Timeline as JSON (`--at 3.2 --el "#logo"` inspects where an element sits at any moment) |
 | `audio <file>` | Tempo, beats, bar starts and big hits of a song |
-| `captions <file>` | The caption pages a word-timed `.json` or `.srt` will show, so you can pick how many words per page |
-| `analyze <video.mp4>` | Report on any video (a reference, or your render): shots and cuts, transitions, camera, pacing, colors, cuts on the beat, contact sheets. `--compare ref.mp4` lists how yours differs |
+| `captions <file>` | Preview how a word-timed `.json` or `.srt` will page captions (`--words 3`) |
+| `words <file>` | Every word of a voice-over, its timestamps and `@word` token (`--near 145`) |
+| `analyze <video.mp4>` | Report on any video: cuts, transitions, camera, pacing, colors, beat sync (`--compare ref.mp4`) |
 | `bundle [file] -o dir` | Standalone page + `<gm-player>` to embed the video in any site |
-| `blocks` / `add <name>` | Ready-made blocks you can copy and edit |
-| `install` / `doctor` / `bench` | Get Chrome, check your setup, measure speed (and what makes a page slow to draw) |
+| `blocks` / `add <name>` | List or copy any of the 22 editable HTML blocks into your project |
+| `install` / `doctor` / `clean` / `bench` | Get Chrome, check your setup, clear cached video frames, or measure render speed |
 
-Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from a 1080p layout; `4/3` for 1440p),
-`--frames 2s-5s`, `--transparent`, `--motion-blur 8|auto`, `--codec h265|av1`, `--hardware`, `--workers`,
-`--muted`, `--data file.json`, `--props '{…}'`, `--cache-dir <dir>` (where the parts cache lives),
-`--progress json` (JSON progress lines on stderr, for apps). Every command takes `--json`.
-
-Renders running at the same time (several projects, several agents) share the computer: together they open no more
-browsers than it has performance cores and use at most half its memory, split evenly between them, so starting
-another one does not freeze the machine. `GIVEMOTION_MAX_BROWSERS=N` changes the total.
-
-Rendering again after a change only redoes the parts of the video that changed (edit one scene → only its 1-2 s parts
-are rendered; in one long scene, an edit to something that appears at 40 s keeps the first 40 s), and the result is
-byte-identical to a full render. `--redo 4s-7s` forces a range, `--no-cache` turns it off. The render result says
-how many parts were reused, and `parts.lateOff` says why the finer reuse inside a long scene was turned off, if it was.
+Render options: `--quality draft|standard|high|max`, `--fps`, `--scale 2` (4K from 1080p; `4/3` for 1440p), `--frames 2s-5s`, `--redo 4s-7s`, `--no-cache`, `--cache-dir <dir>`, `--cache-key <name>`, `--transparent`, `--motion-blur auto|8`, `--codec h264|h265|av1`, `--hardware` / `--no-hardware`, `--workers <n>`, `--data file.json`, `--props '{…}'`, `--progress json`, `--json`. Several renders running at once automatically share the computer's performance cores and half its memory (`GIVEMOTION_MAX_BROWSERS=N` overrides the cap).
 
 ### Programmatic API
 
@@ -555,85 +262,67 @@ how many parts were reused, and `parts.lateOff` says why the finer reuse inside 
 import { render, check, snapshot, still, inspect } from 'givemotion';
 
 await render('video.html', { output: 'out/video.mp4', quality: 'high', data: { name: 'Ada' } });
-const report = await check('video.html');           // { ok, errors, warnings, issues: [...] }
-const { sheet } = await snapshot('video.html');     // path to the contact sheet
+const report = await check('video.html');       // { ok, errors, warnings, issues: [...] }
+const { sheet } = await snapshot('video.html'); // path to snapshots/sheet.png
 ```
 
-TypeScript types ship with the package (`RenderOptions`, `RenderResult`, `CheckReport`, `Issue`, ...), so your
-editor and your agent see every option and catch a misspelled one. givemotion itself is plain JavaScript checked by
-TypeScript from JSDoc, so there is no build step.
+TypeScript types ship with the package (`src/types/api.d.ts`: `RenderOptions`, `RenderResult`, `CheckReport`, `Issue`, etc.).
 
-### Blocks
+### Blocks & custom brand editions
 
-Plain-HTML building blocks you copy into your project and edit freely (`npx givemotion add <name>`):
-title-card, lower-third, captions, code-window, bar-chart, line-chart, stat, checklist, steps, browser-window,
-phone, cursor, callout, compare, quote, word-pop, logo-reveal, end-card, gradient-bg, grid-bg, lottie.
+Copy any of the 22 plain-HTML building blocks into your project and edit freely (`npx givemotion add <name>`):
+`title-card`, `lower-third`, `captions`, `code-window`, `bar-chart`, `line-chart`, `stat`, `checklist`, `steps`, `browser-window`, `phone`, `cursor`, `callout`, `compare`, `quote`, `word-pop`, `logo-reveal`, `end-card`, `gradient-bg`, `grid-bg`, `highlight`, `lottie`.
 
-### Performance
+To build a reusable brand kit or a custom edition, combine scoped parts (`<gm-include src="part.html" scope>`) with your own tokens and fonts, or fork the repo under MIT, drop your fonts in `src/runtime/fonts/` and your look in [`skills/givemotion/references/styles.md`](skills/givemotion/references/styles.md), and ship it to your team's agents with `npx givemotion skill`.
 
-Measured on a small cloud machine (2 CPUs, no GPU), 1080p at 30 fps, 300 frames:
+### How it works & performance
 
-| | Time |
-|---|---|
-| Simple approach: one browser, PNG screenshots, no frame reuse | 32.7 s |
-| givemotion, 1 worker | 15.0 s |
-| givemotion, auto workers | 13.3 s |
-
-On a 4-CPU cloud machine without a GPU (October 2026), that same test page renders in 14.6 s (22.6 s with one
-worker), and the 18 videos agents made in our latest test round (5 to 31 s long, 1080p) rendered at 18.8 frames per
-second on average. Pages with many full-screen effects are slower on machines without a GPU. Run
-`npx givemotion bench` on your own computer.
-
-Where the speed comes from: Chrome's frame-by-frame capture (`beginFrame`, on Linux and Windows), several
-browsers rendering parts of the video at once, reusing frames that did not change, re-rendering only the parts that
-changed, and encoding while capturing.
-
-**On a Mac** it uses the GPU for drawing, and the Mac's hardware video encoder (VideoToolbox) for MP4 by default,
-once a quick one-time check shows the encoder gives the same bytes every time (so renders stay exact and re-renders
-can reuse parts). `npx givemotion doctor` says which encoder you get; `--no-hardware` turns it off. Frame capture
-on macOS uses screenshots, because Chrome's frame-by-frame capture is not available there. We have not published Mac
-timings yet.
-
-### How it works
-
-```
-HTML ──► local server (adds the runtime, expands blocks and {{data}}, serves video frames)
+```text
+HTML ──► local server (adds the runtime, expands <gm-include> and {{data}}, serves video frames)
            │
            ▼
- headless Chrome × N  ── runtime: virtual clock, seeks every animation to the exact time
-           │  capture each frame
+ headless Chrome × N ── virtual clock seeks every animation to the exact time
+           │  capture each frame (beginFrame on Linux/Windows, screenshots on macOS)
            ▼
-      ffmpeg × N (1-2 s parts, fingerprinted, reused when unchanged) ──► join + audio mix ──► out.mp4
+      ffmpeg × N (1–2 s parts, fingerprinted, reused when unchanged) ──► join + audio mix ──► out.mp4
 ```
 
-### Requirements
+On a 2-CPU Linux cloud machine without a GPU (1080p at 30 fps, 300 frames, October 2026), a simple single-browser PNG screenshot loop took **32.7 s**, givemotion with 1 worker took **15.0 s**, and givemotion with auto workers took **13.3 s** ([speed study](docs/experiments/2026-10-t7-speed.md)). On a Mac, it uses the GPU for drawing and Apple's `VideoToolbox` hardware encoder by default once a quick one-time check confirms byte-identical output. Run `npx givemotion bench` on your own machine.
 
-- Node.js 20+
-- ffmpeg on your PATH (`brew install ffmpeg`, `sudo apt install ffmpeg`, `winget install ffmpeg`)
-- Chrome: `npx givemotion install` downloads it, or it finds the one you have
+---
 
-givemotion itself has **zero npm dependencies**: installing it adds one package.
+## Questions people ask
 
-### Status
+**What is givemotion?**
+givemotion is a free, open-source (MIT) video engine that lets AI coding agents like Claude Code, Codex and Cursor make motion graphics from HTML, CSS and JavaScript, check their own frames, and render MP4, WebM, ProRes or GIF files.
 
-givemotion is young (0.x). Compositions written today should keep working, but options and APIs may still
-change between minor versions; changes are listed in the release notes.
+**Is this an AI video generator?**
+No. It does not generate footage from a prompt. Your agent builds the video from real pieces (your text, logo, fonts, images, clips and data) and givemotion renders it frame by frame. That is why the result is the same every time, a change touches only what you asked about, and text is spelled the way you wrote it.
 
-## Contributing and security
+**Can Claude Code make videos?**
+Yes. Run `npx givemotion init my-video` (or `npx givemotion skill` in an existing project) and ask Claude Code for a video. It also works as a Claude Code plugin (`/plugin marketplace add givemotion/givemotion`) and with Codex, Cursor and other agents that read `AGENTS.md`.
 
-Pull requests and issues are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) (and [AGENTS.md](AGENTS.md) for the
-code layout). A composition is code that runs in Chrome; if you render compositions or data from people you don't
-trust, read [SECURITY.md](SECURITY.md) first. Report security problems privately, as described there.
+**Is there a free, open-source alternative to Remotion?**
+Yes. givemotion (MIT) and HyperFrames (Apache 2.0) are both free for any use, including companies of any size. Remotion uses React under a source-available license that is free for individuals and companies of up to 3 people (see [How it compares](#how-it-compares)). In our November 2026 random-brief rounds, givemotion started behind Remotion and led the latest round (7.61 vs 6.94; see [Tested with AI agents](#tested-with-ai-agents-research--evaluation)).
 
-## License
+**How is it different from HyperFrames?**
+Both are free and both use HTML. givemotion re-renders only the 1–2 second parts that changed, has zero npm dependencies, sends no usage data, needs no account and is independent of any company. HyperFrames (by HeyGen) has far more features today (cloud rendering, a desktop app, voice and transcription tools, HDR output) and a much larger community.
 
-MIT, copyright Leonardo Grigorio and givemotion contributors. Use it, change it, fork it, sell what you make with it.
-The MIT license covers givemotion itself; Chrome and ffmpeg are installed separately under their own licenses. The
-examples and the animations in this README were made for this project and are MIT too. The bundled fonts (Inter,
-JetBrains Mono, Playfair Display, Space Grotesk, Bebas Neue, Nunito, Caveat) are under the SIL Open Font License (license
-files in `src/runtime/fonts/`). Everything third-party is listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+**If I don't like one part, does the whole video render again?**
+No. The agent edits that part, and only the 1–2 second pieces of the video whose inputs changed are rendered again. The result is byte-identical to a full render.
 
-This project was written from scratch. It shares the idea of "turn a web page into a video" with tools like
-Remotion and HyperFrames, but no code from them; how we keep it that way, and how we compare fairly, is in
-[CONTRIBUTING.md](CONTRIBUTING.md#independence-and-clean-room-policy). givemotion is not affiliated with either.
-Remotion and HyperFrames are trademarks of their owners.
+**Do I need to know how to code?**
+No. You talk to your agent in plain words and it does the rest, including the setup if you ask it to. The code is there so that every change is exact; if you do know HTML and CSS, you can open the file and change anything.
+
+**Can I use it for client work, commercially, or build my own product on it?**
+Yes, for free, at any company size. Under the MIT license you can use it commercially, embed it, run it on your servers, or fork it and sell the fork.
+
+---
+
+## Contributing, security and license
+
+Pull requests and issues are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) (and [AGENTS.md](AGENTS.md) for the code layout). A composition is code that runs in Chrome; if you render compositions or data from people you don't trust, read [SECURITY.md](SECURITY.md) first.
+
+**License:** [MIT](LICENSE), copyright Leonardo Grigorio and givemotion contributors. Chrome and `ffmpeg` are installed separately under their own licenses; the bundled fonts are under the SIL Open Font License (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+
+This project was written from scratch. It shares the idea of turning a web page into a video with tools like Remotion and HyperFrames, but no code from them; see [CONTRIBUTING.md](CONTRIBUTING.md#independence-and-clean-room-policy). givemotion is not affiliated with Remotion or HeyGen, and their trademarks belong to their owners.

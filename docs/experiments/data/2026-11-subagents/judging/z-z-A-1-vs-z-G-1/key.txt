@@ -1,0 +1,4 @@
+judge-1 A=z-A-1 B=z-G-1
+judge-2 A=z-G-1 B=z-A-1
+judge-3 A=z-A-1 B=z-G-1
+judge-4 A=z-G-1 B=z-A-1

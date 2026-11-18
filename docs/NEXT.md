@@ -7,6 +7,12 @@ named after the task (`git checkout -b task/anchors`), pull `main` and run `npm 
 merge often. If two tasks touch the same file, keep the changes small and merge the first one before starting the
 second. Do not reformat files you are not changing.
 
+## Open: sub-agents on long videos (found 2026-11-18)
+
+Touches `skills/givemotion/SKILL.md` only. On 12-16 s videos of 3-4 scenes, parallel scene builders on a cheaper model
+cost more and looked worse at the seams (`docs/experiments/2026-11-subagents.md`). Untested: 60 s+ videos with 8+
+independent scenes, where one agent's context fills up. Kit: `docs/experiments/data/2026-11-subagents/`.
+
 ## Open: macOS renders differ under load (found 2026-11-02)
 
 Touches `src/browser.js`, `src/render.js`, `src/runtime/runtime.js`. With screenshot capture (macOS), Chrome runs on

@@ -2,21 +2,21 @@
 name: givemotion
 description: Makes videos from HTML + CSS + JS with givemotion and renders MP4/WebM/GIF/ProRes. Use for any request to create, edit, check or render a video, animation, motion graphic, explainer, promo, logo sting, title card, lower third, animated chart or data story, captions, whiteboard/hand-drawn video, UI or product demo, or vertical social clip, or when a givemotion composition is open.
 metadata:
-  version: "0.1.6"
+  version: "0.1.7"
 ---
 
 # givemotion: HTML in, video out
 
 A composition is one HTML file. Every frame is that page at a moment in time. CSS animations, transitions, Web Animations, timers, `requestAnimationFrame`, canvas and WebGL all run on a virtual clock, so what you write renders frame-exact and identically every time. No script tag or import is needed: the runtime (`window.gm`) and a preset stylesheet are injected for you.
 
-This file is the core (read it all). Then read **only** the 1-3 technique recipes your video needs (table at the end): each one shows how a professional builds that effect, with numbers and a working example. Look up anything else when you need it.
+This file is the core (read it all). Then read **only** the 1-3 technique recipes your video needs (table at the end): each shows how a pro builds that effect, with numbers and an example.
 
 ## The loop (for an edit, only the steps it needs)
 
 0. **Direct.** Decide how a top studio would make this look. Start from what you have (brand kit, earlier videos, references, a detailed brief); research only what is still open, with a web search if you have one. Then write at the top of the HTML: the look, type system, motion language and shot list (time, on screen, move, hand-over). How: `references/direction.md`.
 1. **Style frames.** Build the 2-3 key holds first, still, and `still` each: judge them as posters (one focal point, hierarchy, margins). Then animate.
 2. **Write** the motion; `npx givemotion check video.html` as you go: fix every ✖; ⚠ are real faults unless meant; ℹ are style hints.
-3. **Review.** `npx givemotion review video.html` (reads `brief.md` beside the page, or `--brief`) shows what a viewer sees: overview, the frames people read, motion strips, `beats.png` (each brief beat at its times). Check each beat word by word, score per `review/REVIEW.md`, fix the five worst. On the near-final cut, give one sub-agent the critic prompt in REVIEW.md, fix what it finds. Brief times go in `data-expect`.
+3. **Review.** `npx givemotion review video.html` (reads `brief.md` beside the page, or `--brief`) shows what a viewer sees: overview, the frames people read, motion strips, `beats.png` (each brief beat at its times). Check each beat word by word, score per `review/REVIEW.md`, fix the five worst. On the near-final cut, give one sub-agent the critic prompt in REVIEW.md, fix what it finds. Build scenes yourself, not via sub-agents (`references/review.md`). Brief times go in `data-expect`.
 4. **Render:** `npx givemotion render video.html -o out/video.mp4`.
 
 `--json` for machine output, `--help` for options. `still video.html -t 3.2 -o f.png` renders one moment; `inspect --at 4.5 --el "#logo"` says where an element is.

@@ -4,6 +4,7 @@ Purpose: recipes for `snapshot`, `still`, `inspect` and `check` that show you th
 
 Contents
 - review: the whole video as a viewer sees it
+- Sub-agents: the critic, not scene builders
 - Snapshot recipes
 - Inspect: where things are, frame by frame
 - Check: fast re-checks
@@ -23,6 +24,23 @@ Contents
 - `REVIEW.md`: the check report, what to look for in each image, and a scoring table. Score harshly, list the five
   worst problems with their times, fix them, run it again (two passes). A sub-agent given only the brief and this
   folder is a better critic than you are of your own page: it sees the frames, not the intent.
+
+## Sub-agents: the critic, not scene builders
+
+Build the whole video yourself, in one file, with the model you are on, even when it has several scenes. In our tests
+(12-16 s videos of 3-4 scenes, `docs/experiments/2026-11-subagents.md` in the repo), handing scenes to parallel
+sub-agents on a cheaper model cost 25-85% more, was not faster, and blind judges preferred the single-agent video 14
+times out of 16. The main agent's turns did not shrink (planning, briefing, assembling and fixing seams took as many as
+building), and the seams showed: a shared object jumping between scenes, empty frames at a cut, sizes and colours that
+don't match. Whether scenes read as one film is judgment over the whole video; `check` cannot see it.
+
+The sub-agent that pays is the critic above: fresh eyes on the frames, not on your intent.
+
+If the user asks for parallel scene builders anyway: write `brand.css` (colour variables, type classes) and the shot
+list first; build everything that appears in more than one scene, and every transition, in `video.html` yourself; give
+each sub-agent one `scenes/<name>.html` (`<gm-include … scope>`, `references/data-templates.md`) that has something
+on screen for its whole length and uses only the shared variables and classes; then check every cut with
+`snapshot --transitions` and fix the seams yourself.
 
 ## Snapshot recipes
 

@@ -10,7 +10,7 @@ ALLOW=(Read Glob Grep Edit Write Agent Task
   "Bash(pwd)" "Bash(du:*)" "Bash(file:*)" "Bash(sort:*)" "Bash(awk:*)" "Bash(test:*)" "Bash(date:*)")
 cd $D
 date +%s > meta.start
-claude -p "$PROMPT" --model claude-opus-5-5 --effort high \
+CLAUDE_CODE_SUBAGENT_MODEL=${SUBM:-} claude -p "$PROMPT" --model claude-opus-5-5 --effort ${EFF:-high} \
   --permission-mode acceptEdits --allowedTools "${ALLOW[@]}" \
   --strict-mcp-config --setting-sources project,local \
   --disallowedTools WebFetch WebSearch Workflow \

@@ -7,7 +7,7 @@ sub-agent on a cheaper, faster model (a render checks the code), then check the 
 faster and cheaper videos at the same quality.
 
 **Answer, for short videos (12-16 s, 3-4 scenes): no.** When the agent split the work, it cost 25-85% more, was
-not faster, and blind judges preferred the single-agent video in 14 of 16 votes (4 comparisons × 4 judges). When the
+not faster, and blind judges preferred the single-agent video in 18 of 20 votes (5 comparisons × 4 judges, with the main agent at effort high and at medium). When the
 guidance only *offered* the pattern, Opus read it and still built every video in one file, at the same cost as
 without it. The skill now says: build it yourself, and use a sub-agent as the critic (which it already did).
 
@@ -98,17 +98,31 @@ All twelve videos had the right size, frame rate and length.
   builder, `snapshot --transitions` on every cut).
 - `skills/givemotion/SKILL.md`, step 3 of the loop: one sentence pointing there ("Build scenes yourself, not via
   sub-agents"). SKILL.md has a 15,000-byte budget (a unit test), so the detail lives in the reference.
-- Confirmation round with the final text (arm H, normal prompt): see below.
 
-## Confirmation round (final skill text)
+## Round 6: Opus at medium, Haiku sub-agents (one pair)
 
-{H}
+Same sleep brief (`z`), same arms A and F, two videos only. Main agent Opus 5.5 at effort **medium**; every
+sub-agent Haiku 5.5 at effort medium (asked in the prompt; the logs show `model: haiku, effort: medium` on every
+sub-agent call). Judged the same way, 4 judges.
+
+| | cost | minutes | sub-agents | overall (mean of 4) | votes |
+|---|---|---|---|---|---|
+| A, Opus medium alone | **$1.26** | **6.4** | Haiku critic ($0.01) | **8.0** | 4 of 4 |
+| F, Opus medium + 4 Haiku builders | $1.71 (Opus $1.64 + Haiku $0.08) | 9.3 | 4 Haiku scene builders | 6.0 | 0 of 4 |
+
+- Same direction as at effort high: the Haiku builders were almost free ($0.08 for four scenes), but the Opus main
+  agent spent more than it did building alone ($1.64 against $1.25), and the seams lost (near-empty frames at the
+  7.6 s and 11.2 s cuts, a layout crowded to the left, "each scene change feels like a reset").
+- **The bigger lever is the main agent's effort.** Opus at medium alone made this brief for $1.26 in 6.4 minutes and
+  scored 8.0, the same as Opus at high alone in rounds 2-4 ($2.34, 12 minutes, 8.0 and 7.75). One run each and
+  different judges, so read it as a lead, not a result: worth a proper effort test on a few briefs.
 
 ## Not tested, worth testing
 
 - Long videos (60 s+, 8+ separate scenes), where one agent's context fills up and scenes really are independent.
-- A cheaper main agent (lower effort or a smaller model) for the whole job, against Opus high: the earlier effort
-  showcase (`2026-11-efforts-showcase.md`) suggests quality drops with effort, but it was one run per level.
+- Opus at medium against high for the whole job, on several briefs with two runs each: round 6 found no quality
+  loss at half the cost on one brief; the earlier effort showcase (`2026-11-efforts-showcase.md`) found medium below
+  xhigh on a harder brief.
 - The critic on a cheaper model ($0.14-0.37 of a run on Opus now).
 
 ## Raw data

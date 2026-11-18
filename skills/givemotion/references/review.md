@@ -29,8 +29,8 @@ Contents
 
 Build the whole video yourself, in one file, with the model you are on, even when it has several scenes. In our tests
 (12-16 s videos of 3-4 scenes, `docs/experiments/2026-11-subagents.md` in the repo), handing scenes to parallel
-sub-agents on a cheaper model cost 25-85% more, was not faster, and blind judges preferred the single-agent video 14
-times out of 16. The main agent's turns did not shrink (planning, briefing, assembling and fixing seams took as many as
+sub-agents on a cheaper model cost 25-85% more, was not faster, and blind judges preferred the single-agent video 18
+times out of 20 (main agent at effort high or medium, builders on a smaller model). The main agent's turns did not shrink (planning, briefing, assembling and fixing seams took as many as
 building), and the seams showed: a shared object jumping between scenes, empty frames at a cut, sizes and colours that
 don't match. Whether scenes read as one film is judgment over the whole video; `check` cannot see it.
 

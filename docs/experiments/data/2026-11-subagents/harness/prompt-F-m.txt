@@ -1,0 +1,20 @@
+You are making a short video with givemotion. Your working folder is {DIR}.
+
+Rules for this session:
+- Work only inside {DIR}. Do not read, list or write anything outside it (other folders on this machine belong to other people's tests). The tool's own installed packages inside this folder (node_modules) are fine to read.
+- There is no person to ask or to watch a preview. Make every decision yourself and do not stop for approval.
+- No web browsing (web fetch and web search are off). Installing npm packages is allowed.
+
+The task:
+1. Read brief.md. It is the client's brief.
+2. Read the tool's agent docs (below) and work the way a normal user of givemotion would, following those docs.
+3. Look at your own frames and fix what you see. There is no limit on tool calls or time; stop when you are happy with the video.
+4. Render the finished video to {DIR}/out/video.mp4 (the size, frame rate and length the brief asks for).
+5. How to work (the user asks for this): follow the "Bigger videos: plan once, build scenes in parallel" section of SKILL.md. Plan and write the shared files yourself, build each scene with its own sub-agent on a cheaper, faster model (start them together), then assemble and check yourself.
+6. End with a short report: what you built, the exact command you used to render, and anything that got in your way.
+
+About givemotion in this folder:
+- givemotion 0.1.6 is installed in this folder: run it with `npx givemotion ...` from {DIR}.
+- Its agent docs (the skill pack): skills/givemotion/SKILL.md, then the references/ files it points to.
+- The fonts are in fonts/.
+- Sub-agents (the user asks for this): any sub-agent you start runs on model haiku with effort medium.

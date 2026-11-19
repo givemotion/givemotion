@@ -152,11 +152,6 @@ Claude Opus 5.5 at effort `low`, `medium`, `high` and `xhigh`, each in a fresh s
 
 `xhigh` was first for 7 of 8 judges; `medium` was the best value ($4.06 vs $14.46). `low` framed the dog too small to read and checked its own frames only four times.
 
-**One agent, or a plan plus cheap parallel builders? (18–19 November 2026, `givemotion 0.1.6`):**
-Claude Opus 5.5 either made each 12–16 s video alone, or wrote the plan and handed each scene to a sub-agent on a cheaper model (Sonnet 5.5, or Haiku 5.5 at effort `medium`). Splitting the work cost 25–85% more, was not faster, and blind Opus judges preferred the single-agent video in **18 of 20 votes**: the builders were cheap, but the main agent spent as much on planning and fixing the seams between scenes as on building the whole video. The skill now says to build it yourself and use a sub-agent as the critic ([report](docs/experiments/2026-11-subagents.md)).
-
-<img src="docs/media/subagents-seams.jpg" width="100%" alt="The same four moments of one brief made by one Opus agent (top) and by Opus planning with four Haiku sub-agents building the scenes (bottom); the bottom video's cuts are empty discs">
-
 **Same brief, different models:**
 - ***"Code in, motion out"* (31 October 2026, `givemotion 0.1.1` dev):** Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Fable 5.1 each built a 20 s continuous take (a typed `<motion>` breaking into 3D shapes, a tilted orbiting ring, a collapse into the title); all four delivered every beat at 1080p ([report](docs/experiments/2026-10-models-showcase.md) · [watch 2×2 video on givemotion.org](https://givemotion.org#main)).
 - ***"The last lighthouse"* (27 October 2026, `givemotion 0.1.0` pre-release):** Claude Opus 5.5, Sonnet 5.5, Haiku 5.5 and Gemini 4 Argon on a 15 s title sequence ([watch all four on givemotion.org](https://givemotion.org#videos)).

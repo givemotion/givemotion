@@ -42,9 +42,9 @@ reproduced again by a second, independent agent. Three were fixed (below). The r
 - Not covered by the fixes below: B-frames across a hold of more than a second in a variable-rate recording (the
   keyframe after the hold is stored before it, so a seek can land past the frame on screen); `transformOrigin` and
   `gridTemplate*` tweens still read their start from the first frame drawn (their drawn px do not mix with '%'/'fr' ends);
-  a scene in a flex row measured while hidden is laid out alone, so a sibling clip on screen with it at its own time is
-  missed (scenes are `position: absolute` in the docs); `check` lists at most 50 page errors of one kind per browser, so
-  past that (a `console.error` with a new message every frame) 1 and N browsers can list different ones.
+  a hidden scene that is a flex item (not `position: absolute`, as scenes are in the docs) is measured while it shares the
+  row with the scenes on screen at the page's first frame (hiding those for the measure would restart their CSS
+  animations), so its start values can still depend on that frame.
 
 ## Done 2026-11-27 (from the full code review)
 

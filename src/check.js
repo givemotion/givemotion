@@ -1699,8 +1699,9 @@ function keyTimes(info, max = 12) {
  * A union in a fixed order, so 1 and N browsers give the same report.
  * @param {any[]} issues the report so far (added to)
  * @param {any[]} pages
+ * @param {string} pageUrl the composition's address, to resolve image paths against
  */
-async function pushPageProblems(issues, pages) {
+async function pushPageProblems(issues, pages, pageUrl) {
   const key = (i) => i.code + '|' + i.selector + '|' + i.message;
   const have = new Set(issues.map(key));
   const caught = new Map();
@@ -1716,38 +1717,49 @@ async function pushPageProblems(issues, pages) {
   }
   const byText = (a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
   issues.push(...[...caught.values()].sort((a, b) => (a.time ?? -1) - (b.time ?? -1) || byText(a, b)).map((i) => ({ ...i })));
-  // The runtime throws the errors it catches again, so they show in the console: those copies are already reported.
-  const firstLine = (m) => String(m).split(' | ')[0];
-  const reported = new Set(issues.filter((i) => i.code === 'script-error').map((i) => firstLine(i.message)));
+  // The runtime throws the errors it caught again, so the console shows them: those copies are already reported (its
+  // message is the error's first line, then " | " and the stack).
+  const caughtErrors = issues.filter((i) => i.code === 'script-error').map((i) => String(i.message));
+  const already = (base) => caughtErrors.some((m) => m === base || m.startsWith(base + ' | '));
   // (a broken image is already reported, with its element, as image-broken / image-failed)
-  const images = issues.filter((i) => /^image-(broken|failed)$/.test(i.code)).map((i) => String(i.message).replace(/^[^:]*:\s*/, '').replace(/^\.\//, '').split(/[?#]/)[0]).filter(Boolean);
+  const at = (u, base) => { try { const x = new URL(u, base); x.hash = ''; return x; } catch (e) { return null; } };
+  const images = new Set(issues.filter((i) => /^image-(broken|failed)$/.test(i.code)).map((i) => at(String(i.message).replace(/^[^:]*:\s*/, ''), pageUrl)).filter(Boolean).map((x) => x.href));
+  const local = at(pageUrl);
   const found = new Map();
   for (const pg of pages) for (const e of pg.errors || []) {
+    const url = /^(http-|load-failed)/.test(e.code) ? (/(?:for|loading) (\S+?)\.?(?: |$)/.exec(String(e.message)) || [])[1] : null;
+    const u = url ? at(url, pageUrl) : null;
+    // (frames and sound the engine decodes for a video or gm.audio: the runtime names the file itself, video-frame)
+    if (u && local && u.origin === local.origin && /^\/__gm\/(vframe|pcm)$/.test(u.pathname)) continue;
+    if (u && images.has(u.href)) continue;
     const msg = String(e.message).replace(/https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//g, '');
     // (a script error's place, " (video.html line 12): the line", is filled in after the error: compare without it)
     const base = e.code === 'script-error' ? msg.replace(/ \((?:[^()]* line \d+|in a file included into [^()]*)\)(?::[\s\S]*)?$/, '') : msg;
-    if (e.code === 'script-error' && reported.has(base)) continue;
-    const file = /^(http-|load-failed)/.test(e.code) ? (/(?:for|loading) (\S+?)\.?(?: |$)/.exec(msg) || [])[1] : null;
-    if (file && images.some((s) => decodeURIComponent(file.split(/[?#]/)[0]).endsWith(s))) continue;
+    if (e.code === 'script-error' && already(base)) continue;
     // (the same error seen by several browsers: one entry, with the most complete message)
     const k = e.code + '|' + base, prev = found.get(k);
     if (prev && (prev.message.length > msg.length || (prev.message.length === msg.length && prev.message <= msg))) continue;
-    const remote = !!file && /^https?:\/\//.test(file);
+    const remote = !!u && !!local && u.origin !== local.origin && /^https?:$/.test(u.protocol);
+    // (a fetch() or XHR that failed may be one the page handles: a warning)
+    const asked = e.type === 'Fetch' || e.type === 'XHR';
     found.set(k, {
-      severity: e.code === 'console-error' || remote ? 'warning' : 'error', code: e.code, message: msg, selector: null, time: null,
+      severity: e.code === 'console-error' || remote || asked ? 'warning' : 'error', code: e.code, message: msg, selector: null, time: null,
       fix: e.code === 'script-error' ? 'Fix the script at that line: nothing after it in that <script> ran.'
         : e.code === 'console-error' ? 'Something in the page logged an error: find it and fix it.'
         : remote ? 'Download the file next to your HTML file and link it there: a render must not depend on the network.'
+        : asked ? 'The page script asked for this file and did not get it: fix the path, or ignore this if the script expects that.'
         : 'Fix the path (relative to the HTML file) or put the file there.',
     });
   }
-  // (at most 10 per code: a page that logs an error every frame says so once)
+  // (at most 10 per code: a page that logs an error every frame says so once; a browser that stopped recording after
+  // many cannot say how many more there were)
+  const capped = pages.some((pg) => pg.capped);
   const perCode = new Map();
   for (const i of [...found.values()].sort(byText)) {
     const list = perCode.get(i.code) || []; perCode.set(i.code, list); list.push(i);
   }
   for (const list of perCode.values()) {
-    if (list.length > 10) { list[9].message += ` (and ${list.length - 10} more like it)`; list.length = 10; }
+    if (list.length > 10) { list[9].message += capped ? ' (and more like it)' : ` (and ${list.length - 10} more like it)`; list.length = 10; }
     issues.push(...list);
   }
 }
@@ -2096,7 +2108,7 @@ export async function check(input, opts = {}) {
         }
       }
     } catch (e) {}
-    await pushPageProblems(issues, [ctx.page, ...extraPages]);
+    await pushPageProblems(issues, [ctx.page, ...extraPages], ctx.url);
     const motion = change.length ?{ every: 0.5, from: change[0][0] - 0.5, values: change.map(([, f, b]) => Math.round((b >= BUSY_MIN ? Math.max(f, 0.06) : f) * 1000) / 1000) } : null;
     let merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
     // Some problems only matter if they last (a label sliding past the frame edge during a pan is fine).

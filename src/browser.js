@@ -237,10 +237,11 @@ export class FramePage {
         if (p.type === 'error') this._err('console-error', text);
       }
     }, sessionId);
-    b.on('Network.responseReceived', (p) => { if (p.response.status >= 400 && !/favicon\.ico/.test(p.response.url)) this._err('http-' + p.response.status, `${p.response.status} for ${p.response.url}`); }, sessionId);
+    // (the kind of request is kept: a fetch() or XHR that fails may be one the page handles itself)
+    b.on('Network.responseReceived', (p) => { if (p.response.status >= 400 && !/favicon\.ico/.test(p.response.url)) { const e = this._err('http-' + p.response.status, `${p.response.status} for ${p.response.url}`); if (e) e.type = p.type; } }, sessionId);
     const urls = new Map();
     b.on('Network.requestWillBeSent', (p) => { if (urls.size > 5000) urls.clear(); urls.set(p.requestId, p.request.url); }, sessionId);
-    b.on('Network.loadingFailed', (p) => { if (!p.canceled) this._err('load-failed', `${p.errorText} loading ${urls.get(p.requestId) || p.requestId}. If it is on the internet, download it next to your HTML file instead.`); }, sessionId);
+    b.on('Network.loadingFailed', (p) => { if (!p.canceled) { const e = this._err('load-failed', `${p.errorText} loading ${urls.get(p.requestId) || p.requestId}. If it is on the internet, download it next to your HTML file instead.`); if (e) e.type = p.type; } }, sessionId);
     await Promise.all([s('Page.enable'), s('Runtime.enable'), s('Network.enable')]);
     await s('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: this.opts.scale || 1, mobile: false });
     // The same page gives the same frames on every computer: the time zone (a clock or new Date()), the language
@@ -258,8 +259,15 @@ export class FramePage {
     }
   }
   _err(code, message) {
-    if (this.errors.length >= 200) return null;
-    const e = { code, message: String(message).slice(0, 500) };
+    // Each problem once, and at most 50 of one kind: a callback that throws every frame, or a console.error in onFrame,
+    // does not fill the list and push out a missing file seen later. (`capped` says some were left out.)
+    const msg = String(message).slice(0, 500), k = code + '|' + msg;
+    if (!this._seen) { this._seen = new Set(); this._perCode = new Map(); }
+    if (this._seen.has(k)) return null;
+    const n = this._perCode.get(code) || 0;
+    if (n >= 50 || this.errors.length >= 400) { this.capped = true; return null; }
+    this._seen.add(k); this._perCode.set(code, n + 1);
+    const e = { code, message: msg };
     this.errors.push(e);
     return e;
   }

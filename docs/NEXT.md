@@ -35,23 +35,34 @@ reproduced again by a second, independent agent. Three were fixed (below). The r
   values piles tick labels at 0; series of different lengths are stretched; `gm.duration` is 0 while page scripts run;
   `--fps` retimes frame-unit times (`45f`); `check --at` on an exact half frame is a false all-clear; the CLI `check`
   never uses the half-scale pass; `--fps -5` hangs; `output.md` and `llms.txt` still mention React/JSX compositions.
-- Not covered by the video fix below: B-frames across a hold of more than a second in a variable-rate recording (the
-  keyframe after the hold is stored before it, so a seek can land past the frame on screen).
+- Found while fixing: `x: '240%'` (any transform part given in %) moves 240 px, not 240% of the element's own width
+  (GSAP's meaning): it is sampled on a 100 px helper element. The skill's shine recipe
+  (`references/techniques/numbers-and-charts.md`) relies on it; fix the engine and the recipe together (`src/runtime/motion.js`
+  `makeInterp`/`browserInterp`).
+- Not covered by the fixes below: B-frames across a hold of more than a second in a variable-rate recording (the
+  keyframe after the hold is stored before it, so a seek can land past the frame on screen); `transformOrigin` and
+  `gridTemplate*` tweens still read their start from the first frame drawn (their drawn px do not mix with '%'/'fr' ends);
+  a scene in a flex row measured while hidden is laid out alone, so a sibling clip on screen with it at its own time is
+  missed (scenes are `position: absolute` in the docs); `check` lists at most 50 page errors of one kind per browser, so
+  past that (a `console.error` with a new message every frame) 1 and N browsers can list different ones.
 
 ## Done 2026-11-27 (from the full code review)
 
 - `check` reports what the page itself got wrong: a top-level script that throws, an `onFrame`/tween/timer callback
   that throws during the video (with the time it first happened), `console.error`, files that 404 or fail to load
-  (remote ones are warnings). It said "No problems found" and exited 0 for all of these, while `snapshot` and `render`
-  showed them. The same report for 1 and N browsers. (`src/check.js` `pushPageProblems`)
+  (remote ones, and a `fetch()` the page may handle, are warnings). It said "No problems found" and exited 0 for all of
+  these, while `snapshot` and `render` showed them. The same report for 1 and N browsers. (`src/check.js`
+  `pushPageProblems`; a page records each error once, at most 50 of a kind, `src/browser.js`)
 - Layout tweens land on the right values: the start of a `width`/`height`/`left`/`margin`… tween is read with its scene
   displayed (a scene that was not on screen at a page's first frame gave '50%' or 'auto': a bar grew from the wrong
-  width in a 1-worker render, 1 != N workers, a still != the render), and a tween between units (`0px` → `100%`) mixes
-  in a `calc()` resolved against the element's own box (a progress bar tweened to 100% ran to the frame's width).
+  width in a 1-worker render, 1 != N workers, a still != the render), and a tween between units (`0px` → `100%`, and
+  `'+=20%'` on a width read in px) mixes in a `calc()` resolved against the element's own box (a progress bar tweened to
+  100% ran to the frame's width).
 - Video frames no longer depend on where their extraction started: a clip whose frame rate differs from the video's
   (25 fps footage in a 24 or 30 fps video) showed the next source frame in jobs that started off its frame grid, so 1
   worker != N workers, a still != the render, and a still taken first changed later renders through the frame cache.
-  Decoding now starts at a keyframe before the asked time with the file's own timestamps, the grid anchored at 0.
+  Decoding now starts at a keyframe before the asked time with the file's own timestamps, the grid anchored at exactly
+  0 and the frames before the asked one dropped by index (`trim`).
 
 ## Open: sub-agents on long videos (found 2026-11-18)
 

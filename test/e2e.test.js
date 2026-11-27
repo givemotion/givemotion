@@ -270,6 +270,31 @@ test('video frames are exact and <video> keeps its CSS', { skip }, async () => {
 });
 const md5Buf = (b) => createHash('md5').update(b).digest('hex');
 
+test('video frames do not depend on where decoding started (a 25 fps clip in a 24 fps video): a still taken first, 1 worker and 3 workers give the same frames', { skip }, async () => {
+  const d = tmp();
+  const src = join(d, 'src.mp4');
+  execFileSync(ffmpegPath(), ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25:duration=6', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', src]);
+  // one copy per run, so no run reuses frames another one decoded (the frame cache is keyed by file)
+  const run = async (name, fn) => {
+    copyFileSync(src, join(d, name + '.mp4'));
+    const f = comp(d, name + '.html', `<video src="${name}.mp4" muted style="position:absolute;left:0;top:0;width:320px;height:180px;object-fit:fill"></video>`, 'data-width="320" data-height="180" data-fps="24" data-duration="5"');
+    return fn(f, join(d, name));
+  };
+  const frames = (dir) => readdirSync(dir).filter((x) => x.endsWith('.png')).sort().map((x) => md5(join(dir, x)));
+  const one = await run('one', async (f, out) => { await render(f, { output: out, format: 'png', workers: 1, cache: false, ...quiet }); return frames(out); });
+  const three = await run('three', async (f, out) => { await render(f, { output: out, format: 'png', workers: 3, cache: false, ...quiet }); return frames(out); });
+  // a still at frame 7 (0.29 s, between two source frames) decodes from there first; the render after it reuses those
+  const after = await run('after', async (f, out) => {
+    const s = await stills(f, [7 / 24], { format: 'png' });
+    await render(f, { output: out, format: 'png', workers: 1, cache: false, ...quiet });
+    return { still: md5Buf(s.buffers[0]), frames: frames(out) };
+  });
+  assert.equal(one.length, 120);
+  assert.deepEqual(three, one, '1 worker == 3 workers');
+  assert.equal(after.still, one[7], 'a still == the render frame at that time');
+  assert.deepEqual(after.frames, one, 'a render after a still == a render on a fresh cache');
+});
+
 test('check finds the classic layout problems', { skip }, async () => {
   const rep = await check(join(HERE, 'fixtures', 'bad.html'));
   const codes = new Set(rep.issues.map((i) => i.code));

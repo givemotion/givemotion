@@ -188,7 +188,8 @@ class FrameExtractor {
   constructor(maxW, maxH) { this.jobs = new Map(); this.maxW = maxW; this.maxH = maxH; pruneFrames(); }
   key(file, fps) {
     const st = statSync(file);
-    return createHash('sha1').update(`${file}|${st.size}|${st.mtimeMs}|${fps}|${this.maxW}x${this.maxH}`).digest('hex').slice(0, 16);
+    // (v2: frames no longer depend on where their extraction started; frames cached by older versions could)
+    return createHash('sha1').update(`v2|${file}|${st.size}|${st.mtimeMs}|${fps}|${this.maxW}x${this.maxH}`).digest('hex').slice(0, 16);
   }
   /** Ensure frames [startIdx, endIdx] exist; resolves file path of frame idx. */
   async frame(file, fps, idx) {
@@ -232,8 +233,16 @@ class FrameExtractor {
     const job = { start: startIdx, end: startIdx + window - 1, done: false, failed: null, reached: 0 };
     jobs.push(job);
     const ss = startIdx / fps;
-    const vf = `fps=${fps},scale='min(iw,${this.maxW})':'min(ih,${this.maxH})':force_original_aspect_ratio=decrease:flags=lanczos`;
-    const args = ['-hide_banner', '-loglevel', 'error', '-ss', String(ss), '-i', file, '-t', String((window + 1) / fps), '-vf', vf, '-frames:v', String(window),
+    // Frame i must show the same picture whichever job wrote it (1 worker == N workers, a still == the render, whatever
+    // the cache already holds). An accurate seek to i / fps dropped the source frame on screen at that moment, and the
+    // fps filter laid its grid from the first frame it got, so a job starting off the source's frame grid (a 25 fps clip
+    // in a 24 or 30 fps video) showed the next source frame in every frame it wrote. Now decoding starts at a keyframe
+    // before the asked time (a second early: some formats seek a little late), with the file's own timestamps, and the
+    // grid is anchored at video time 0: the frame on screen at i / fps is always decoded, even one held for seconds in a
+    // variable-rate screen recording. (Not covered: B-frames across such a long hold, where the keyframe after it is
+    // stored before it.)
+    const vf = `fps=fps=${fps}:start_time=${ss},scale='min(iw,${this.maxW})':'min(ih,${this.maxH})':force_original_aspect_ratio=decrease:flags=lanczos`;
+    const args = ['-hide_banner', '-loglevel', 'error', '-noaccurate_seek', '-ss', String(Math.max(0, ss - 1)), '-copyts', '-start_at_zero', '-i', file, '-vf', vf, '-frames:v', String(window),
       '-q:v', '2', '-start_number', String(startIdx), join(dir, '%07d.jpg')];
     const proc = spawn(ffmpegPath(), args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let err = '';

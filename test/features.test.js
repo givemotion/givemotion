@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { findChrome } from '../src/browser.js';
 import { ffmpegInfo, ffmpegPath } from '../src/ffmpeg.js';
-import { render, check, inspect, openComposition } from '../src/api.js';
+import { render, check, inspect, openComposition, stills } from '../src/api.js';
 import { formatReport } from '../src/check.js';
 
 const skip = !findChrome() || !ffmpegInfo() ? 'needs Chrome and ffmpeg' : false;
@@ -721,6 +721,33 @@ test('timeline: a tween takes the CSS transform part it animates as its start (C
   assert.deepEqual(v[0], [300, 40], 'inline scaleX(0) bar drawn full: ' + JSON.stringify(v));
   assert.deepEqual(v[1], [300, 40], 'stylesheet scaleX(0) bar drawn full: ' + JSON.stringify(v));
   assert.deepEqual(v[2], [100, 270], 'centered box at full size, still centered: ' + JSON.stringify(v));
+});
+
+test('timeline: layout tweens (width/height/margin from %, auto) start from the drawn size in any scene, 1 worker == 3 and a still == the render; width 100% fills its own track', { skip }, async () => {
+  const d = tmp(), f = join(d, 'a.html');
+  writeFileSync(f, page(`<style>.scene{background:#111}.box{position:absolute;left:20px;top:20px;width:200px;background:#333}#bar{height:20px;width:50%;background:#e33}#auto{height:20px;background:#3c3}#card{background:#36c}#ml{width:20px;height:20px;margin-left:auto;background:#fc3}</style>
+    <main data-sequence><section class="scene" data-duration="2"><h1>One</h1></section>
+    <section class="scene" id="s2" data-duration="2"><div class="box"><div id="bar"></div><div id="auto"></div><div id="card"><p style="margin:0;height:40px">x</p></div><div id="ml"></div></div>
+      <div style="position:absolute;left:20px;top:140px;width:200px;height:10px;background:#555"><i id="fill" style="display:block;height:100%;width:0;background:#fff"></i></div></section></main>
+    <script>gm.timeline('#s2').from('#bar', { width: 0, duration: 1, ease: 'linear' }, 0).to('#auto', { width: 150, duration: 1, ease: 'linear' }, 0)
+      .to('#card', { height: 10, duration: 1, ease: 'linear' }, 0).from('#ml', { marginLeft: 0, duration: 1, ease: 'linear' }, 0).to('#fill', { width: '100%', duration: 1, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10"'));
+  const read = `['#bar width', '#auto width', '#card height', '#ml margin-left', '#fill width'].map((s) => { const [sel, p] = s.split(' '); return getComputedStyle(document.querySelector(sel)).getPropertyValue(p); })`;
+  // the first frame a page draws (scene 1, where scene 2 is not displayed) must not change the values
+  const values = async (times) => {
+    const ctx = await openComposition(f, { mode: 'render' });
+    try { let v; for (const t of times) { await ctx.page.seek(t); v = await ctx.page.evaluate(read); } return v; } finally { await ctx.page.close(); await ctx.server.close(); }
+  };
+  assert.deepEqual(await values([2.5]), ['50px', '175px', '25px', '90px', '100px']);
+  assert.deepEqual(await values([0, 2.5]), ['50px', '175px', '25px', '90px', '100px']);
+  assert.deepEqual(await values([0, 3.5]), ['100px', '150px', '10px', '180px', '200px']);
+  const pngs = (dir) => readdirSync(dir).filter((x) => x.endsWith('.png')).sort().map((x) => readFileSync(join(dir, x)).toString('base64'));
+  await render(f, { output: join(d, 'w1'), format: 'png', workers: 1, cache: false, ...quiet });
+  await render(f, { output: join(d, 'w3'), format: 'png', workers: 3, cache: false, ...quiet });
+  const w1 = pngs(join(d, 'w1'));
+  assert.ok(pngs(join(d, 'w3')).every((x, i) => x === w1[i]), '1 worker == 3 workers');
+  const s = await stills(f, [2.5, 3.5], { format: 'png' });
+  assert.equal(s.buffers[0].toString('base64'), w1[25], 'still at 2.5 s == frame 25');
+  assert.equal(s.buffers[1].toString('base64'), w1[35], 'still at 3.5 s == frame 35');
 });
 
 test('check: upside-down-text for letters turned past ~100° (also while moving), not for upright or slightly tilted ones', { skip }, async () => {

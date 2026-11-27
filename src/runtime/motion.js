@@ -150,6 +150,8 @@
     return v;
   }
   const exitEase = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (0.25 + 0.75 * x)); // eases in, leaves at speed
+  // one length or percentage (a bare 0 counts: it is a length in any unit)
+  const LENGTH = /^\s*(?:0|[-+]?(?:\d*\.\d+|\d+\.?\d*)(?:e[-+]?\d+)?(px|%|r?em|r?lh|ch|ex|[sld]?v(?:w|h|i|b|min|max)|cq(?:w|h|i|b|min|max)|cm|mm|q|in|pt|pc))\s*$/i;
   function makeInterp(from, to, prop) {
     if (typeof from === 'number' && typeof to === 'number') return (p) => from + (to - from) * p;
     const fs = String(from), ts = String(to);
@@ -162,6 +164,14 @@
     if (sameShape(A, B)) return interpTokens(A, B);
     const ca = toRGBA(fs), cb = ca && toRGBA(ts);
     if (ca && cb) return (p) => mixRGBA(ca, cb, p);
+    // Two lengths in different units (0px → 100%, 1em → 32px) mix in a calc(), which Chrome resolves against the
+    // element's own box in every frame. Sampled on a helper element in <body>, 100% was the width of the frame: a
+    // progress bar tweened to width 100% ran out of its track.
+    const la = LENGTH.exec(fs), lb = la && LENGTH.exec(ts);
+    if (la && lb && prop && /^[a-zA-Z]+$/.test(prop)) {
+      const A = la[1] ? fs.trim() : '0px', B = lb[1] ? ts.trim() : '0px';
+      return (p) => (p <= 0 ? from : p >= 1 ? to : `calc(${A} * ${r4(1 - p)} + ${B} * ${r4(p)})`);
+    }
     if (prop && !prop.startsWith('--') && /^[a-zA-Z]+$/.test(prop)) {
       const bi = browserInterp(prop, fs, ts);
       if (bi) return bi;
@@ -491,6 +501,8 @@
     return base;
   }
   function kebab(p) { return p.startsWith('--') ? p : p.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()); }
+  // the properties whose value read from the page is the drawn px only while the element is displayed (CSSOM)
+  const LAYOUT_PROP = /^(width|height|(min|max)(Width|Height)|top|right|bottom|left|inset\w*|margin\w*|padding\w*|lineHeight|transformOrigin|perspectiveOrigin|gridTemplate(Columns|Rows))$/;
   function readBase(el, prop, tfBase) {
     if (prop in TF) return tfBase[prop];
     if (!(el instanceof Element)) return el[prop];
@@ -923,6 +935,20 @@
           tm.props.get(tk).push({ it, spec: it.props[k], typing: k === 'text' });
         }
       }
+      // Start values of layout properties are read with the targets' clips displayed. A clip that is not on screen at
+      // this page's first frame is display: none, and a hidden element gives its CSS value ('50%', 'auto') instead of
+      // the px it is drawn at: a bar at width 50% grew from the wrong width, depending on which frame the page drew
+      // first (1 worker != N workers, a still != the render). Other properties read the same either way.
+      {
+        const shown = [];
+        for (const tm of tracks.values()) {
+          if (!(tm.el instanceof Element) || ![...tm.props.keys()].some((k) => LAYOUT_PROP.test(k))) continue;
+          for (let a = tm.el; a; a = a.parentElement) if (a.hasAttribute('data-gm-hidden')) { shown.push(a); a.removeAttribute('data-gm-hidden'); }
+        }
+        try {
+          for (const tm of tracks.values()) { tm.pre = {}; for (const k of tm.props.keys()) if (LAYOUT_PROP.test(k)) tm.pre[k] = readBase(tm.el, k, null); }
+        } finally { for (const a of shown) a.setAttribute('data-gm-hidden', ''); }
+      }
       for (const tm of tracks.values()) {
         const el = tm.el;
         // Keep the element's own CSS transform (e.g. translate(-50%,-50%) centering) and add the tween on top.
@@ -988,7 +1014,7 @@
         }
         for (const [k, segs] of tm.props) {
           if (k === 'textContent') { textTrack(el, k, segs); continue; }
-          let base = readBase(el, k, tm.tfBase);
+          let base = k in tm.pre ? tm.pre[k] : readBase(el, k, tm.tfBase);
           if (tm.inline && !(k in TF) && !k.startsWith('attr:') && !['draw', 'morph', 'text', 'textContent', 'innerText', 'autoAlpha', 'transformPerspective'].includes(k)) tm.inline[k] = el.style.getPropertyValue(kebab(k));
           tm.baseVals = tm.baseVals || {};
           tm.baseVals[k] = base;

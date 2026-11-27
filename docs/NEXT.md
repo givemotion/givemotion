@@ -7,6 +7,52 @@ named after the task (`git checkout -b task/anchors`), pull `main` and run `npm 
 merge often. If two tasks touch the same file, keep the changes small and merge the first one before starting the
 second. Do not reformat files you are not changing.
 
+## Open: from the full code review (2026-11-27)
+
+Eight reviewers each took one area of the code and reproduced what they reported; the strongest findings were
+reproduced again by a second, independent agent. Three were fixed (below). The rest, most important first:
+- **Verified (reproduced twice), small fixes:**
+  - An interrupted render (a tool timeout, Ctrl+C, a crash, a failed finalize) leaves part files that `parts.json`
+    does not describe. Going back to the version (or the flags: "4K timed out, render at 1x") that `parts.json` still
+    lists reuses them silently: wrong frames, or parts of mixed sizes. Fix: right after `mkdirSync(dir)` in the
+    `useParts` block of `src/render.js`, write `parts.json` with `fp: null` for every part about to be redone.
+  - An encoder failure in a render of more than one part crashes the process (an unhandled rejection: the
+    `writer.end()` promise pushed into `ending` in `runWorker`, `src/render.js`, has no handler until it is awaited),
+    so `render()` neither resolves nor rejects and `--json` gets a stack trace. `--hardware` on Linux without an NVIDIA
+    GPU triggers it. Fix: `p.catch(() => {})` before `ending.push(p)`; also refuse odd sizes up front for even-only encoders.
+- **Verified (reproduced twice), larger:**
+  - Work stealing sends a worker back in time on a page that used a timer or rAF (GSAP, anime.js, `setTimeout`): the
+    warm-up seek in `runWorker` ignores `needsReload`, so a whole part shows state from seconds later (4 of 6 default
+    4-worker renders of a GSAP or `setInterval` page). Reload the page there (and reinstall `__gmVelocityBlur`); `check`'s `data-expect`
+    and contrast passes and `stills()` with unsorted times seek back too. `src/render.js`, `src/check.js`.
+  - A tween that overlaps an earlier one on the same property (`'-=0.3'` on the next move of the same element) starts
+    from the earlier tween's end value, so the element jumps at the hand-over (159 px in one frame). Start it from the
+    earlier tween's value at that moment, worked out once in `_resolve` (`src/runtime/motion.js`; `textTrack` too).
+- **Reported by one reviewer with a reproduction, not checked again:** stills, `snapshot` and `check` freeze a
+  `<video loop>` after its first pass (durations are probed only in `render`; two reviewers saw it); `dev` and `bundle`
+  ignore `data.json` (two reviewers); a CSS `transition` on an element driven inline makes its frames lag (1 != N
+  workers); `data-anchor` uses the previous frame's `data-pulse` scale; `gm.chart.line` with `rescale` and negative
+  values piles tick labels at 0; series of different lengths are stretched; `gm.duration` is 0 while page scripts run;
+  `--fps` retimes frame-unit times (`45f`); `check --at` on an exact half frame is a false all-clear; the CLI `check`
+  never uses the half-scale pass; `--fps -5` hangs; `output.md` and `llms.txt` still mention React/JSX compositions.
+- Not covered by the video fix below: B-frames across a hold of more than a second in a variable-rate recording (the
+  keyframe after the hold is stored before it, so a seek can land past the frame on screen).
+
+## Done 2026-11-27 (from the full code review)
+
+- `check` reports what the page itself got wrong: a top-level script that throws, an `onFrame`/tween/timer callback
+  that throws during the video (with the time it first happened), `console.error`, files that 404 or fail to load
+  (remote ones are warnings). It said "No problems found" and exited 0 for all of these, while `snapshot` and `render`
+  showed them. The same report for 1 and N browsers. (`src/check.js` `pushPageProblems`)
+- Layout tweens land on the right values: the start of a `width`/`height`/`left`/`margin`… tween is read with its scene
+  displayed (a scene that was not on screen at a page's first frame gave '50%' or 'auto': a bar grew from the wrong
+  width in a 1-worker render, 1 != N workers, a still != the render), and a tween between units (`0px` → `100%`) mixes
+  in a `calc()` resolved against the element's own box (a progress bar tweened to 100% ran to the frame's width).
+- Video frames no longer depend on where their extraction started: a clip whose frame rate differs from the video's
+  (25 fps footage in a 24 or 30 fps video) showed the next source frame in jobs that started off its frame grid, so 1
+  worker != N workers, a still != the render, and a still taken first changed later renders through the frame cache.
+  Decoding now starts at a keyframe before the asked time with the file's own timestamps, the grid anchored at 0.
+
 ## Open: sub-agents on long videos (found 2026-11-18)
 
 Touches `skills/givemotion/SKILL.md` only. On 12-16 s videos of 3-4 scenes, parallel scene builders on a cheaper model
@@ -28,6 +74,8 @@ page (`docs/experiments/2026-11-tools-showcase.md`). Its tiles have a `scale: 0.
 - Also seen 2026-11-02 on a quiet machine, with no scale tween: two renders of the effort-comparison page (a 2x2 grid of
   four playing videos, tiles entering with opacity + y) differed in frames 13-359, invisibly (lowest PSNR 44.8 dB);
   the rest of the 120 s matched. So it is not only load + scale; layers showing video frames are a second suspect.
+  Re-test this one: until 2026-11-27 a video frame's picture depended on where its extraction started and on what the
+  frame cache already held (fixed, see the review above), which alone can make two renders of playing videos differ.
 - Next idea: a virtual clock on macOS (so Chrome draws only when the render asks), or a way to drop exactly one
   element's layer. `--run-all-compositor-stages-before-draw` breaks screenshot capture.
 

@@ -134,13 +134,14 @@
     issues.push({ severity, code, message, selector: sel, fix: fix || null, time: time == null ? null : round(time) });
   }
   // (the stack names files relative to the project, not with the local server's address, whose port changes every run;
-  // an Error is thrown again so the console shows it with its stack: anything else thrown has none to show)
+  // it is thrown again so the console, render and snapshot show it: as itself if it is an Error, else as an Error that
+  // says what it was)
   function pageError(e) {
     // (an event rejected into a promise, like img.onerror = reject: say which, not "[object Event]")
     const tg = e instanceof Event && e.target instanceof Element ? e.target : null;
     const what = e && e.stack ? e.stack : e instanceof Event ? `${e.type} event${tg ? ` from <${tg.tagName.toLowerCase()}${tg.getAttribute('src') ? ` src="${tg.getAttribute('src')}"` : ''}>` : ''}` : String(e);
     report('error', 'script-error', String(what).split('\n').slice(0, 3).join(' | ').split(location.origin + '/').join(''), null, null, now);
-    if (e instanceof Error) setTimeoutReal(() => { throw e; });
+    setTimeoutReal(() => { throw e instanceof Error ? e : new Error(String(what)); });
   }
   const setTimeoutReal = real.setTimeout;
   function round(x) { return Math.round(x * 1000) / 1000; }
@@ -1902,6 +1903,7 @@
   let readyPromise = null;
   let sourceEls = null; // the page's elements before the runtime changed anything (render matches them to the HTML file)
   const waits = [];
+  let waitsDone = false;
   const hooks = { preinit: [], init: [], seek: [], post: [], rebuild: [] };
   let initialized = false;
 
@@ -1985,7 +1987,7 @@
       if (document.readyState !== 'complete') await new Promise((r) => window.addEventListener('load', r, { once: true }));
       for (;;) {
         const w = waits.splice(0);
-        if (!w.length) break;
+        if (!w.length) { waitsDone = true; break; }
         let done = false;
         const all = Promise.all(w.map((p) => Promise.resolve(p).catch((e) => pageError(e)))).finally(() => { done = true; });
         const pump = () => { if (done) return; loadPump(); real.setTimeout(pump, 4); };
@@ -2260,8 +2262,8 @@
     // getBoundingClientRect() returns where things really are. Use it to follow or aim at elements.
     onLayout(a, b) { addFrameFn(layoutFns, 'onLayout', a, b); },
     // (handled from now on: one that fails before the page has loaded is reported once, as script-error, not also by
-    // Chrome as an uncaught rejection)
-    wait(p) { const q = typeof p === 'function' ? p() : p; if (q && typeof q.catch === 'function') q.catch(() => {}); waits.push(q); return p; },
+    // Chrome as an uncaught rejection; one given after the load is reported when it fails, nothing waits for it)
+    wait(p) { const q = typeof p === 'function' ? p() : p; if (q && typeof q.catch === 'function') q.catch((e) => { if (waitsDone) pageError(e); }); waits.push(q); return p; },
     // Beat grid from <html data-bpm data-beat-offset data-bar-offset data-beats-per-bar> (printed by `givemotion audio`).
     beat(n = 0) { const g = beatGrid(); return g.offset + n * g.period; },
     // when a word of the voice-over is said (video time): gm.word('pricing'), gm.word('spring_pricing#2.end')

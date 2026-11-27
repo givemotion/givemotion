@@ -1718,9 +1718,10 @@ async function pushPageProblems(issues, pages, pageUrl) {
   const byText = (a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
   issues.push(...[...caught.values()].sort((a, b) => (a.time ?? -1) - (b.time ?? -1) || byText(a, b)).map((i) => ({ ...i })));
   // The runtime throws the errors it caught again, so the console shows them: those copies are already reported (its
-  // message is the error's first line, then " | " and the stack).
+  // message is the error's first line, then " | " and the stack; a thrown value that is not an Error comes back as
+  // "Error: <it>"; Chrome's copy is cut at 500 characters).
   const caughtErrors = issues.filter((i) => i.code === 'script-error').map((i) => String(i.message));
-  const already = (base) => caughtErrors.some((m) => m === base || m.startsWith(base + ' | '));
+  const already = (base) => caughtErrors.some((m) => m === base || m.startsWith(base + ' | ') || base === 'Error: ' + m || (base.length >= 490 && m.startsWith(base)));
   // (a broken image is already reported, with its element, as image-broken / image-failed)
   const at = (u, base) => { try { const x = new URL(u, base); x.hash = ''; return x; } catch (e) { return null; } };
   const images = new Set(issues.filter((i) => /^image-(broken|failed)$/.test(i.code)).map((i) => at(String(i.message).replace(/^[^:]*:\s*/, ''), pageUrl)).filter(Boolean).map((x) => x.href));
@@ -1729,8 +1730,6 @@ async function pushPageProblems(issues, pages, pageUrl) {
   for (const pg of pages) for (const e of pg.errors || []) {
     const url = /^(http-|load-failed)/.test(e.code) ? (/(?:for|loading) (\S+?)\.?(?: |$)/.exec(String(e.message)) || [])[1] : null;
     const u = url ? at(url, pageUrl) : null;
-    // (frames and sound the engine decodes for a video or gm.audio: the runtime names the file itself, video-frame)
-    if (u && local && u.origin === local.origin && /^\/__gm\/(vframe|pcm)$/.test(u.pathname)) continue;
     if (u && images.has(u.href)) continue;
     const msg = String(e.message).replace(/https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//g, '');
     // (a script error's place, " (video.html line 12): the line", is filled in after the error: compare without it)
@@ -1751,15 +1750,14 @@ async function pushPageProblems(issues, pages, pageUrl) {
         : 'Fix the path (relative to the HTML file) or put the file there.',
     });
   }
-  // (at most 10 per code: a page that logs an error every frame says so once; a browser that stopped recording after
-  // many cannot say how many more there were)
-  const capped = pages.some((pg) => pg.capped);
+  // (at most 10 per code, the ones that sort first: a page that logs an error every frame says so once. No count of
+  // the rest: a browser keeps only 50 of a kind, so it would depend on how the video was split between browsers.)
   const perCode = new Map();
   for (const i of [...found.values()].sort(byText)) {
     const list = perCode.get(i.code) || []; perCode.set(i.code, list); list.push(i);
   }
   for (const list of perCode.values()) {
-    if (list.length > 10) { list[9].message += capped ? ' (and more like it)' : ` (and ${list.length - 10} more like it)`; list.length = 10; }
+    if (list.length > 10) { list[9].message += ' (and more like it)'; list.length = 10; }
     issues.push(...list);
   }
 }

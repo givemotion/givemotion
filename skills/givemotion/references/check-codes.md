@@ -62,7 +62,8 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 
 | Code | Meaning / fix |
 |---|---|
-| `image-broken`, `image-failed`, `http-404`, `video-frame`, `video-no-src` | A file path is wrong (paths are relative to the HTML file). |
+| `image-broken`, `image-failed`, `http-404` (any `http-4xx`/`5xx`), `video-frame`, `video-no-src` | A file path is wrong (paths are relative to the HTML file). |
+| `load-failed` | A file could not be fetched. One on the internet (a CDN script, a web font) is a warning: download it next to the HTML file, a render must not depend on the network. |
 | `bad-time`, `bad-enter`, `bad-exit`, `bad-transition`, `bad-camera`, `bad-count`, `sequence-missing-duration`, `no-duration`, `cuts-short` | Fix the attribute as the message says. |
 | `odd-size` | Width or height is odd; video codecs need even sizes (1920x1080). |
 | `non-seekable-animation` | A CSS animation started inside `onFrame`; use `data-start` or set styles from `t`. |
@@ -82,7 +83,7 @@ Inside a `gm.camera` world, text sliding past the frame edge while the camera mo
 | `word-repeated` | A bare `@word` is said more than once; the first is used. The fix lists `@word#2 (21.4 s)` …; write `#1` to keep the first. |
 | `word-not-found`, `words-missing`, `words-file` | A time names a word (`@pricing`) that the transcript does not have (the fix lists near spellings; a phrase joins words with `_`, a repeat is `#2`), or there is no `<html data-words>` transcript, or its file is missing or not a list of `{word, start, end}`. |
 | `load-timeout` | Something given to `gm.wait()` never finished. |
-| `script-error`, `console-error` | Your JS threw; the message has the stack, file and line. Fix it first: a failed script also causes misleading `still`/`empty-start` warnings. |
+| `script-error`, `console-error` | Your JS threw (an error: at load, with file and line, or in a callback during the video, with the time it first happened), or the page logged an error (a warning). Fix it first: a failed script also causes misleading `still`/`empty-start` warnings. |
 
 ## How check decides; data-check
 

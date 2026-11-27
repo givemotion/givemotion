@@ -133,7 +133,8 @@
     issueKeys.add(key);
     issues.push({ severity, code, message, selector: sel, fix: fix || null, time: time == null ? null : round(time) });
   }
-  function pageError(e) { report('error', 'script-error', String(e && e.stack || e).split('\n').slice(0, 3).join(' | '), null, null, now); setTimeoutReal(() => { throw e; }); }
+  // (the stack names files relative to the project, not with the local server's address, whose port changes every run)
+  function pageError(e) { report('error', 'script-error', String(e && e.stack || e).split('\n').slice(0, 3).join(' | ').split(location.origin + '/').join(''), null, null, now); setTimeoutReal(() => { throw e; }); }
   const setTimeoutReal = real.setTimeout;
   function round(x) { return Math.round(x * 1000) / 1000; }
   function selectorOf(el) {

@@ -310,6 +310,28 @@ test('check fails fast with a clear message when the page script never returns',
   assert.ok(Date.now() - t0 < 20000, `check took ${Date.now() - t0} ms`);
 });
 
+test('check reports what the page itself got wrong: a script that throws (at load, and in onFrame later), a missing file, console.error; the same with 1 and 3 browsers', { skip }, async () => {
+  const d = tmp();
+  const f = comp(d, 'err.html', `<link rel="stylesheet" href="nope.css"><h1>Hi</h1>
+    <script>console.error('something bad'); gm.onFrame((t) => { if (t > 1) { const o = null; o.boom; } });</script>
+    <script>const items = configg.items;</script>`, 'data-width="320" data-height="180" data-fps="10" data-duration="2"');
+  const rep = await check(f);
+  assert.equal(rep.ok, false);
+  const by = (code) => rep.issues.filter((i) => i.code === code);
+  assert.ok(by('script-error').some((i) => /configg is not defined \(err\.html line 3\)/.test(i.message) && i.severity === 'error'), 'top-level throw with its line: ' + JSON.stringify(by('script-error')));
+  assert.ok(by('script-error').some((i) => /reading 'boom'/.test(i.message) && i.time >= 1), 'onFrame throw after 1 s, with its time');
+  assert.equal(by('script-error').length, 2, 'each error once (the runtime throws what it caught again for the console)');
+  assert.ok(by('http-404').some((i) => i.message === '404 for nope.css' && i.severity === 'error'));
+  assert.ok(by('console-error').some((i) => i.message === 'something bad' && i.severity === 'warning'));
+  assert.ok(rep.issues.every((i) => !/127\.0\.0\.1/.test(i.message)), 'no local server address in messages');
+  // long enough for check to use several browsers: one report
+  const g = comp(d, 'long.html', `<main data-sequence>${[1, 2, 3, 4].map((k) => `<section class="scene" data-duration="5"><h1 data-enter="rise 0.5">Scene ${k}</h1></section>`).join('')}</main>
+    <script>console.error('top-level complaint'); gm.onFrame((t) => { if (t > 12.3) { const o = null; o.late; } });</script>`, 'data-width="320" data-height="180" data-fps="10"');
+  const one = await check(g, { workers: 1 }), three = await check(g, { workers: 3 });
+  assert.ok(one.issues.some((i) => i.code === 'script-error' && i.time === 12.4), 'late error at the first sample after it: ' + JSON.stringify(one.issues.map((i) => [i.code, i.time])));
+  assert.deepEqual(three, one);
+});
+
 test('snapshot writes a contact sheet', { skip }, async () => {
   const d = tmp();
   const f = comp(d, 's.html', `<main data-sequence><section class="scene" data-duration="1"><h1>A</h1></section><section class="scene" data-duration="1"><h1>B</h1></section></main>`);

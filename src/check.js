@@ -1693,6 +1693,66 @@ function keyTimes(info, max = 12) {
 }
 
 /**
+ * The problems the page had itself, from every browser of a pass: what the runtime caught after the page was ready
+ * (an onFrame or tween callback that threw at 1.4 s), and what Chrome saw (a top-level script that threw, console.error,
+ * a file that 404s or failed to load). Without them a page whose script died at its first line got "No problems found".
+ * A union in a fixed order, so 1 and N browsers give the same report.
+ * @param {any[]} issues the report so far (added to)
+ * @param {any[]} pages
+ */
+async function pushPageProblems(issues, pages) {
+  const key = (i) => i.code + '|' + i.selector + '|' + i.message;
+  const have = new Set(issues.map(key));
+  const caught = new Map();
+  for (const pg of pages) {
+    let list = [];
+    try { list = await pg.evaluate('window.gm && gm.__issues ? gm.__issues() : []'); } catch (e) {}
+    for (const i of list || []) {
+      const k = key(i);
+      if (have.has(k)) continue;
+      const cur = caught.get(k);
+      if (!cur || (i.time ?? Infinity) < (cur.time ?? Infinity)) caught.set(k, i);
+    }
+  }
+  const byText = (a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+  issues.push(...[...caught.values()].sort((a, b) => (a.time ?? -1) - (b.time ?? -1) || byText(a, b)).map((i) => ({ ...i })));
+  // The runtime throws the errors it catches again, so they show in the console: those copies are already reported.
+  const firstLine = (m) => String(m).split(' | ')[0];
+  const reported = new Set(issues.filter((i) => i.code === 'script-error').map((i) => firstLine(i.message)));
+  // (a broken image is already reported, with its element, as image-broken / image-failed)
+  const images = issues.filter((i) => /^image-(broken|failed)$/.test(i.code)).map((i) => String(i.message).replace(/^[^:]*:\s*/, '').replace(/^\.\//, '').split(/[?#]/)[0]).filter(Boolean);
+  const found = new Map();
+  for (const pg of pages) for (const e of pg.errors || []) {
+    const msg = String(e.message).replace(/https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?\//g, '');
+    // (a script error's place, " (video.html line 12): the line", is filled in after the error: compare without it)
+    const base = e.code === 'script-error' ? msg.replace(/ \((?:[^()]* line \d+|in a file included into [^()]*)\)(?::[\s\S]*)?$/, '') : msg;
+    if (e.code === 'script-error' && reported.has(base)) continue;
+    const file = /^(http-|load-failed)/.test(e.code) ? (/(?:for|loading) (\S+?)\.?(?: |$)/.exec(msg) || [])[1] : null;
+    if (file && images.some((s) => decodeURIComponent(file.split(/[?#]/)[0]).endsWith(s))) continue;
+    // (the same error seen by several browsers: one entry, with the most complete message)
+    const k = e.code + '|' + base, prev = found.get(k);
+    if (prev && (prev.message.length > msg.length || (prev.message.length === msg.length && prev.message <= msg))) continue;
+    const remote = !!file && /^https?:\/\//.test(file);
+    found.set(k, {
+      severity: e.code === 'console-error' || remote ? 'warning' : 'error', code: e.code, message: msg, selector: null, time: null,
+      fix: e.code === 'script-error' ? 'Fix the script at that line: nothing after it in that <script> ran.'
+        : e.code === 'console-error' ? 'Something in the page logged an error: find it and fix it.'
+        : remote ? 'Download the file next to your HTML file and link it there: a render must not depend on the network.'
+        : 'Fix the path (relative to the HTML file) or put the file there.',
+    });
+  }
+  // (at most 10 per code: a page that logs an error every frame says so once)
+  const perCode = new Map();
+  for (const i of [...found.values()].sort(byText)) {
+    const list = perCode.get(i.code) || []; perCode.set(i.code, list); list.push(i);
+  }
+  for (const list of perCode.values()) {
+    if (list.length > 10) { list[9].message += ` (and ${list.length - 10} more like it)`; list.length = 10; }
+    issues.push(...list);
+  }
+}
+
+/**
  * Check a composition for problems. Returns { ok, errors, warnings, issues, info }.
  */
 /**
@@ -2036,7 +2096,8 @@ export async function check(input, opts = {}) {
         }
       }
     } catch (e) {}
-    const motion = change.length ? { every: 0.5, from: change[0][0] - 0.5, values: change.map(([, f, b]) => Math.round((b >= BUSY_MIN ? Math.max(f, 0.06) : f) * 1000) / 1000) } : null;
+    await pushPageProblems(issues, [ctx.page, ...extraPages]);
+    const motion = change.length ?{ every: 0.5, from: change[0][0] - 0.5, values: change.map(([, f, b]) => Math.round((b >= BUSY_MIN ? Math.max(f, 0.06) : f) * 1000) / 1000) } : null;
     let merged = mergeIssues(issues, step * 2.5, Math.max(step * 2.5, contrastEvery * 1.6));
     // Some problems only matter if they last (a label sliding past the frame edge during a pan is fine).
     if (opts.at == null) merged = merged.filter((i) => {

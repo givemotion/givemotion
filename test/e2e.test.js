@@ -293,6 +293,16 @@ test('video frames do not depend on where decoding started (a 25 fps clip in a 2
   assert.deepEqual(three, one, '1 worker == 3 workers');
   assert.equal(after.still, one[7], 'a still == the render frame at that time');
   assert.deepEqual(after.frames, one, 'a render after a still == a render on a fresh cache');
+  // 30 fps in 25: frames near a half-frame tie (7 is one) moved when the grid was laid from the job's start time
+  const src30 = join(d, 'src30.mp4');
+  execFileSync(ffmpegPath(), ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', src30]);
+  const tie = async (name, fn) => {
+    copyFileSync(src30, join(d, name + '.mp4'));
+    return fn(comp(d, name + '.html', `<video src="${name}.mp4" muted style="position:absolute;left:0;top:0;width:320px;height:180px;object-fit:fill"></video>`, 'data-width="320" data-height="180" data-fps="25" data-duration="1"'));
+  };
+  const full = await tie('tie-full', async (f) => { await render(f, { output: join(d, 'tie-full'), format: 'png', workers: 1, cache: false, ...quiet }); return frames(join(d, 'tie-full')); });
+  const still7 = await tie('tie-still', async (f) => md5Buf((await stills(f, [7 / 25], { format: 'png' })).buffers[0]));
+  assert.equal(still7, full[7], '30 fps clip in a 25 fps video: a still at frame 7 == the render frame');
 });
 
 test('check finds the classic layout problems', { skip }, async () => {

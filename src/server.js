@@ -238,10 +238,11 @@ class FrameExtractor {
     // fps filter laid its grid from the first frame it got, so a job starting off the source's frame grid (a 25 fps clip
     // in a 24 or 30 fps video) showed the next source frame in every frame it wrote. Now decoding starts at a keyframe
     // before the asked time (a second early: some formats seek a little late), with the file's own timestamps, and the
-    // grid is anchored at video time 0: the frame on screen at i / fps is always decoded, even one held for seconds in a
-    // variable-rate screen recording. (Not covered: B-frames across such a long hold, where the keyframe after it is
-    // stored before it.)
-    const vf = `fps=fps=${fps}:start_time=${ss},scale='min(iw,${this.maxW})':'min(ih,${this.maxH})':force_original_aspect_ratio=decrease:flags=lanczos`;
+    // grid is anchored at exactly 0, as for a job from the start (a start_time of i / fps is rounded to the file's time
+    // base, which moved frames near a half-frame tie by one slot: 30 fps in 25), and the frames before i are dropped by
+    // their index. The frame on screen at i / fps is always decoded, even one held for seconds in a variable-rate screen
+    // recording. (Not covered: B-frames across such a long hold, where the keyframe after it is stored before it.)
+    const vf = `fps=fps=${fps}:start_time=0,trim=start_pts=${startIdx},scale='min(iw,${this.maxW})':'min(ih,${this.maxH})':force_original_aspect_ratio=decrease:flags=lanczos`;
     const args = ['-hide_banner', '-loglevel', 'error', '-noaccurate_seek', '-ss', String(Math.max(0, ss - 1)), '-copyts', '-start_at_zero', '-i', file, '-vf', vf, '-frames:v', String(window),
       '-q:v', '2', '-start_number', String(startIdx), join(dir, '%07d.jpg')];
     const proc = spawn(ffmpegPath(), args, { stdio: ['ignore', 'ignore', 'pipe'] });

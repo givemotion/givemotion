@@ -10,6 +10,7 @@
   const PX = I.PX;
   const SVGNS = 'http://www.w3.org/2000/svg';
   const r4 = (x) => Math.round(x * 10000) / 10000;
+  const r6 = (x) => Math.round(x * 1e6) / 1e6;
 
   // ---------------------------------------------------------------------------
   // Colors: parse any CSS color, mix in OKLab (no muddy grey midpoints)
@@ -164,13 +165,14 @@
     if (sameShape(A, B)) return interpTokens(A, B);
     const ca = toRGBA(fs), cb = ca && toRGBA(ts);
     if (ca && cb) return (p) => mixRGBA(ca, cb, p);
-    // Two lengths in different units (0px → 100%, 1em → 32px) mix in a calc(), which Chrome resolves against the
-    // element's own box in every frame. Sampled on a helper element in <body>, 100% was the width of the frame: a
-    // progress bar tweened to width 100% ran out of its track.
-    const la = LENGTH.exec(fs), lb = la && LENGTH.exec(ts);
-    if (la && lb && prop && /^[a-zA-Z]+$/.test(prop)) {
-      const A = la[1] ? fs.trim() : '0px', B = lb[1] ? ts.trim() : '0px';
-      return (p) => (p <= 0 ? from : p >= 1 ? to : `calc(${A} * ${r4(1 - p)} + ${B} * ${r4(p)})`);
+    // Two lengths in different units (0px → 100%, 1em → 32px, or a calc() from a relative step) mix in a calc(), which
+    // Chrome resolves against the element's own box in every frame. Sampled on a helper element in <body>, 100% was the
+    // width of the frame: a progress bar tweened to width 100% ran out of its track. Only where the property takes that
+    // calc (opacity '100%' does not); transform parts (x: '240%') have their own path.
+    if (prop && /^[a-zA-Z]+$/.test(prop) && !(prop in TF) && prop !== 'transformPerspective') {
+      const len = (s) => { const m = LENGTH.exec(s); return m ? (m[1] ? s.trim() : '0px') : /^\s*calc\(.*\)\s*$/i.test(s) ? s.trim() : null; };
+      const A = len(fs), B = A && len(ts);
+      if (A && B && CSS.supports(kebab(prop), `calc(${A} * 0.5 + ${B} * 0.5)`)) return (p) => (p <= 0 ? from : p >= 1 ? to : `calc(${A} * ${r6(1 - p)} + ${B} * ${r6(p)})`);
     }
     if (prop && !prop.startsWith('--') && /^[a-zA-Z]+$/.test(prop)) {
       const bi = browserInterp(prop, fs, ts);
@@ -502,7 +504,8 @@
   }
   function kebab(p) { return p.startsWith('--') ? p : p.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()); }
   // the properties whose value read from the page is the drawn px only while the element is displayed (CSSOM)
-  const LAYOUT_PROP = /^(width|height|(min|max)(Width|Height)|top|right|bottom|left|inset\w*|margin\w*|padding\w*|lineHeight|transformOrigin|perspectiveOrigin|gridTemplate(Columns|Rows))$/;
+  // (not transform-origin or grid tracks: their drawn px do not mix with the '%' or 'fr' ends tweens give them)
+  const LAYOUT_PROP = /^(width|height|(min|max)(Width|Height)|top|right|bottom|left|inset\w*|margin\w*|padding\w*|lineHeight)$/;
   function readBase(el, prop, tfBase) {
     if (prop in TF) return tfBase[prop];
     if (!(el instanceof Element)) return el[prop];
@@ -521,7 +524,15 @@
     // relative values "+=100" / "-=50"
     if (typeof v === 'string') {
       const m = /^([-+])=\s*([-+]?[\d.]+)(\D*)$/.exec(v.trim());
-      if (m) { const base = parseFloat(from) || 0; const d = parseFloat(m[2]) * (m[1] === '-' ? -1 : 1); const unit = m[3] || unitOf(prop, from); return unit && !(prop in TF) ? (base + d) + unit : base + d; }
+      if (m) {
+        const d = parseFloat(m[2]) * (m[1] === '-' ? -1 : 1); const unit = m[3] || unitOf(prop, from);
+        // a start in another unit ('+=20%' on a width read as 60px) or a calc(): add in a calc(), resolved by Chrome
+        if (unit && !(prop in TF) && typeof from === 'string') {
+          const bu = (/^\s*[-+]?(?:\d*\.\d+|\d+\.?\d*)([a-z%]+)\s*$/i.exec(from) || [])[1];
+          if ((bu && bu !== unit) || /^\s*calc\(/i.test(from)) return `calc(${from.trim()} ${d < 0 ? '-' : '+'} ${Math.abs(d)}${unit})`;
+        }
+        const base = parseFloat(from) || 0; return unit && !(prop in TF) ? (base + d) + unit : base + d;
+      }
     }
     if (typeof v === 'number' && !(prop in TF) && !UNITLESS.has(prop) && !prop.startsWith('attr:') && !prop.startsWith('--') && !['autoAlpha', 'draw', 'textContent', 'innerText', 'transformPerspective'].includes(prop)) {
       if (typeof from === 'string' && /^-?[\d.]+(px)?$/.test(from.trim())) return v + 'px';
@@ -939,15 +950,30 @@
       // this page's first frame is display: none, and a hidden element gives its CSS value ('50%', 'auto') instead of
       // the px it is drawn at: a bar at width 50% grew from the wrong width, depending on which frame the page drew
       // first (1 worker != N workers, a still != the render). Other properties read the same either way.
+      // The targets on screen are read first, as they are. A hidden one is read with its clips shown and, for that
+      // moment, the clips next to them that are on screen now hidden (a sequence shows one scene at a time: in a flex
+      // row, two shown scenes would share its width), one hidden clip at a time.
       {
-        const shown = [];
+        const later = new Map();
         for (const tm of tracks.values()) {
-          if (!(tm.el instanceof Element) || ![...tm.props.keys()].some((k) => LAYOUT_PROP.test(k))) continue;
-          for (let a = tm.el; a; a = a.parentElement) if (a.hasAttribute('data-gm-hidden')) { shown.push(a); a.removeAttribute('data-gm-hidden'); }
+          tm.pre = {};
+          const keys = [...tm.props.keys()].filter((k) => LAYOUT_PROP.test(k));
+          if (!keys.length) continue;
+          const h = tm.el instanceof Element ? tm.el.closest('[data-gm-hidden]') : null;
+          if (h) { if (!later.has(h)) later.set(h, []); later.get(h).push([tm, keys]); }
+          else for (const k of keys) tm.pre[k] = readBase(tm.el, k, null);
         }
-        try {
-          for (const tm of tracks.values()) { tm.pre = {}; for (const k of tm.props.keys()) if (LAYOUT_PROP.test(k)) tm.pre[k] = readBase(tm.el, k, null); }
-        } finally { for (const a of shown) a.setAttribute('data-gm-hidden', ''); }
+        const clipEls = later.size ? new Set(I.clips().map((c) => c.el)) : null;
+        for (const [h, list] of later) {
+          const flip = [];
+          for (let a = h; a; a = a.parentElement) {
+            if (!a.hasAttribute('data-gm-hidden')) continue;
+            a.removeAttribute('data-gm-hidden'); flip.push([a, true]);
+            if (a.parentElement) for (const s of a.parentElement.children) if (s !== a && clipEls.has(s) && !s.hasAttribute('data-gm-hidden')) { s.setAttribute('data-gm-hidden', ''); flip.push([s, false]); }
+          }
+          try { for (const [tm, keys] of list) for (const k of keys) tm.pre[k] = readBase(tm.el, k, null); }
+          finally { for (const [e, wasHidden] of flip) { if (wasHidden) e.setAttribute('data-gm-hidden', ''); else e.removeAttribute('data-gm-hidden'); } }
+        }
       }
       for (const tm of tracks.values()) {
         const el = tm.el;

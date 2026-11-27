@@ -728,18 +728,33 @@ test('timeline: layout tweens (width/height/margin from %, auto) start from the 
   writeFileSync(f, page(`<style>.scene{background:#111}.box{position:absolute;left:20px;top:20px;width:200px;background:#333}#bar{height:20px;width:50%;background:#e33}#auto{height:20px;background:#3c3}#card{background:#36c}#ml{width:20px;height:20px;margin-left:auto;background:#fc3}</style>
     <main data-sequence><section class="scene" data-duration="2"><h1>One</h1></section>
     <section class="scene" id="s2" data-duration="2"><div class="box"><div id="bar"></div><div id="auto"></div><div id="card"><p style="margin:0;height:40px">x</p></div><div id="ml"></div></div>
-      <div style="position:absolute;left:20px;top:140px;width:200px;height:10px;background:#555"><i id="fill" style="display:block;height:100%;width:0;background:#fff"></i></div></section></main>
+      <div style="position:absolute;left:20px;top:140px;width:200px;height:10px;background:#555"><i id="fill" style="display:block;height:100%;width:0;background:#fff"></i></div>
+      <div style="position:absolute;left:20px;top:156px;width:200px;height:6px"><i id="step" style="display:block;height:100%;width:30%;background:#f0f"></i></div>
+      <b id="shine" style="position:absolute;left:240px;top:20px;width:20px;height:20px;background:#fff"></b><b id="op" style="position:absolute;left:240px;top:60px;width:20px;height:20px;background:#fff"></b></section></main>
     <script>gm.timeline('#s2').from('#bar', { width: 0, duration: 1, ease: 'linear' }, 0).to('#auto', { width: 150, duration: 1, ease: 'linear' }, 0)
-      .to('#card', { height: 10, duration: 1, ease: 'linear' }, 0).from('#ml', { marginLeft: 0, duration: 1, ease: 'linear' }, 0).to('#fill', { width: '100%', duration: 1, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10"'));
-  const read = `['#bar width', '#auto width', '#card height', '#ml margin-left', '#fill width'].map((s) => { const [sel, p] = s.split(' '); return getComputedStyle(document.querySelector(sel)).getPropertyValue(p); })`;
+      .to('#card', { height: 10, duration: 1, ease: 'linear' }, 0).from('#ml', { marginLeft: 0, duration: 1, ease: 'linear' }, 0).to('#fill', { width: '100%', duration: 1, ease: 'linear' }, 0)
+      .to('#step', { width: '+=20%', duration: 0.5, ease: 'linear' }, 0).to('#step', { width: '+=20%', duration: 0.5, ease: 'linear' }, 0.5)
+      .to('#shine', { x: '240%', duration: 1, ease: 'linear' }, 0).fromTo('#op', { opacity: 0 }, { opacity: '100%', duration: 1, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10"'));
+  // (also: a step relative to a width in %, a transform part in %, an opacity in %: they keep working)
+  const read = `[...['#bar width', '#auto width', '#card height', '#ml margin-left', '#fill width', '#step width', '#op opacity'].map((s) => { const [sel, p] = s.split(' '); return getComputedStyle(document.querySelector(sel)).getPropertyValue(p); }), Math.round(new DOMMatrix(getComputedStyle(document.querySelector('#shine')).transform).e)]`;
   // the first frame a page draws (scene 1, where scene 2 is not displayed) must not change the values
   const values = async (times) => {
     const ctx = await openComposition(f, { mode: 'render' });
     try { let v; for (const t of times) { await ctx.page.seek(t); v = await ctx.page.evaluate(read); } return v; } finally { await ctx.page.close(); await ctx.server.close(); }
   };
-  assert.deepEqual(await values([2.5]), ['50px', '175px', '25px', '90px', '100px']);
-  assert.deepEqual(await values([0, 2.5]), ['50px', '175px', '25px', '90px', '100px']);
-  assert.deepEqual(await values([0, 3.5]), ['100px', '150px', '10px', '180px', '200px']);
+  const mid = await values([2.5]), end = await values([0, 3.5]);
+  assert.deepEqual(mid.slice(0, 7), ['50px', '175px', '25px', '90px', '100px', '100px', '0.5']);
+  assert.deepEqual(await values([0, 2.5]), mid);
+  assert.deepEqual(end.slice(0, 7), ['100px', '150px', '10px', '180px', '200px', '140px', '1']);
+  assert.ok(end[7] > 0 && mid[7] === end[7] / 2, 'x in % moves, linearly: ' + [mid[7], end[7]]);
+  // scenes that are flex items, not absolute: a scene measured while hidden is laid out alone, as it will be shown
+  const g = join(d, 'flex.html');
+  writeFileSync(g, page(`<style>main{display:flex;height:100%}main>section{width:100%;position:relative}.bar{height:20px;width:50%;background:#e33}</style>
+    <main data-sequence><section data-duration="2"><div id="b1" class="bar"></div></section><section data-duration="2"><div id="b2" class="bar"></div></section></main>
+    <script>gm.timeline().from('#b1', { width: 0, duration: 1, ease: 'linear' }, 0).from('#b2', { width: 0, duration: 1, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10"'));
+  const flexAt = async (times) => { const ctx = await openComposition(g, { mode: 'render' }); try { const v = []; for (const t of times) { await ctx.page.seek(t); v.push(await ctx.page.evaluate(`getComputedStyle(document.querySelector(${t < 2 ? "'#b1'" : "'#b2'"})).width`)); } return v; } finally { await ctx.page.close(); await ctx.server.close(); } };
+  assert.deepEqual(await flexAt([0.5, 1.5, 2.5, 3.5]), ['80px', '160px', '80px', '160px']);
+  assert.deepEqual(await flexAt([3.5, 0.5, 1.5]), ['160px', '80px', '160px']);
   const pngs = (dir) => readdirSync(dir).filter((x) => x.endsWith('.png')).sort().map((x) => readFileSync(join(dir, x)).toString('base64'));
   await render(f, { output: join(d, 'w1'), format: 'png', workers: 1, cache: false, ...quiet });
   await render(f, { output: join(d, 'w3'), format: 'png', workers: 3, cache: false, ...quiet });

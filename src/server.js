@@ -188,8 +188,8 @@ class FrameExtractor {
   constructor(maxW, maxH) { this.jobs = new Map(); this.maxW = maxW; this.maxH = maxH; pruneFrames(); }
   key(file, fps) {
     const st = statSync(file);
-    // (v2: frames no longer depend on where their extraction started; frames cached by older versions could)
-    return createHash('sha1').update(`v2|${file}|${st.size}|${st.mtimeMs}|${fps}|${this.maxW}x${this.maxH}`).digest('hex').slice(0, 16);
+    // (v3: frames do not depend on where their extraction started; frames cached by older versions, v2 included, could)
+    return createHash('sha1').update(`v3|${file}|${st.size}|${st.mtimeMs}|${fps}|${this.maxW}x${this.maxH}`).digest('hex').slice(0, 16);
   }
   /** Ensure frames [startIdx, endIdx] exist; resolves file path of frame idx. */
   async frame(file, fps, idx) {

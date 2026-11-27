@@ -747,14 +747,6 @@ test('timeline: layout tweens (width/height/margin from %, auto) start from the 
   assert.deepEqual(await values([0, 2.5]), mid);
   assert.deepEqual(end.slice(0, 7), ['100px', '150px', '10px', '180px', '200px', '140px', '1']);
   assert.ok(end[7] > 0 && mid[7] === end[7] / 2, 'x in % moves, linearly: ' + [mid[7], end[7]]);
-  // scenes that are flex items, not absolute: a scene measured while hidden is laid out alone, as it will be shown
-  const g = join(d, 'flex.html');
-  writeFileSync(g, page(`<style>main{display:flex;height:100%}main>section{width:100%;position:relative}.bar{height:20px;width:50%;background:#e33}</style>
-    <main data-sequence><section data-duration="2"><div id="b1" class="bar"></div></section><section data-duration="2"><div id="b2" class="bar"></div></section></main>
-    <script>gm.timeline().from('#b1', { width: 0, duration: 1, ease: 'linear' }, 0).from('#b2', { width: 0, duration: 1, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10"'));
-  const flexAt = async (times) => { const ctx = await openComposition(g, { mode: 'render' }); try { const v = []; for (const t of times) { await ctx.page.seek(t); v.push(await ctx.page.evaluate(`getComputedStyle(document.querySelector(${t < 2 ? "'#b1'" : "'#b2'"})).width`)); } return v; } finally { await ctx.page.close(); await ctx.server.close(); } };
-  assert.deepEqual(await flexAt([0.5, 1.5, 2.5, 3.5]), ['80px', '160px', '80px', '160px']);
-  assert.deepEqual(await flexAt([3.5, 0.5, 1.5]), ['160px', '80px', '160px']);
   const pngs = (dir) => readdirSync(dir).filter((x) => x.endsWith('.png')).sort().map((x) => readFileSync(join(dir, x)).toString('base64'));
   await render(f, { output: join(d, 'w1'), format: 'png', workers: 1, cache: false, ...quiet });
   await render(f, { output: join(d, 'w3'), format: 'png', workers: 3, cache: false, ...quiet });
@@ -763,6 +755,20 @@ test('timeline: layout tweens (width/height/margin from %, auto) start from the 
   const s = await stills(f, [2.5, 3.5], { format: 'png' });
   assert.equal(s.buffers[0].toString('base64'), w1[25], 'still at 2.5 s == frame 25');
   assert.equal(s.buffers[1].toString('base64'), w1[35], 'still at 3.5 s == frame 35');
+  // measuring a hidden target never hides what is on screen: the CSS animations there (a scene's, list items' fade-up)
+  // keep their time, with gm.onFrame on the page (1 worker == 3, stills == frames)
+  const g = join(d, 'anim.html');
+  writeFileSync(g, page(`<style>@keyframes slide{to{transform:translateX(200px)}}#m1{width:30px;height:30px;background:#fc3;animation:slide 3s linear both}.bar{height:10px;width:50%;background:#e33}</style>
+    <main data-sequence><section class="scene" data-duration="3"><div id="m1"></div>
+      <ul style="position:absolute;top:60px;left:20px;width:200px;margin:0;padding:0;list-style:none"><li data-start="0" style="animation:fade-up .8s both">one</li><li data-start="1.2" style="animation:fade-up .8s both">two<div class="bar" id="lb"></div></li></ul></section>
+    <section class="scene" data-duration="2"><div style="width:200px"><div class="bar" id="b2"></div></div></section></main>
+    <script>let n = 0; gm.onFrame(() => { n++; }); gm.timeline().from('#lb', { width: 0, duration: 1, ease: 'linear' }, 0).from('#b2', { width: 0, duration: 1, ease: 'linear' }, 0);</script>`, 'data-width="320" data-height="180" data-fps="10"'));
+  await render(g, { output: join(d, 'a1'), format: 'png', workers: 1, cache: false, ...quiet });
+  await render(g, { output: join(d, 'a3'), format: 'png', workers: 3, cache: false, ...quiet });
+  const a1 = pngs(join(d, 'a1'));
+  assert.ok(pngs(join(d, 'a3')).every((x, i) => x === a1[i]), 'CSS animations on screen: 1 worker == 3 workers');
+  const sa = await stills(g, [0.5, 1.5, 3.5], { format: 'png' });
+  assert.deepEqual(sa.buffers.map((b) => b.toString('base64')), [a1[5], a1[15], a1[35]], 'stills == frames');
 });
 
 test('check: upside-down-text for letters turned past ~100° (also while moving), not for upright or slightly tilted ones', { skip }, async () => {

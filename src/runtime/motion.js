@@ -950,30 +950,21 @@
       // this page's first frame is display: none, and a hidden element gives its CSS value ('50%', 'auto') instead of
       // the px it is drawn at: a bar at width 50% grew from the wrong width, depending on which frame the page drew
       // first (1 worker != N workers, a still != the render). Other properties read the same either way.
-      // The targets on screen are read first, as they are. A hidden one is read with its clips shown and, for that
-      // moment, the clips next to them that are on screen now hidden (a sequence shows one scene at a time: in a flex
-      // row, two shown scenes would share its width), one hidden clip at a time.
+      // The targets on screen are read first, as they are; then the hidden ones, with their clips shown. Nothing on screen
+      // is hidden for the measure: display: none restarts the CSS animations inside it.
       {
-        const later = new Map();
+        const later = [];
         for (const tm of tracks.values()) {
           tm.pre = {};
           const keys = [...tm.props.keys()].filter((k) => LAYOUT_PROP.test(k));
           if (!keys.length) continue;
-          const h = tm.el instanceof Element ? tm.el.closest('[data-gm-hidden]') : null;
-          if (h) { if (!later.has(h)) later.set(h, []); later.get(h).push([tm, keys]); }
+          if (tm.el instanceof Element && tm.el.closest('[data-gm-hidden]')) later.push([tm, keys]);
           else for (const k of keys) tm.pre[k] = readBase(tm.el, k, null);
         }
-        const clipEls = later.size ? new Set(I.clips().map((c) => c.el)) : null;
-        for (const [h, list] of later) {
-          const flip = [];
-          for (let a = h; a; a = a.parentElement) {
-            if (!a.hasAttribute('data-gm-hidden')) continue;
-            a.removeAttribute('data-gm-hidden'); flip.push([a, true]);
-            if (a.parentElement) for (const s of a.parentElement.children) if (s !== a && clipEls.has(s) && !s.hasAttribute('data-gm-hidden')) { s.setAttribute('data-gm-hidden', ''); flip.push([s, false]); }
-          }
-          try { for (const [tm, keys] of list) for (const k of keys) tm.pre[k] = readBase(tm.el, k, null); }
-          finally { for (const [e, wasHidden] of flip) { if (wasHidden) e.setAttribute('data-gm-hidden', ''); else e.removeAttribute('data-gm-hidden'); } }
-        }
+        const shown = [];
+        for (const [tm] of later) for (let a = tm.el; a; a = a.parentElement) if (a.hasAttribute('data-gm-hidden')) { shown.push(a); a.removeAttribute('data-gm-hidden'); }
+        try { for (const [tm, keys] of later) for (const k of keys) tm.pre[k] = readBase(tm.el, k, null); }
+        finally { for (const a of shown) a.setAttribute('data-gm-hidden', ''); }
       }
       for (const tm of tracks.values()) {
         const el = tm.el;
